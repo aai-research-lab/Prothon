@@ -31,7 +31,7 @@ __status__ = "Production"
 
 
 class Prothon():
-    """Represent protein ensembles and calculate ensemble similarity
+    """Represent protein ensembles and calculate ensemble dissimilarity
 
     The Prothon class is initialized with a list of ensembles and the topology
     of the conformations contained in these ensembles. Method 
