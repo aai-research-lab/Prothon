@@ -1,8 +1,7 @@
 from Prothon import Prothon
 import numpy as np
 
-#data = ['Q99.dcd','Q75.dcd','Q80.dcd','Q85.dcd','Q90.dcd','Q95.dcd']
-data = ['Q99.dcd','Q75.dcd','Q95.dcd']
+data = ['Q99.dcd','Q75.dcd','Q80.dcd','Q85.dcd','Q90.dcd','Q95.dcd']
 topology = 'topology.pdb'
 
 prothon = Prothon(data = data, topology = topology)
