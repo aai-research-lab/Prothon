@@ -3,12 +3,25 @@
 Command-line interface for the Prothon package.
 
 Example usage:
-    prothon -traj "traj1.dcd, traj2.dcd, traj3.dcd" -top top.pdb -m cbcn -o results.txt
+    prothon -traj "Q99.dcd,Q95.dcd,Q85.dcd,Q75.dcd" -top topology.pdb -m cbcn,sasa -o my_outputs -d pca,mds,tsne
 """
 
 import argparse
 import json
-from Prothon import Prothon, load_trajectories
+from Prothon import Prothon
+
+def convert_results(results):
+    """
+    Recursively convert NumPy arrays in the results dictionary to lists for JSON serialization.
+    """
+    if isinstance(results, dict):
+        return {k: convert_results(v) for k, v in results.items()}
+    elif isinstance(results, list):
+        return [convert_results(item) for item in results]
+    elif hasattr(results, "tolist"):
+        return results.tolist()
+    else:
+        return results
 
 def main():
     parser = argparse.ArgumentParser(
@@ -16,15 +29,15 @@ def main():
     )
     parser.add_argument(
         "-traj", "--trajectories", required=True,
-        help="Comma-separated trajectory files, glob pattern, or list (e.g. \"traj1.dcd, traj2.dcd, traj3.dcd\")"
+        help="Comma-separated trajectory files, glob pattern, or list (e.g., \"Q99.dcd,Q95.dcd,Q85.dcd,Q75.dcd\")"
     )
     parser.add_argument(
         "-top", "--topology", required=True,
-        help="Topology file in PDB format (e.g., top.pdb)"
+        help="Topology file in PDB format (e.g., topology.pdb)"
     )
     parser.add_argument(
-        "-m", "--method", default="cbcn", choices=["cbcn", "cacn", "caba", "cata", "sasa"],
-        help="Local structural measure to use for ensemble representation (default: cbcn)"
+        "-m", "--methods", default="cbcn",
+        help="Comma-separated list of local structural measures (e.g., \"cbcn,sasa\")"
     )
     parser.add_argument(
         "-r", "--ref", type=int, default=0,
@@ -32,7 +45,11 @@ def main():
     )
     parser.add_argument(
         "-o", "--output", default=None,
-        help="Output file to write the comparison results in JSON format."
+        help="Root output directory. If not provided, each measure creates its own directory (e.g., cbcn_output)."
+    )
+    parser.add_argument(
+        "-d", "--dimred", default="pca,mds,tsne",
+        help="Comma-separated list of dimensionality reduction techniques (e.g., \"pca,mds,tsne\"). Use 'None' to disable."
     )
     parser.add_argument(
         "-v", "--verbose", action="store_true",
@@ -40,31 +57,12 @@ def main():
     )
     args = parser.parse_args()
 
-    # Process trajectories using the utility function:
-    # (you can pass the same string to the Prothon class or pre‐process it)
-    traj_input = args.trajectories.split(",") if "," in args.trajectories else args.trajectories
-
-    # Create Prothon instance
-    prothon = Prothon(traj_files=traj_input, topology=args.topology, verbose=args.verbose)
-
-    # Compare ensembles using the chosen method and reference index.
-    results = prothon.compare_ensembles(measure=args.method, ref=args.ref)
-
-    # Print results to screen
-    for res in results:
-        print(f"Ensemble {res['ensemble_index']} vs Reference Ensemble:")
-        print(f"  Global dissimilarity: {res['global_dissimilarity']:.4f}")
-        print(f"  p-value: {res['p_value']}")
-        print("  Local dissimilarity per residue/feature:")
-        print(res['local_dissimilarity'])
-        print("-" * 50)
-
-    # Write to output file if provided
-    if args.output:
-        with open(args.output, "w") as fout:
-            json.dump(results, fout, indent=4)
-        if args.verbose:
-            print(f"Results written to {args.output}")
+    dimred_val = None if args.dimred.strip().lower() == "none" else args.dimred
+    prothon = Prothon(traj_files=args.trajectories, topology=args.topology,
+                      output_dir=args.output, verbose=args.verbose)
+    
+    results = prothon.compare_ensembles(methods=args.methods, ref=args.ref, dimred=dimred_val)
+    print(json.dumps(convert_results(results), indent=4))
 
 if __name__ == "__main__":
     main()

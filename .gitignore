@@ -2,7 +2,7 @@
 build/
 
 # Packaging metadata
-Prothon.egg-info/
+prothon.egg-info/
 
 # Python cache
 __pycache__/

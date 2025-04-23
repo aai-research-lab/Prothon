@@ -23,7 +23,6 @@ def load_trajectories(traj_input: Union[str, List[str], tuple], topology: str) -
         The combined trajectory.
     """
     if isinstance(traj_input, str):
-        # If comma-separated list, split it; otherwise assume glob pattern or single file.
         if ',' in traj_input:
             files = [f.strip() for f in traj_input.split(',')]
         else:
