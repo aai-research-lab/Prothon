@@ -1,0 +1,2 @@
+[console_scripts]
+prothon = prothon.cli:main

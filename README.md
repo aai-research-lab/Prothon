@@ -1,8 +1,17 @@
+# Prothon
 
-PROTHON is a Python Sofware Package for Efficient Comparison of Protein Ensembles. 
+Prothon is a Python package for efficient comparison of protein conformational ensembles
+using local structural properties. It represents each ensemble as a vector of probability 
+density functions (pdfs) estimated from local order parameters (e.g. Cβ contact numbers, Cα 
+contact numbers, bond angles, torsion angles, or SASA) and computes dissimilarity via the 
+Jensen–Shannon distance.
 
-See this [publication](https://pubs.acs.org/doi/abs/10.1021/acs.jcim.3c00145) for a description of the method used in PROTHON.
+## Installation
 
-Cite: Adekunle Aina, Shawn C.C. Hsueh, and Steven S. Plotkin, PROTHON: A Local Order Parameter-Based
-Method for Efficient Comparison of Protein Ensembles, Journal of Chemical Information and Modeling 63 (11),
-3453–3461. (2023)
+Clone the repository and install using pip:
+
+```bash
+git clone https://github.com/PlotkinLab/Prothon.git
+cd Prothon
+pip install .
+

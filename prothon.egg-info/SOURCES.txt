@@ -1,0 +1,8 @@
+README.md
+setup.py
+prothon.egg-info/PKG-INFO
+prothon.egg-info/SOURCES.txt
+prothon.egg-info/dependency_links.txt
+prothon.egg-info/entry_points.txt
+prothon.egg-info/requires.txt
+prothon.egg-info/top_level.txt

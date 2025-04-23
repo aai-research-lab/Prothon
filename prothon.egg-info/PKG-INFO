@@ -1,0 +1,41 @@
+Metadata-Version: 2.2
+Name: prothon
+Version: 1.1.0
+Summary: A Python package for efficient comparison of protein ensembles using local order parameters.
+Home-page: https://github.com/PlotkinLab/Prothon
+Author: Aina Adekunle and Plotkin Lab
+Author-email: aina@phas.ubc.ca, steve@phas.ubc.ca
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: GNU General Public License v3 (GPLv3)
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.6
+Requires-Dist: numpy
+Requires-Dist: mdtraj
+Requires-Dist: matplotlib
+Requires-Dist: scipy
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: home-page
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# Prothon
+
+Prothon is a Python package for efficient comparison of protein conformational ensembles
+using local structural properties. It represents each ensemble as a vector of probability 
+density functions (pdfs) estimated from local order parameters (e.g. Cβ contact numbers, Cα 
+contact numbers, bond angles, torsion angles, or SASA) and computes dissimilarity via the 
+Jensen–Shannon distance.
+
+## Installation
+
+Clone the repository and install using pip:
+
+```bash
+git clone https://github.com/PlotkinLab/Prothon.git
+cd Prothon
+pip install .
+
