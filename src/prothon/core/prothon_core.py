@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import os
-import warnings
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any
@@ -127,18 +126,6 @@ class Prothon:
         study.correspondences = {}
         configure_logging(verbose)
 
-        weighted = [e.label for e in items if e.weights is not None]
-        if weighted:
-            # Silently averaging over conformer probabilities would be a
-            # correctness bug dressed as a default. Saying so is the interim.
-            warnings.warn(
-                f"Per-frame weights are recorded for {', '.join(weighted)} but the "
-                f"Jensen-Shannon estimator does not yet apply them; every "
-                f"conformation is treated as equally likely. Weighted density "
-                f"estimation is planned for 3.0.",
-                UserWarning,
-                stacklevel=2,
-            )
         return study
 
     def __init__(
@@ -286,6 +273,12 @@ class Prothon:
                     left, right, grid_min, grid_max,
                     x_num=x_num, s_num=s_num,
                     circular=spec.circular,
+                    weights_ref=(
+                        None if self.ensembles is None else self.ensembles[ref].weights
+                    ),
+                    weights=(
+                        None if self.ensembles is None else self.ensembles[index].weights
+                    ),
                     alpha=alpha,
                     random_state=self.random_state,
                     legacy=legacy,

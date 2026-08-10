@@ -9,6 +9,7 @@ which breaks the windows the angular measures are defined on.
 from __future__ import annotations
 
 import json
+import warnings
 
 import mdtraj as md
 import numpy as np
@@ -413,14 +414,55 @@ class TestStudyAcrossMolecules:
         assert result.feature_index[0] == 4
         assert result.feature_index[-1] == 14
 
-    def test_weights_are_recorded_but_not_yet_applied(self, tmp_path):
+    def test_weights_reach_the_estimator(self, tmp_path):
+        """A study over a weighted ensemble must give a different answer from
+        the same frames unweighted, or the weights are decoration."""
         from prothon import Prothon
 
-        a = Ensemble(build(as_residues("ACDEF"), n_frames=60), label="a")
-        b = Ensemble(build(as_residues("ACDEF"), n_frames=60, seed=1), label="b",
-                     weights=np.linspace(1, 2, 60))
-        with pytest.warns(UserWarning, match="does not yet apply them"):
-            Prothon.from_ensembles([a, b], output_dir=str(tmp_path))
+        frames = build(as_residues("ACDEFHIK"), n_frames=400, seed=1)
+        other = build(as_residues("ACDEFHIK"), n_frames=400, seed=2, compact_from=4)
+        # Concentrate on the second half, which is where the two differ.
+        w = np.concatenate([np.full(200, 0.1 / 200), np.full(200, 0.9 / 200)])
+
+        plain = Prothon.from_ensembles(
+            [Ensemble(frames, label="a"), Ensemble(other, label="b")],
+            output_dir=str(tmp_path / "plain"), random_state=0,
+        ).compare_ensembles(methods="cacn", s_num=2)["cacn"][0]
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            weighted = Prothon.from_ensembles(
+                [Ensemble(frames, label="a"),
+                 Ensemble(other, label="b", weights=w)],
+                output_dir=str(tmp_path / "weighted"), random_state=0,
+            ).compare_ensembles(methods="cacn", s_num=2)["cacn"][0]
+
+        assert weighted.global_dissimilarity != plain.global_dissimilarity
+
+    def test_a_weighted_ensemble_against_an_unweighted_one_warns(self, tmp_path):
+        from prothon import Prothon
+
+        a = Ensemble(build(as_residues("ACDEF"), n_frames=200), label="deposited",
+                     weights=np.linspace(1, 2, 200))
+        b = Ensemble(build(as_residues("ACDEF"), n_frames=200, seed=1), label="md")
+        study = Prothon.from_ensembles([a, b], output_dir=str(tmp_path),
+                                       random_state=0)
+        with pytest.warns(UserWarning, match="treated as uniform"):
+            study.compare_ensembles(methods="cacn", s_num=2)
+
+    def test_effective_sample_size_is_recorded(self, tmp_path):
+        from prothon import Prothon
+
+        # One conformer carrying half the probability: 200 frames, worth ~4.
+        w = np.full(200, 0.5 / 199)
+        w[0] = 0.5
+        a = Ensemble(build(as_residues("ACDEF"), n_frames=200), label="a")
+        b = Ensemble(build(as_residues("ACDEF"), n_frames=200, seed=1), label="b",
+                     weights=w)
+        study = Prothon.from_ensembles([a, b], output_dir=str(tmp_path),
+                                       random_state=0)
+        with pytest.raises(ValueError, match="independent conformations"):
+            study.compare_ensembles(methods="cacn", s_num=2)
 
     def test_fewer_than_two_ensembles_is_refused(self):
         from prothon import Prothon

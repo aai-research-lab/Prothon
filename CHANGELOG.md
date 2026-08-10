@@ -73,13 +73,27 @@ All notable changes to Prothon are recorded here. This project follows
   deletion can break every one of them. The error says which per-residue
   measure to reach for instead.
 
-### Known limitations
+### Added — weighted ensembles
 
-- Per-frame weights are carried through `Ensemble` and recorded, but the
-  Jensen-Shannon estimator does not yet apply them; every conformation is
-  treated as equally likely and a warning says so. Silently averaging over
-  conformer probabilities would be a correctness bug dressed as a default.
-  Weighted density estimation is next.
+- **Per-frame weights reach the estimator.** Gaussian and von Mises kernels
+  both take them, so a deposited ensemble's conformer probabilities and a
+  reweighted simulation's frame weights are used rather than recorded and
+  ignored. The permutation null carries each frame's weight with the frame,
+  because a conformation and its probability are one observation; the
+  split-half floor renormalises within each half.
+- **Effective sample size (Kish).** A thousand frames in which one conformer
+  carries half the probability is worth four independent samples. Sizing a
+  noise floor by the frame count instead produces error bars for an ensemble
+  nobody sampled — the same failure as the bootstrap null this release
+  replaced: a quantity that looks like a sample size, is smaller than it
+  appears, and makes everything downstream look more certain than it is.
+  Reported on every result and recorded in the manifest.
+- Comparisons are **refused below ten effective samples** and warned below
+  fifty, on the effective count rather than the frame count.
+- Comparing a weighted ensemble against an unweighted one warns. Treating the
+  second as uniform is the only thing available, but it is an assumption about
+  that ensemble rather than a fact about it, and it is the usual shape of a
+  deposited ensemble compared against a simulation.
 
 ## [2.1.0] — 2026-08-10
 

@@ -236,7 +236,7 @@ class TestDissimilarity:
     def test_small_ensembles_warn(self):
         rng = np.random.default_rng(0)
         small = rng.normal(size=(12, 3))
-        with pytest.warns(UserWarning, match="only 12 frames"):
+        with pytest.warns(UserWarning, match="12 independent conformations"):
             dissimilarity(small, small, -4, 4, x_num=30, s_num=2, random_state=0)
 
     def test_result_supports_dictionary_access(self, shifted_matrices):

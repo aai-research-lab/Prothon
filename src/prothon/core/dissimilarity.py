@@ -80,6 +80,7 @@ logger = get_logger("dissimilarity")
 __all__ = [
     "ComparisonResult",
     "benjamini_hochberg",
+    "effective_sample_size",
     "dissimilarity",
     "estimate_pdf",
     "jsd_local",
@@ -98,11 +99,19 @@ DEFAULT_SAMPLE_SIZE = 1000
 #: false-discovery-rate correction over a few hundred residues.
 DEFAULT_PERMUTATIONS = 100
 
-#: Below this many frames, a resampled density is mostly repeats of the same
-#: few conformations and the noise floor is optimistic. Warned about, not
-#: refused: a 20-model NMR ensemble is a legitimate thing to compare, as long
-#: as nobody mistakes its error bars for those of a long simulation.
-MIN_FRAMES_FOR_RESAMPLING = 50
+#: Below this many *effective* samples, a resampled density is mostly repeats
+#: of the same few conformations and the noise floor is optimistic. Warned
+#: about, not refused: a 20-model NMR ensemble is a legitimate thing to
+#: compare, as long as nobody mistakes its error bars for those of a long
+#: simulation.
+MIN_EFFECTIVE_SAMPLES = 50.0
+
+#: Below this many effective samples the comparison is refused. A weighted
+#: ensemble in which one conformer carries most of the probability has the
+#: information content of a handful of structures however many frames it
+#: holds, and a per-residue profile computed from it would be a description of
+#: those few structures wearing the name of an ensemble.
+MINIMUM_EFFECTIVE_SAMPLES = 10.0
 
 #: A column whose range is below this is constant to within floating point.
 #: Gaussian KDE on it raises a singular-covariance error, so it is handled.
@@ -160,6 +169,9 @@ class ComparisonResult:
     significant: np.ndarray
     noise_floor: float
     n_frames: tuple[int, int]
+    #: Kish effective sample size of each ensemble. Equal to the frame count
+    #: when unweighted; much smaller when a few conformers carry the mass.
+    effective_samples: tuple[float, float] = (0.0, 0.0)
     measure: str = ""
     #: Position of each feature on the reference ensemble, one-based. Set when
     #: the ensembles were reconciled and the columns are a subset; ``None``
@@ -208,11 +220,51 @@ class ComparisonResult:
             "noise_floor": float(self.noise_floor),
             "resolved": self.resolved,
             "n_frames": list(self.n_frames),
+            "effective_samples": list(self.effective_samples),
             "feature_index": (
                 None if self.feature_index is None else self.feature_index.tolist()
             ),
             **self.metadata,
         }
+
+
+def effective_sample_size(weights=None, n: int | None = None) -> float:
+    """How many independent conformations a weighted ensemble is worth.
+
+    Kish's formula, ``(sum w)^2 / sum(w^2)``. Equal weights give back the frame
+    count; concentrated weights give much less. A thousand frames in which one
+    conformer carries half the probability is worth about four independent
+    samples, and sizing a noise floor by the frame count instead would produce
+    error bars for an ensemble nobody sampled.
+
+    This is the same failure as the bootstrap null the 2.1 release replaced --
+    a quantity that looks like a sample size, is smaller than it appears, and
+    makes everything downstream look more certain than it is.
+
+        Kish, L. Survey Sampling; Wiley: New York, 1965.
+    """
+    if weights is None:
+        if n is None:
+            raise ValueError("Give either weights or a frame count.")
+        return float(n)
+    w = np.asarray(weights, dtype=np.float64).ravel()
+    total = w.sum()
+    if total <= 0:
+        return 0.0
+    return float(total**2 / np.sum(w**2))
+
+
+def _normalise(weights, n: int) -> np.ndarray | None:
+    """Weights summing to one, or ``None`` for uniform."""
+    if weights is None:
+        return None
+    w = np.asarray(weights, dtype=np.float64).ravel()
+    if w.size != n:
+        raise ValueError(f"{w.size} weights for {n} frames.")
+    total = w.sum()
+    if total <= 0:
+        raise ValueError("Weights sum to zero.")
+    return w / total
 
 
 def random_sample(
@@ -246,15 +298,22 @@ def _kappa_from_resultant(mean_resultant: float) -> float:
     return 1.0 / (r**3 - 4 * r**2 + 3 * r)
 
 
-def _vonmises_bandwidth(angles: np.ndarray) -> float:
+def _vonmises_bandwidth(angles: np.ndarray, weights: np.ndarray | None = None) -> float:
     """Taylor's plug-in concentration for a von Mises kernel.
 
     The exponentially scaled Bessel functions ``ive`` are used so the ratio can
     be formed without either factor overflowing: the ``exp`` terms in
     ``I_2(2k) / I_1(k)^2`` cancel exactly.
     """
-    n = angles.size
-    resultant = float(np.abs(np.mean(np.exp(1j * angles))))
+    # Both the concentration and the sample size are weighted quantities. Using
+    # the raw frame count for n would widen the kernel as if every conformation
+    # counted, which is the same over-confidence in reverse.
+    if weights is None:
+        n = float(angles.size)
+        resultant = float(np.abs(np.mean(np.exp(1j * angles))))
+    else:
+        n = effective_sample_size(weights)
+        resultant = float(np.abs(np.sum(weights * np.exp(1j * angles))))
     kappa_hat = _kappa_from_resultant(resultant)
 
     numerator = 3.0 * n * kappa_hat**2 * ive(2, 2 * kappa_hat)
@@ -268,7 +327,9 @@ def _vonmises_bandwidth(angles: np.ndarray) -> float:
     return float(np.clip(kappa, _KAPPA_MIN, _KAPPA_MAX))
 
 
-def _circular_pdf(values: np.ndarray, grid: np.ndarray) -> np.ndarray:
+def _circular_pdf(
+    values: np.ndarray, grid: np.ndarray, weights: np.ndarray | None = None
+) -> np.ndarray:
     """Von Mises kernel density on the circle.
 
     ``exp(k*cos(d)) / I_0(k)`` is written as ``exp(k*(cos(d)-1)) / ive(0, k)``,
@@ -276,11 +337,14 @@ def _circular_pdf(values: np.ndarray, grid: np.ndarray) -> np.ndarray:
     concentrations a tight torsion distribution produces, ``exp(k)`` alone
     exceeds a float64.
     """
-    kappa = _vonmises_bandwidth(values)
+    kappa = _vonmises_bandwidth(values, weights)
     deviation = grid[:, None] - values[None, :]
     kernel = np.exp(kappa * (np.cos(deviation) - 1.0))
-    density = kernel.sum(axis=1) / (values.size * 2.0 * np.pi * ive(0, kappa))
-    return density
+    if weights is None:
+        total = kernel.sum(axis=1) / values.size
+    else:
+        total = kernel @ weights
+    return total / (2.0 * np.pi * ive(0, kappa))
 
 
 def _constant_pdf(values: np.ndarray, grid: np.ndarray) -> np.ndarray:
@@ -301,6 +365,7 @@ def estimate_pdf(
     x_max: float,
     x_num: int,
     circular: bool = False,
+    weights=None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Estimate a one-dimensional density on a fixed grid.
 
@@ -316,6 +381,10 @@ def estimate_pdf(
         Number of grid points.
     circular
         Whether the values live on a circle.
+    weights
+        Probability per sample, or ``None`` for uniform. A deposited ensemble
+        stores these; treating its conformers as equally likely discards the
+        part of the answer that was hardest to obtain.
 
     Returns
     -------
@@ -325,20 +394,23 @@ def estimate_pdf(
     values = np.asarray(arr, dtype=np.float64).ravel()
     if values.size == 0:
         raise ValueError("Cannot estimate a density from an empty sample.")
+    w = _normalise(weights, values.size)
 
     if circular:
         grid = np.linspace(-np.pi, np.pi, x_num)
         values = np.mod(values + np.pi, 2 * np.pi) - np.pi
         if values.size < 2:
             return grid, _constant_pdf(values, grid)
-        return grid, _circular_pdf(values, grid)
+        return grid, _circular_pdf(values, grid, w)
 
     grid = np.linspace(x_min, x_max, x_num)
     if values.size < 2 or float(np.ptp(values)) < _CONSTANT_TOLERANCE:
         return grid, _constant_pdf(values, grid)
 
     try:
-        kde = gaussian_kde(values, bw_method="silverman")
+        # SciPy sizes the Silverman factor by the effective sample size when
+        # weights are given, which is the behaviour wanted here.
+        kde = gaussian_kde(values, bw_method="silverman", weights=w)
     except np.linalg.LinAlgError:  # pragma: no cover - degenerate input
         return grid, _constant_pdf(values, grid)
     return grid, kde(grid)
@@ -351,6 +423,8 @@ def jsd_local(
     x_max: float,
     x_num: int,
     circular: bool = False,
+    weights1=None,
+    weights2=None,
 ) -> np.ndarray:
     """Jensen-Shannon distance per feature between two representation matrices.
 
@@ -366,8 +440,8 @@ def jsd_local(
     n_features = ensemble1.shape[1]
     distances = np.zeros(n_features, dtype=np.float64)
     for i in range(n_features):
-        _, pdf1 = estimate_pdf(ensemble1[:, i], x_min, x_max, x_num, circular)
-        _, pdf2 = estimate_pdf(ensemble2[:, i], x_min, x_max, x_num, circular)
+        _, pdf1 = estimate_pdf(ensemble1[:, i], x_min, x_max, x_num, circular, weights1)
+        _, pdf2 = estimate_pdf(ensemble2[:, i], x_min, x_max, x_num, circular, weights2)
         value = jensenshannon(pdf1, pdf2, base=2)
         distances[i] = 0.0 if not np.isfinite(value) else value
     return distances
@@ -393,7 +467,9 @@ def benjamini_hochberg(p_values: np.ndarray) -> np.ndarray:
     return adjusted
 
 
-def _subsample(arr: np.ndarray, size: int, rng: np.random.Generator) -> np.ndarray:
+def _subsample(
+    arr: np.ndarray, size: int, rng: np.random.Generator, weights=None
+):
     """Take at most ``size`` frames, without replacement.
 
     Without replacement matters: the whole point of the permutation null is
@@ -401,8 +477,9 @@ def _subsample(arr: np.ndarray, size: int, rng: np.random.Generator) -> np.ndarr
     the same frame on both sides.
     """
     if arr.shape[0] <= size:
-        return arr
-    return arr[rng.choice(arr.shape[0], size, replace=False)]
+        return arr, weights
+    keep = rng.choice(arr.shape[0], size, replace=False)
+    return arr[keep], (None if weights is None else weights[keep] / weights[keep].sum())
 
 
 def _permutation_null(
@@ -414,6 +491,8 @@ def _permutation_null(
     circular: bool,
     n_permutations: int,
     rng: np.random.Generator,
+    weights_a=None,
+    weights_b=None,
 ) -> np.ndarray:
     """Distances between two groups formed by relabelling the pooled frames.
 
@@ -428,13 +507,29 @@ def _permutation_null(
     pooled = np.vstack([reference, other])
     total = pooled.shape[0]
 
+    # A frame and its weight are one observation. Under the null they are
+    # exchangeable together; permuting frames while leaving weights in place
+    # would attach each conformation's probability to a different structure.
+    weighted = weights_a is not None or weights_b is not None
+    pooled_w = (
+        np.concatenate([
+            np.full(n_reference, 1.0 / n_reference) if weights_a is None else weights_a,
+            np.full(total - n_reference, 1.0 / (total - n_reference))
+            if weights_b is None else weights_b,
+        ])
+        if weighted else None
+    )
+
     null = np.empty((n_permutations, reference.shape[1]), dtype=np.float64)
     for k in range(n_permutations):
         order = rng.permutation(total)
+        left, right = order[:n_reference], order[n_reference:]
+        wl = wr = None
+        if weighted:
+            wl, wr = pooled_w[left], pooled_w[right]
+            wl, wr = wl / wl.sum(), wr / wr.sum()
         null[k] = jsd_local(
-            pooled[order[:n_reference]],
-            pooled[order[n_reference:]],
-            x_min, x_max, x_num, circular,
+            pooled[left], pooled[right], x_min, x_max, x_num, circular, wl, wr
         )
     return null
 
@@ -478,6 +573,7 @@ def _split_half_floor(
     circular: bool,
     repeats: int,
     rng: np.random.Generator,
+    weights: tuple = (None, None),
 ) -> np.ndarray:
     """Distance between two disjoint halves of a single ensemble.
 
@@ -489,17 +585,21 @@ def _split_half_floor(
     what version 2.0 got wrong, and it is worth roughly a factor of two.
     """
     values = []
-    for ensemble in ensembles:
+    for ensemble, w in zip(ensembles, weights):
         half = ensemble.shape[0] // 2
         if half < 2:
             continue
         for _ in range(repeats):
             order = rng.permutation(ensemble.shape[0])
+            left, right = order[:half], order[half : 2 * half]
+            wl = wr = None
+            if w is not None:
+                wl, wr = w[left], w[right]
+                wl, wr = wl / wl.sum(), wr / wr.sum()
             values.append(
                 jsd_local(
-                    ensemble[order[:half]],
-                    ensemble[order[half : 2 * half]],
-                    x_min, x_max, x_num, circular,
+                    ensemble[left], ensemble[right],
+                    x_min, x_max, x_num, circular, wl, wr,
                 )
             )
     if not values:
@@ -555,6 +655,8 @@ def dissimilarity(
     circular: bool = False,
     sample_size: int = DEFAULT_SAMPLE_SIZE,
     n_permutations: int = DEFAULT_PERMUTATIONS,
+    weights_ref=None,
+    weights=None,
     alpha: float = 0.05,
     random_state: int | np.random.Generator | None = None,
     legacy: bool = False,
@@ -590,10 +692,17 @@ def dissimilarity(
         Ensembles larger than this are subsampled, without replacement, before
         the test. The reported dissimilarity is computed on the subsample too,
         so observation and null are measured on the same data.
+    weights_ref, weights
+        Probability per frame, or ``None`` for uniform. A deposited ensemble
+        stores these and a reweighted simulation produces them; ignoring them
+        answers a question about a distribution nobody sampled.
     alpha
         False-discovery rate for the per-feature test.
     random_state
         Seed or generator. Supply one for a reproducible result.
+    weights_ref, weights
+        Probability per frame for each ensemble, or ``None`` for uniform. The
+        densities, the permutation null and the noise floor all carry them.
     legacy
         Reproduce version 2.0: one pooled two-sided test, all features masked
         together, no FDR correction, linear grid even for torsions.
@@ -623,13 +732,51 @@ def dissimilarity(
             f"representations do not describe the same residues."
         )
 
-    for name, matrix in (("reference", ref_rep), ("comparison", rep)):
-        if matrix.shape[0] < MIN_FRAMES_FOR_RESAMPLING:
+    weights_ref = _normalise(weights_ref, ref_rep.shape[0])
+    weights = _normalise(weights, rep.shape[0])
+
+    if (weights_ref is None) != (weights is None):
+        # One deposited ensemble against one trajectory is a real comparison
+        # and a real asymmetry. Saying nothing produces a defensible-looking
+        # number that nobody questions.
+        warnings.warn(
+            "One ensemble carries per-frame weights and the other does not. The "
+            "unweighted one is treated as uniform, which is right for unbiased "
+            "sampling and wrong for anything that stored probabilities and lost "
+            "them on the way in.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    n_eff = (
+        effective_sample_size(weights_ref, ref_rep.shape[0]),
+        effective_sample_size(weights, rep.shape[0]),
+    )
+    for (name, matrix, w), neff in zip(
+        (("reference", ref_rep, weights_ref), ("comparison", rep, weights)), n_eff
+    ):
+        if neff < MINIMUM_EFFECTIVE_SAMPLES:
+            raise ValueError(
+                f"The {name} ensemble is worth {neff:.1f} independent conformations "
+                f"({matrix.shape[0]} frames"
+                + (", weights concentrated on a few" if w is not None else "")
+                + f"). Below {MINIMUM_EFFECTIVE_SAMPLES:.0f} there is nothing to "
+                f"estimate a distribution from, and a per-residue profile computed "
+                f"here would describe those few conformations wearing the name of "
+                f"an ensemble."
+            )
+        if neff < MIN_EFFECTIVE_SAMPLES:
+            detail = (
+                f"{matrix.shape[0]} frames"
+                if w is None
+                else f"{matrix.shape[0]} frames, worth {neff:.0f} after weighting"
+            )
             warnings.warn(
-                f"The {name} ensemble has only {matrix.shape[0]} frames. Resampled "
-                f"densities will largely repeat the same conformations, so the noise "
-                f"floor understates the true uncertainty and the p-values are "
-                f"optimistic. Treat this comparison as qualitative.",
+                f"The {name} ensemble is worth {neff:.0f} independent conformations "
+                f"({detail}). Resampled densities will largely repeat the same "
+                f"structures, so the noise floor understates the true uncertainty "
+                f"and the p-values are optimistic. Treat this comparison as "
+                f"qualitative.",
                 UserWarning,
                 stacklevel=2,
             )
@@ -645,7 +792,9 @@ def dissimilarity(
         x_min, x_max = -np.pi, np.pi
 
     if legacy:
-        raw_local = jsd_local(ref_rep, rep, x_min, x_max, x_num, False)
+        raw_local = jsd_local(
+            ref_rep, rep, x_min, x_max, x_num, False, weights_ref, weights
+        )  # noqa: E501
         between, within = _legacy_bootstrap(
             ref_rep, rep, x_min, x_max, x_num, s_num, sample_size, rng
         )
@@ -658,15 +807,16 @@ def dissimilarity(
         # Subsample once, then use the same matrices for the observed statistic
         # and for every relabelling: the null must be built from exactly the
         # data the observation was made on, or it calibrates the wrong thing.
-        reference_sample = _subsample(ref_rep, sample_size, rng)
-        other_sample = _subsample(rep, sample_size, rng)
+        reference_sample, w_ref = _subsample(ref_rep, sample_size, rng, weights_ref)
+        other_sample, w_other = _subsample(rep, sample_size, rng, weights)
 
         raw_local = jsd_local(
-            reference_sample, other_sample, x_min, x_max, x_num, use_circular
+            reference_sample, other_sample, x_min, x_max, x_num, use_circular,
+            w_ref, w_other,
         )
         null = _permutation_null(
             reference_sample, other_sample, x_min, x_max, x_num,
-            use_circular, n_permutations, rng,
+            use_circular, n_permutations, rng, w_ref, w_other,
         )
         p_values = _studentised_p_values(raw_local, null)
         noise_floor = float(
@@ -674,6 +824,7 @@ def dissimilarity(
                 _split_half_floor(
                     (reference_sample, other_sample),
                     x_min, x_max, x_num, use_circular, max(1, s_num // 2), rng,
+                    weights=(w_ref, w_other),
                 )
             )
         )
@@ -700,6 +851,7 @@ def dissimilarity(
         significant=significant,
         noise_floor=noise_floor,
         n_frames=(int(ref_rep.shape[0]), int(rep.shape[0])),
+        effective_samples=n_eff,
         measure=measure,
         metadata={
             "alpha": alpha,
@@ -707,6 +859,11 @@ def dissimilarity(
             "n_permutations": 0 if legacy else n_permutations,
             "sample_size": sample_size,
             "null": "bootstrap (2.0)" if legacy else "permutation",
+            "weighted": (weights_ref is not None) or (weights is not None),
+            "effective_samples": [
+                effective_sample_size(weights_ref, ref_rep.shape[0]),
+                effective_sample_size(weights, rep.shape[0]),
+            ],
             "legacy": legacy,
         },
     )
