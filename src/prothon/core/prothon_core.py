@@ -125,6 +125,7 @@ class Prothon:
         study.dimred_results = {}
         study.correspondences = {}
         study.distinguishability_results = {}
+        study.coverage_results = {}
         configure_logging(verbose)
 
         return study
@@ -164,6 +165,7 @@ class Prothon:
         self.dimred_results: dict[str, dict[str, dict[str, Any]]] = {}
         self.correspondences: dict[int, Any] = {}
         self.distinguishability_results: dict[str, dict[str, list]] = {}
+        self.coverage_results: dict[str, list] = {}
 
         configure_logging(verbose)
 
@@ -473,6 +475,62 @@ class Prothon:
             logger.info("%s", result.summary().replace("\n", "; "))
 
         self.distinguishability_results.setdefault(spec.name, {})[method] = results
+        return results
+
+    def coverage_and_fidelity(
+        self,
+        measure: str = "cbcn",
+        ref: int = 0,
+        **kwargs,
+    ) -> list[Any]:
+        """Split each difference into what is missed and what is invented.
+
+        A single dissimilarity says two ensembles differ. A model that never
+        opens a cryptic pocket and one that opens pockets no physics produces
+        are both wrong, score alike on any symmetric distance, and need
+        opposite work. This says which, at every residue.
+
+        The reference is the ensemble being matched -- molecular dynamics, or
+        an experimentally derived ensemble -- and the others are assessed
+        against it. The two roles are not interchangeable.
+        """
+        from .precision_recall import precision_recall
+        from .representation import resolve_measure
+
+        spec = resolve_measure(measure)
+        reps = self.get_representation_data(spec.name)
+        if reps is None:
+            reps = self.compute_ensemble_representation(spec.name)
+        if not 0 <= ref < len(reps):
+            raise ValueError(f"Reference index {ref} is out of range.")
+
+        results = []
+        for index, rep in enumerate(reps):
+            if index == ref:
+                continue
+            left, right, feature_index = self._align_columns(
+                reps[ref], rep, ref, index, spec.name
+            )
+            result = precision_recall(
+                left, right,
+                weights_ref=(
+                    None if self.ensembles is None else self.ensembles[ref].weights
+                ),
+                weights=(
+                    None if self.ensembles is None else self.ensembles[index].weights
+                ),
+                circular=spec.circular,
+                feature_index=feature_index,
+                random_state=self.random_state,
+                measure=spec.name,
+                **kwargs,
+            )
+            result.metadata["ensemble_index"] = index
+            result.metadata["reference_index"] = ref
+            results.append(result)
+            logger.info("ensemble %d: %s", index, result.summary().replace("\n", "; "))
+
+        self.coverage_results.setdefault(spec.name, []).extend(results)
         return results
 
     # -- manifest ---------------------------------------------------------

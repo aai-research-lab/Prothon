@@ -43,6 +43,7 @@ from .core.dissimilarity import (
 )
 from .core.ensemble_metrics import EnsembleComparison, distinguishability
 from .core.metrics import METRICS, describe_metric, feature_distance
+from .core.precision_recall import PrecisionRecall, precision_recall
 from .core.prothon_core import Prothon
 from .core.representation import (
     MEASURES,
@@ -55,6 +56,8 @@ __all__ = [
     "Prothon",
     "ComparisonResult",
     "EnsembleComparison",
+    "PrecisionRecall",
+    "precision_recall",
     "distinguishability",
     "MEASURES",
     "METRICS",

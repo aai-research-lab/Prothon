@@ -119,6 +119,30 @@ All notable changes to Prothon are recorded here. This project follows
   stale at the next tag and would let an sdist built without SCM metadata
   report a version it is not.
 
+### Added — what a model misses, and what it invents
+
+- **`Prothon.coverage_and_fidelity`** splits a difference into precision and
+  recall. A model that never opens a cryptic pocket and one that opens pockets
+  no physics produces are both wrong, score alike on any symmetric distance,
+  and need opposite work. On a constructed pair the mean Jensen-Shannon
+  distances are 0.26 and 0.21 — indistinguishable — while recall collapses for
+  the first and precision for the second.
+- **Per residue**, which is the part local order parameters make possible. The
+  machine-learning formulations return two numbers for a whole sample; here
+  the answer is not "recall 0.62" but "covers the fold, misses the 40–55 loop",
+  which is a sentence a model developer can act on.
+- **The support is a highest-density region**, so the null value is exact:
+  under identical distributions both quantities equal the coverage level by
+  construction, and a departure is readable against it.
+- **A per-feature floor**, measured by splitting the reference in half. Two
+  halves of one ensemble do not cover each other perfectly either. The floor
+  has to be per feature and not averaged: measured on a test protein the four
+  rigid residues floor at 0.956 and the four bimodal ones at 0.997, because a
+  smoothed multimodal density has a wide highest-density region and a nominal
+  95% level over-covers there. One averaged threshold flags about half the
+  unchanged residues by construction — which it did, in the first version of
+  this code, on residues that were identical in every ensemble.
+
 ### Refusals
 
 - **Coverage, not just identity.** Free end gaps make the aligner behave
