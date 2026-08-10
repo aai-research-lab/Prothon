@@ -81,6 +81,44 @@ All notable changes to Prothon are recorded here. This project follows
 - KS is offered because PENSA reports it, so a claim that one method finds
   something another misses can be checked on the same statistic.
 
+### Added — whole-ensemble comparison
+
+- **`Prothon.distinguishability`**, with two methods that read the *joint*
+  distribution rather than each feature separately. The per-residue metrics
+  cannot see a difference that lives in the relationship between features: two
+  loops that visit the same positions but no longer at the same time give an
+  identical profile at every residue and are a different ensemble. On a
+  constructed case with identical marginals, the largest per-residue
+  Jensen-Shannon distance is 0.06 — correctly, since each feature really does
+  have the same distribution — and both methods here find the difference.
+- **Maximum mean discrepancy** with a permutation null. The squared MMD is a
+  quadratic form in a signed weight vector, so a relabelling is a permutation
+  of that vector rather than a rebuild of the kernel: 200 permutations over a
+  thousand conformations a side take under a tenth of a second.
+- **Classifier two-sample test**, reporting how separable the ensembles are
+  and which features the classifier used — the interpretability MMD cannot
+  offer. A random forest rather than a linear model, because two ensembles
+  differing in *spread* rather than mean are not linearly separable and that
+  is a difference anybody would want found. Scored out of fold, since a
+  classifier scored on its own training data separates two halves of one
+  ensemble perfectly.
+- Classifier p-values below 1e-6 are reported as a bound. The asymptotic null
+  is a normal approximation whose far tail is not literal, and the folds share
+  training data so the predictions are not quite independent. A raw 1e-222 is
+  arithmetic, not evidence; the area under the curve is the number to quote.
+- Circular features are encoded as (cos, sin) for both methods. This matters
+  measurably to MMD's statistic and much less to the classifier, since a tree
+  splits at thresholds and can carve the wraparound out — and the permutation
+  null absorbs part of the distortion in any case. Stated that way because it
+  would be tidier, and wrong, to imply it is as severe as the earlier circular
+  problems in this release.
+
+### Fixed
+
+- `pyproject.toml` no longer pins `fallback_version`. A literal there goes
+  stale at the next tag and would let an sdist built without SCM metadata
+  report a version it is not.
+
 ### Refusals
 
 - **Coverage, not just identity.** Free end gaps make the aligner behave

@@ -81,7 +81,10 @@ where = ["src"]
 
 [tool.setuptools_scm]
 version_file = "src/prothon/_version.py"
-fallback_version = "2.1.0"
+# No fallback_version. A literal here is a version number that goes stale the
+# moment the next release is tagged, and would let an sdist built without SCM
+# metadata report a version it is not. The sdist ships both PKG-INFO and a
+# generated _version.py, so setuptools-scm resolves without a checkout.
 
 [tool.ruff]
 line-length = 100

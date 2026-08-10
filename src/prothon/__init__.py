@@ -41,6 +41,7 @@ from .core.dissimilarity import (
     estimate_pdf,
     jsd_local,
 )
+from .core.ensemble_metrics import EnsembleComparison, distinguishability
 from .core.metrics import METRICS, describe_metric, feature_distance
 from .core.prothon_core import Prothon
 from .core.representation import (
@@ -53,6 +54,8 @@ from .utils import load_trajectories
 __all__ = [
     "Prothon",
     "ComparisonResult",
+    "EnsembleComparison",
+    "distinguishability",
     "MEASURES",
     "METRICS",
     "describe_metric",

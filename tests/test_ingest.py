@@ -461,8 +461,9 @@ class TestStudyAcrossMolecules:
                      weights=w)
         study = Prothon.from_ensembles([a, b], output_dir=str(tmp_path),
                                        random_state=0)
-        with pytest.raises(ValueError, match="independent conformations"):
-            study.compare_ensembles(methods="cacn", s_num=2)
+        with pytest.warns(UserWarning, match="treated as uniform"):
+            with pytest.raises(ValueError, match="independent conformations"):
+                study.compare_ensembles(methods="cacn", s_num=2)
 
     def test_fewer_than_two_ensembles_is_refused(self):
         from prothon import Prothon

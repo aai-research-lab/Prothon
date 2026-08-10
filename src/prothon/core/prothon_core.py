@@ -124,6 +124,7 @@ class Prothon:
         study.comparison_results = {}
         study.dimred_results = {}
         study.correspondences = {}
+        study.distinguishability_results = {}
         configure_logging(verbose)
 
         return study
@@ -162,6 +163,7 @@ class Prothon:
         self.comparison_results: dict[str, list[ComparisonResult]] = {}
         self.dimred_results: dict[str, dict[str, dict[str, Any]]] = {}
         self.correspondences: dict[int, Any] = {}
+        self.distinguishability_results: dict[str, dict[str, list]] = {}
 
         configure_logging(verbose)
 
@@ -398,6 +400,81 @@ class Prothon:
         index = np.array([windows[i][0] + 1 for i in take_ref], dtype=int)
         return reference[:, take_ref], other[:, take_other], index
 
+    # -- whole-ensemble comparison ----------------------------------------
+
+    def distinguishability(
+        self,
+        measure: str = "cbcn",
+        method: str = "c2st",
+        ref: int = 0,
+        random_state: int | None = None,
+        **kwargs,
+    ) -> list[Any]:
+        """Ask whether each ensemble is distinguishable from the reference.
+
+        The per-residue metrics compare each feature on its own, and so cannot
+        see a difference that lives in the relationship between features -- two
+        loops that visit the same positions but no longer at the same time give
+        an identical profile at every residue and are a different ensemble.
+        Both methods here read the joint distribution.
+
+        Parameters
+        ----------
+        measure
+            Which representation to compare on.
+        method
+            ``c2st`` (default) trains a classifier and reports how separable
+            the ensembles are, with the features it leaned on. ``mmd`` runs a
+            kernel two-sample test, which gives a calibrated p-value and no
+            indication of where the difference is.
+        ref
+            Reference ensemble index.
+
+        Returns
+        -------
+        list of EnsembleComparison
+        """
+        from .ensemble_metrics import distinguishability as compare
+        from .representation import resolve_measure
+
+        spec = resolve_measure(measure)
+        reps = self.get_representation_data(spec.name)
+        if reps is None:
+            reps = self.compute_ensemble_representation(spec.name)
+        if not 0 <= ref < len(reps):
+            raise ValueError(f"Reference index {ref} is out of range.")
+
+        results = []
+        for index, rep in enumerate(reps):
+            if index == ref:
+                continue
+            left, right, feature_index = self._align_columns(
+                reps[ref], rep, ref, index, spec.name
+            )
+            extra = dict(kwargs)
+            if method.strip().lower() == "c2st":
+                extra["feature_index"] = feature_index
+            result = compare(
+                left, right, method,
+                weights_a=(
+                    None if self.ensembles is None else self.ensembles[ref].weights
+                ),
+                weights_b=(
+                    None if self.ensembles is None else self.ensembles[index].weights
+                ),
+                circular=spec.circular,
+                random_state=self.random_state if random_state is None else random_state,
+                measure=spec.name,
+                **extra,
+            )
+            result.metadata["ensemble_index"] = index
+            result.metadata["reference_index"] = ref
+            results.append(result)
+            logger.info("%s", result.summary().replace("\n", "; "))
+
+        self.distinguishability_results.setdefault(spec.name, {})[method] = results
+        return results
+
     # -- manifest ---------------------------------------------------------
 
     def _write_manifest(
@@ -461,6 +538,13 @@ class Prothon:
                 "random_state": self.random_state,
             },
             "results": [c.to_dict() for c in comparisons],
+            "distinguishability": {
+                method: [r.to_dict() for r in items]
+                for method, items in self.distinguishability_results.get(
+                    measure, {}
+                ).items()
+            }
+            or None,
         }
         with open(path, "w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2)
