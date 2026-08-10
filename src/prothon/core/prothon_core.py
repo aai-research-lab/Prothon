@@ -1,237 +1,379 @@
-"""
-Main Prothon class for the Prothon package.
+"""The study object: representations, comparisons, figures and a manifest.
 
-This class provides an API for:
-  • Computing ensemble representations using one or more local measures.
-  • Saving ensemble matrix representation data and generating heatmap plots.
-  • Computing global and local dissimilarity vs a reference ensemble.
-  • Generating both bar and line plots for global dissimilarity; the bar plot is color-coded with a fixed palette,
-    and the line plot is in black.
-  • Generating individual and combined local dissimilarity plots (with the x-axis beginning at 1 and marked at regular intervals).
-  • Performing dimensionality reduction (PCA, MDS, t-SNE) on ensemble data and saving 2D scatter plots in the same measure output directory.
-  • Retrieving stored representation data, dissimilarity results, and dimensionality reduction results.
-  • Replotting generated plots with custom styling.
+:class:`Prothon` holds the inputs to one comparison study and runs it. The
+public method names and their arguments are those of version 2.0, so existing
+scripts keep working; what is new is that every run also writes a
+``manifest.json`` recording what was compared, with which settings, under which
+version of the code. Version 2.0 wrote figures and CSVs with no record of the
+parameters that produced them, which is enough to reproduce a picture and not
+enough to reproduce a result.
 """
 
+from __future__ import annotations
+
+import json
 import os
+from collections.abc import Sequence
+from datetime import datetime, timezone
+from typing import Any
+
 import numpy as np
-from .representation import compute_ensemble_representation
-from .dissimilarity import dissimilarity
-from .plotting import (save_matrix_data_and_plot, plot_global_dissimilarity_bar, plot_global_dissimilarity_line,
-                       plot_local_dissimilarity, plot_combined_local_dissimilarity, dimensionality_reduction_plot,
-                       replot_global_dissimilarity, replot_local_dissimilarity, get_method_output_dir)
+
+from ..utils import configure_logging, get_logger, split_list_arg
+from .dissimilarity import ComparisonResult, dissimilarity
+from .plotting import (
+    dimensionality_reduction_plot,
+    get_method_output_dir,
+    plot_combined_local_dissimilarity,
+    plot_global_dissimilarity_bar,
+    plot_global_dissimilarity_line,
+    plot_local_dissimilarity,
+    replot_global_dissimilarity,
+    replot_local_dissimilarity,
+    save_matrix_data_and_plot,
+)
+from .representation import (
+    MEASURES,
+    compute_ensemble_representation,
+    resolve_measure,
+)
+
+logger = get_logger("core")
+
+__all__ = ["Prothon"]
+
+#: Techniques offered by ``dimred``. Declared once so the CLI, the API and the
+#: validator agree on the list.
+DIMRED_TECHNIQUES = ("pca", "mds", "tsne")
 
 
 class Prothon:
-    """
-    Main class for representing and comparing protein ensembles.
+    """A comparison study over two or more conformational ensembles.
 
     Parameters
     ----------
-    traj_files : list or str
-        List or comma-separated string of trajectory filenames.
-    topology : str
-        Path to the topology (PDB) file.
-    output_dir : str, optional
-        Root directory for output files. If not specified, each measure will create its own directory (e.g., cbcn_output).
-    verbose : bool, optional
-        If True, prints detailed progress information.
+    traj_files
+        Trajectory filenames, one per ensemble, as a list or a comma-separated
+        string. Each file is one ensemble: they are never concatenated.
+    topology
+        Topology file (PDB) shared by every trajectory.
+    output_dir
+        Root for the output tree. Each measure gets ``<output_dir>/<measure>_output``.
+        When omitted, those directories are created in the working directory.
+    verbose
+        Raise the logging level to DEBUG.
+    random_state
+        Seed for the resampling that produces the noise floor and the p-values.
+        Set it, and a rerun of the same study gives the same numbers.
+
+    Examples
+    --------
+    >>> study = Prothon(["a.dcd", "b.dcd"], "top.pdb", random_state=0)
+    >>> results = study.compare_ensembles(methods="cbcn")      # doctest: +SKIP
+    >>> results["cbcn"][0].resolved                            # doctest: +SKIP
+    True
     """
-    def __init__(self, traj_files, topology, output_dir=None, verbose=False):
-        if isinstance(traj_files, str):
-            self.traj_files = [traj.strip() for traj in traj_files.split(",")]
-        else:
-            self.traj_files = traj_files
+
+    def __init__(
+        self,
+        traj_files: str | Sequence[str],
+        topology: str,
+        output_dir: str | None = None,
+        verbose: bool = False,
+        random_state: int | None = None,
+    ) -> None:
+        files = split_list_arg(traj_files) if isinstance(traj_files, str) else list(traj_files)
+        if len(files) < 2:
+            raise ValueError(
+                f"A comparison needs at least two ensembles; {len(files)} given. "
+                f"Pass one trajectory file per ensemble."
+            )
+
+        missing = [path for path in files if not os.path.exists(path)]
+        if missing:
+            raise FileNotFoundError(
+                "Trajectory file(s) not found: " + ", ".join(missing)
+            )
+        if not os.path.exists(topology):
+            raise FileNotFoundError(f"Topology file not found: {topology}")
+
+        self.traj_files = files
         self.topology = topology
         self.output_dir = output_dir
         self.verbose = verbose
-        self.ensembles_data = {}      # key: measure, value: list of matrices
-        self.comparison_results = {}  # key: measure, value: list of comparison results
-        self.dimred_results = {}       # key: measure, value: dict of {technique: (reduced_data, labels, fig)}
+        self.random_state = random_state
 
-    def compute_ensemble_representation(self, measure: str):
-        """
-        Compute and store ensemble representations using the specified measure.
+        self.ensembles_data: dict[str, list[np.ndarray]] = {}
+        self.comparison_results: dict[str, list[ComparisonResult]] = {}
+        self.dimred_results: dict[str, dict[str, dict[str, Any]]] = {}
 
-        Parameters
-        ----------
-        measure : str
-            One of 'cbcn', 'cacn', 'caba', 'cata', or 'sasa'.
+        configure_logging(verbose)
 
-        Returns
-        -------
-        reps : list of np.ndarray
-            Computed representation matrices.
-        """
-        measure = measure.lower()
-        if self.verbose:
-            print(f"[Prothon] Computing ensemble representation using {measure.upper()}.")
-        reps = compute_ensemble_representation(self.traj_files, self.topology, measure, self.verbose)
-        self.ensembles_data[measure] = reps
+    # -- representation ---------------------------------------------------
+
+    def compute_ensemble_representation(self, measure: str) -> list[np.ndarray]:
+        """Compute and cache the representation matrices for one measure."""
+        spec = resolve_measure(measure)
+        logger.info("Computing %s representation", spec.name.upper())
+        reps = compute_ensemble_representation(
+            self.traj_files, self.topology, spec.name, self.verbose
+        )
+        self.ensembles_data[spec.name] = reps
         return reps
 
-    def compare_ensembles(self, methods='cbcn', ref: int = 0, x_num: int = 100, s_num: int = 5, dimred=None):
-        """
-        For one or more measures, compute representations, save matrix data and plots,
-        compute dissimilarity (global and local) vs the reference ensemble,
-        generate individual and combined local dissimilarity plots, and perform dimensionality reduction.
+    # -- comparison -------------------------------------------------------
+
+    def compare_ensembles(
+        self,
+        methods: str | Sequence[str] = "cbcn",
+        ref: int = 0,
+        x_num: int = 100,
+        s_num: int = 5,
+        dimred: str | Sequence[str] | None = None,
+        alpha: float = 0.05,
+        legacy: bool = False,
+    ) -> dict[str, list[ComparisonResult]]:
+        """Run the study: represent, compare, plot, and record.
 
         Parameters
         ----------
-        methods : str or list of str
-            Comma-separated string or list of measures (e.g., "cbcn,sasa").
-        ref : int, optional
-            Reference ensemble index (default: 0).
-        x_num : int, optional
-            Number of discretization points for KDE.
-        s_num : int, optional
-            Number of random samples for statistical testing.
-        dimred : str or list of str or None, optional
-            Dimensionality reduction techniques to use. Acceptable values are "pca", "mds", "tsne".
-            Can be provided as a comma-separated string or list. Default is all three.
-            If set to None, dimensionality reduction is skipped.
+        methods
+            Measures to use, as a list or comma-separated string.
+        ref
+            Index of the reference ensemble, into ``traj_files``.
+        x_num
+            Grid points per estimated density.
+        s_num
+            Resamples per ensemble for the noise floor and significance test.
+        dimred
+            Techniques to project with, or ``None`` to skip. Skipping is the
+            default because MDS over a long trajectory is expensive and the
+            projection is a visualisation rather than part of the measurement.
+        alpha
+            False-discovery rate for the per-residue test.
+        legacy
+            Reproduce version 2.0's statistics exactly.
 
         Returns
         -------
-        overall_results : dict
-            Dictionary with keys as measure names and values as lists of comparison results.
+        dict
+            Measure name to the list of :class:`ComparisonResult`, one per
+            non-reference ensemble.
         """
-        if isinstance(methods, str):
-            methods = [m.strip() for m in methods.split(",")]
-        overall_results = {}
-        for measure in methods:
-            if self.verbose:
-                print(f"\n[Prothon] Processing measure: {measure.upper()}")
-            reps = self.compute_ensemble_representation(measure)
-            # Save each ensemble’s matrix representation and heatmap.
-            for i, rep in enumerate(reps):
-                save_matrix_data_and_plot(rep, measure, i, self.output_dir, self.verbose)
-            overall_min = min(np.min(r) for r in reps)
-            overall_max = max(np.max(r) for r in reps)
-            if self.verbose:
-                print(f"[Prothon] KDE range for {measure.upper()}: min={overall_min}, max={overall_max}")
-            comparisons = []
-            ref_rep = reps[ref]
-            for i, rep in enumerate(reps):
-                if i == ref:
+        requested = split_list_arg(methods)
+        if not requested:
+            raise ValueError("No measures requested.")
+        specs = [resolve_measure(name) for name in requested]
+
+        if not 0 <= ref < len(self.traj_files):
+            raise ValueError(
+                f"Reference index {ref} is out of range for {len(self.traj_files)} "
+                f"ensembles (valid: 0 to {len(self.traj_files) - 1})."
+            )
+
+        techniques = [t.lower() for t in split_list_arg(dimred)]
+        unknown = [t for t in techniques if t not in DIMRED_TECHNIQUES]
+        if unknown:
+            raise ValueError(
+                f"Unknown dimensionality reduction technique(s): {', '.join(unknown)}. "
+                f"Available: {', '.join(DIMRED_TECHNIQUES)}."
+            )
+
+        overall: dict[str, list[ComparisonResult]] = {}
+
+        for spec in specs:
+            logger.info("Processing measure %s", spec.name.upper())
+            reps = self.compute_ensemble_representation(spec.name)
+
+            for index, rep in enumerate(reps):
+                save_matrix_data_and_plot(
+                    rep, spec.name, index, self.output_dir, self.verbose
+                )
+
+            grid_min = float(min(np.min(rep) for rep in reps))
+            grid_max = float(max(np.max(rep) for rep in reps))
+            logger.info(
+                "%s grid: [%.4g, %.4g]%s",
+                spec.name.upper(), grid_min, grid_max,
+                " (circular: overridden to [-pi, pi])" if spec.circular else "",
+            )
+
+            reference = reps[ref]
+            comparisons: list[ComparisonResult] = []
+
+            for index, rep in enumerate(reps):
+                if index == ref:
                     continue
-                global_d, local_d, p_val = dissimilarity(ref_rep, rep, overall_min, overall_max, x_num, s_num)
-                comparisons.append({
-                    'ensemble_index': i,
-                    'global_dissimilarity': global_d,
-                    'local_dissimilarity': local_d,
-                    'p_value': p_val
-                })
-                # Generate individual local dissimilarity plot (line plot in black).
-                plot_local_dissimilarity(measure, i, local_d, self.output_dir, self.verbose, color='k')
-            # Generate combined local dissimilarity plot.
-            plot_combined_local_dissimilarity(measure, comparisons, self.output_dir, self.verbose)
-            # Generate global dissimilarity plots (both bar and line)
-            plot_global_dissimilarity_bar(measure, comparisons, self.output_dir, self.verbose)
-            plot_global_dissimilarity_line(measure, comparisons, self.output_dir, self.verbose, color='k')
-            overall_results[measure] = comparisons
-            self.comparison_results[measure] = comparisons
+                result = dissimilarity(
+                    reference, rep, grid_min, grid_max,
+                    x_num=x_num, s_num=s_num,
+                    circular=spec.circular,
+                    alpha=alpha,
+                    random_state=self.random_state,
+                    legacy=legacy,
+                    ensemble_index=index,
+                    reference_index=ref,
+                    measure=spec.name,
+                )
+                comparisons.append(result)
+                plot_local_dissimilarity(
+                    spec.name, index, result.local_dissimilarity,
+                    self.output_dir, self.verbose, color="k",
+                    raw_local_diss=result.raw_local_dissimilarity,
+                )
 
-            # Dimensionality reduction:
-            if dimred is not None:
-                if isinstance(dimred, str):
-                    techniques = [tech.strip().lower() for tech in dimred.split(",")]
-                else:
-                    techniques = [tech.lower() for tech in dimred]
-                # Use the measure-specific output directory for saving these plots.
-                method_out_dir = get_method_output_dir(self.output_dir, measure)
-                dimred_dict = {}
-                for tech in techniques:
-                    rd_data, labels, fig = dimensionality_reduction_plot(reps, tech, method_out_dir, self.verbose)
-                    dimred_dict[tech] = {"reduced_data": rd_data, "labels": labels, "figure": fig}
-                self.dimred_results[measure] = dimred_dict
+            plot_combined_local_dissimilarity(
+                spec.name, comparisons, self.output_dir, self.verbose
+            )
+            plot_global_dissimilarity_bar(
+                spec.name, comparisons, self.output_dir, self.verbose
+            )
+            plot_global_dissimilarity_line(
+                spec.name, comparisons, self.output_dir, self.verbose, color="k"
+            )
 
-        return overall_results
+            overall[spec.name] = comparisons
+            self.comparison_results[spec.name] = comparisons
 
-    def get_representation_data(self, measure: str):
+            if techniques:
+                method_dir = get_method_output_dir(self.output_dir, spec.name)
+                projections: dict[str, dict[str, Any]] = {}
+                for technique in techniques:
+                    try:
+                        reduced, labels, figure = dimensionality_reduction_plot(
+                            reps, technique, method_dir, self.verbose
+                        )
+                    except ValueError as error:
+                        # A refused MDS should not lose the comparison that
+                        # already succeeded; it is a visualisation.
+                        logger.warning("Skipping %s: %s", technique, error)
+                        continue
+                    projections[technique] = {
+                        "reduced_data": reduced, "labels": labels, "figure": figure
+                    }
+                self.dimred_results[spec.name] = projections
+
+            self._write_manifest(spec.name, comparisons, x_num, s_num, alpha, legacy)
+
+        return overall
+
+    # -- manifest ---------------------------------------------------------
+
+    def _write_manifest(
+        self,
+        measure: str,
+        comparisons: Sequence[ComparisonResult],
+        x_num: int,
+        s_num: int,
+        alpha: float,
+        legacy: bool,
+    ) -> str:
+        """Record what was run, so the result can be reproduced rather than
+        merely admired."""
+        from .. import __version__
+
+        out_dir = get_method_output_dir(self.output_dir, measure)
+        path = os.path.join(out_dir, "manifest.json")
+        payload = {
+            "prothon_version": __version__,
+            "written_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "measure": measure,
+            "measure_description": MEASURES[measure].description,
+            "circular": MEASURES[measure].circular,
+            "topology": os.path.abspath(self.topology),
+            "trajectories": [os.path.abspath(p) for p in self.traj_files],
+            "reference_index": comparisons[0].reference_index if comparisons else None,
+            "parameters": {
+                "x_num": x_num,
+                "s_num": s_num,
+                "alpha": alpha,
+                "legacy_statistics": legacy,
+                "random_state": self.random_state,
+            },
+            "results": [c.to_dict() for c in comparisons],
+        }
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2)
+        logger.info("Wrote %s", path)
+        return path
+
+    # -- accessors --------------------------------------------------------
+
+    def get_representation_data(self, measure: str) -> list[np.ndarray] | None:
+        """Cached representation matrices for a measure, or ``None``."""
+        return self.ensembles_data.get(measure.strip().lower())
+
+    def get_comparison_results(self, measure: str) -> list[ComparisonResult] | None:
+        """Comparison results for a measure, or ``None``."""
+        return self.comparison_results.get(measure.strip().lower())
+
+    def get_dimred_results(self, measure: str) -> dict[str, dict[str, Any]] | None:
+        """Projections for a measure, keyed by technique, or ``None``."""
+        return self.dimred_results.get(measure.strip().lower())
+
+    def summary(self) -> str:
+        """A short human-readable account of what was found.
+
+        States the noise floor beside every dissimilarity, and says plainly
+        where a difference is smaller than the sampling can resolve.
         """
-        Retrieve stored ensemble representation matrices for a given measure.
+        if not self.comparison_results:
+            return "No comparisons have been run yet."
 
-        Parameters
-        ----------
-        measure : str
+        lines: list[str] = []
+        for measure, comparisons in self.comparison_results.items():
+            lines.append(f"{measure.upper()} (reference: ensemble {comparisons[0].reference_index})")
+            for c in comparisons:
+                verdict = (
+                    f"{c.n_significant}/{c.local_dissimilarity.size} residues differ"
+                    if c.resolved
+                    else "not resolvable at this sampling"
+                )
+                lines.append(
+                    f"  ensemble {c.ensemble_index}: "
+                    f"d = {c.global_dissimilarity:.4f} "
+                    f"(floor {c.noise_floor:.4f}) — {verdict}"
+                )
+            lines.append("")
+        return "\n".join(lines).rstrip()
 
-        Returns
-        -------
-        list of np.ndarray or None
+    # -- replotting -------------------------------------------------------
+
+    def replot_global_dissimilarity(self, measure: str, plot_type: str = "line", **kwargs):
+        """Rebuild the global dissimilarity figure with custom styling.
+
+        Returns the figure without writing it; the original saved figure is
+        left alone.
         """
-        return self.ensembles_data.get(measure.lower(), None)
-
-    def get_comparison_results(self, measure: str):
-        """
-        Retrieve dissimilarity comparison results for a given measure.
-
-        Parameters
-        ----------
-        measure : str
-
-        Returns
-        -------
-        Comparison results (list of dictionaries) if available.
-        """
-        return self.comparison_results.get(measure.lower(), None)
-
-    def get_dimred_results(self, measure: str):
-        """
-        Retrieve the dimensionality reduction results for a given measure.
-
-        Parameters
-        ----------
-        measure : str
-
-        Returns
-        -------
-        dict or None
-            Dictionary keyed by technique (e.g., "pca", "mds", "tsne") with reduced data, labels, and figure.
-        """
-        return self.dimred_results.get(measure.lower(), None)
-
-    def replot_global_dissimilarity(self, measure: str, plot_type: str = 'line', **kwargs):
-        """
-        Replot global dissimilarity with custom styling.
-
-        Parameters
-        ----------
-        measure : str
-        plot_type : str, one of {'line', 'bar'}
-        Additional keyword arguments are passed to the replot function.
-
-        Returns
-        -------
-        fig : matplotlib.figure.Figure
-        """
-        from .plotting import replot_global_dissimilarity
         results = self.get_comparison_results(measure)
         if results is None:
-            raise ValueError(f"No comparison results for measure {measure}.")
+            raise ValueError(
+                f"No comparison results for {measure!r}. Run compare_ensembles first."
+            )
         return replot_global_dissimilarity(measure, results, plot_type=plot_type, **kwargs)
 
     def replot_local_dissimilarity(self, measure: str, ensemble_index: int, **kwargs):
-        """
-        Replot local dissimilarity for a specified ensemble with custom styling.
+        """Rebuild a per-residue figure with custom styling.
 
-        Parameters
-        ----------
-        measure : str
-        ensemble_index : int
-        Additional keyword arguments are passed to the replot function.
-
-        Returns
-        -------
-        fig : matplotlib.figure.Figure
+        Pass ``raw=True`` to plot the unmasked values.
         """
-        from .plotting import replot_local_dissimilarity
         results = self.get_comparison_results(measure)
         if results is None:
-            raise ValueError(f"No comparison results for measure {measure}.")
-        comp = next((item for item in results if item['ensemble_index'] == ensemble_index), None)
-        if comp is None:
-            raise ValueError(f"No dissimilarity data for ensemble {ensemble_index} using measure {measure}.")
-        local_diss = comp['local_dissimilarity']
-        return replot_local_dissimilarity(measure, local_diss, ensemble_index, **kwargs)
-
+            raise ValueError(
+                f"No comparison results for {measure!r}. Run compare_ensembles first."
+            )
+        match = next(
+            (r for r in results if r.ensemble_index == ensemble_index), None
+        )
+        if match is None:
+            available = ", ".join(str(r.ensemble_index) for r in results)
+            raise ValueError(
+                f"No result for ensemble {ensemble_index} under {measure!r}. "
+                f"Available: {available}."
+            )
+        values = (
+            match.raw_local_dissimilarity
+            if kwargs.pop("raw", False)
+            else match.local_dissimilarity
+        )
+        return replot_local_dissimilarity(measure, values, ensemble_index, **kwargs)
