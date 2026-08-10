@@ -244,15 +244,34 @@ def _check_sampling(a, b, weights_a, weights_b, labels=("first", "second")):
 # ---------------------------------------------------------------------------
 # Maximum mean discrepancy
 # ---------------------------------------------------------------------------
+def _squared_distances(points: np.ndarray) -> np.ndarray:
+    """Pairwise squared Euclidean distances, in ``O(n^2)`` memory.
+
+    The obvious expression, ``((p[:, None, :] - p[None, :, :]) ** 2).sum(-1)``,
+    materialises an ``(n, n, d)`` array before reducing it. At the default
+    thousand conformations a side that is 2000 x 2000 x d, which for a
+    76-residue protein is 2.4 GB and for a 300-residue one is nine times that:
+    the process is killed rather than slowed, and only on real proteins, since
+    a test fixture with a dozen residues never approaches it.
+
+    Expanding the square instead -- ``|x-y|^2 = |x|^2 + |y|^2 - 2 x.y`` -- turns
+    it into one matrix product and never allocates the third dimension.
+    Rounding can make a diagonal entry very slightly negative, so the result is
+    clipped at zero.
+    """
+    square_norms = np.einsum("ij,ij->i", points, points)
+    squared = square_norms[:, None] + square_norms[None, :] - 2.0 * (points @ points.T)
+    np.maximum(squared, 0.0, out=squared)
+    return squared
+
+
 def _median_bandwidth(pooled: np.ndarray, rng, cap: int = 2000) -> float:
     """The median heuristic: set the kernel width to the median distance
     between points, so the kernel is neither flat nor a delta over this data."""
     sample = pooled if pooled.shape[0] <= cap else pooled[
         rng.choice(pooled.shape[0], cap, replace=False)
     ]
-    squared = np.maximum(
-        ((sample[:, None, :] - sample[None, :, :]) ** 2).sum(-1), 0.0
-    )
+    squared = _squared_distances(sample)
     upper = squared[np.triu_indices(sample.shape[0], 1)]
     median = float(np.median(upper))
     return median if median > 0 else 1.0
@@ -268,8 +287,24 @@ def maximum_mean_discrepancy(
     sample_size: int = DEFAULT_SAMPLE_SIZE,
     random_state=None,
     measure: str = "",
+    bandwidth: float | None = None,
+    standardise: bool = True,
 ) -> EnsembleComparison:
     """Kernel two-sample test between two ensembles.
+
+    Parameters
+    ----------
+    bandwidth
+        Gaussian kernel width. ``None`` uses the median heuristic: the kernel
+        is set to the median distance between points, so it is neither flat nor
+        a delta over this data. Fixing it is useful for checking the statistic
+        against a case with a known value.
+    standardise
+        Put the features on a common scale using the pooled sample. On by
+        default because the kernel measures Euclidean distance and a contact
+        number ranging over 0-12 would otherwise drown a torsion ranging over
+        one radian. Turn it off only when the scales are already comparable and
+        the absolute value of the statistic matters.
 
     Notes
     -----
@@ -281,7 +316,11 @@ def maximum_mean_discrepancy(
     take well under a second.
     """
     rng = np.random.default_rng(random_state)
-    x, y = _prepare(a, b, circular)
+    if standardise:
+        x, y = _prepare(a, b, circular)
+    else:
+        x = _encode(np.asarray(a, float), circular)
+        y = _encode(np.asarray(b, float), circular)
     wa = None if weights_a is None else np.asarray(weights_a, float)
     wb = None if weights_b is None else np.asarray(weights_b, float)
     n_eff = _check_sampling(x, y, wa, wb)
@@ -291,11 +330,11 @@ def maximum_mean_discrepancy(
     m, n = x.shape[0], y.shape[0]
 
     pooled = np.vstack([x, y])
-    sigma_squared = _median_bandwidth(pooled, rng)
-    squared = np.maximum(
-        ((pooled[:, None, :] - pooled[None, :, :]) ** 2).sum(-1), 0.0
+    sigma_squared = (
+        float(bandwidth) ** 2 if bandwidth is not None
+        else _median_bandwidth(pooled, rng)
     )
-    kernel = np.exp(-squared / (2.0 * sigma_squared))
+    kernel = np.exp(-_squared_distances(pooled) / (2.0 * sigma_squared))
 
     wa = np.full(m, 1.0 / m) if wa is None else wa / wa.sum()
     wb = np.full(n, 1.0 / n) if wb is None else wb / wb.sum()
@@ -317,13 +356,18 @@ def maximum_mean_discrepancy(
         p_value=p_value,
         effect=None,
         null_mean=float(null.mean()),
-        null_std=float(null.std(ddof=1)),
+        # A single relabelling has no spread. That is a legitimate way to call
+        # this -- asking for the statistic alone, with no test -- so it returns
+        # zero rather than a NaN from a division by zero degrees of freedom.
+        null_std=float(null.std(ddof=1)) if null.size > 1 else 0.0,
         n_samples=(m, n),
         effective_samples=n_eff,
         measure=measure,
         metadata={
             "kernel": "gaussian",
             "bandwidth_squared": sigma_squared,
+            "bandwidth_rule": "fixed" if bandwidth is not None else "median heuristic",
+            "standardised": standardise,
             "n_permutations": n_permutations,
             "circular_encoding": circular,
         },

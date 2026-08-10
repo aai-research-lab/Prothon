@@ -168,6 +168,37 @@ All notable changes to Prothon are recorded here. This project follows
   cited. A `references.md` page carries full citations, and a check confirms
   that every author named in the prose appears there.
 
+### Added — validation
+
+- **Real proteins, in real formats.** A network-marked suite runs every measure,
+  metric and method against structures from the MDTraj corpus: a 20-model NMR
+  ensemble, three single structures, an RNA hairpin, and 501 frames of dynamics
+  written as XTC, DCD and NetCDF. It runs in its own CI job; the ordinary suite
+  stays offline and fast.
+- **Estimators checked against closed forms** rather than against themselves:
+  the Gaussian and von Mises kernels against the densities they estimate,
+  Wasserstein-1 against its exact value for shifted normals, shifted uniforms
+  and nested uniforms, the Kolmogorov–Smirnov statistic against its exact value
+  for shifted uniforms, Benjamini–Hochberg against SciPy's implementation, and
+  the maximum mean discrepancy against its closed form for two Gaussians under
+  a Gaussian kernel — which it matches to within a few percent.
+- `maximum_mean_discrepancy` takes `bandwidth` and `standardise`, so the
+  statistic can be checked against a case with a known value instead of only
+  against its own null.
+
+### Fixed
+
+- **The kernel matrix no longer allocates a three-dimensional array.**
+  Computing pairwise distances as `((p[:, None, :] - p[None, :, :]) ** 2).sum(-1)`
+  materialises an `(n, n, d)` intermediate: at the default thousand
+  conformations a side that is 2.4 GB for a 76-residue protein and 9.6 GB for a
+  300-residue one, so the process was killed rather than slowed. Expanding the
+  square instead turns it into one matrix product — 9.6 GB becomes 90 MB. It
+  was invisible until the software met a protein, because no test fixture has
+  more than fourteen residues.
+- A null built from a single relabelling returned a NaN standard deviation from
+  a division by zero degrees of freedom. It returns zero.
+
 ### Refusals
 
 - **Coverage, not just identity.** Free end gaps make the aligner behave
