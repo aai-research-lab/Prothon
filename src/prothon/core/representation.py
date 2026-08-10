@@ -40,6 +40,7 @@ __all__ = [
     "MEASURES",
     "Measure",
     "compute_ensemble_representation",
+    "compute_representation",
     "compute_caba",
     "compute_cacn",
     "compute_cata",
@@ -300,6 +301,24 @@ _COMPUTE = {
     "cata": compute_cata,
     "sasa": compute_sasa,
 }
+
+
+def compute_representation(traj: md.Trajectory, measure: str) -> np.ndarray:
+    """Measure one already-loaded trajectory.
+
+    The file-based path loads and releases each trajectory in turn, so peak
+    memory is set by the largest ensemble rather than their total. An
+    :class:`~prothon.ingest.Ensemble` already holds its frames, so it needs a
+    way in that does not go back to disk.
+    """
+    spec = resolve_measure(measure)
+    matrix = np.asarray(_COMPUTE[spec.name](traj), dtype=np.float64)
+    if matrix.ndim != 2:
+        raise ValueError(
+            f"{spec.name} produced a {matrix.ndim}-dimensional result; "
+            f"expected a 2-D (frames, features) matrix."
+        )
+    return matrix
 
 
 def compute_ensemble_representation(

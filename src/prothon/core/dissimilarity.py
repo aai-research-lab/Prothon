@@ -138,6 +138,11 @@ class ComparisonResult:
     p_values
         Per-feature p-values after false-discovery-rate correction. In legacy
         mode this is the single pooled p-value broadcast across features.
+    feature_index
+        Where each surviving feature sits on the *reference* ensemble,
+        one-based. After reconciliation the columns are a subset of the
+        reference's, and plotting them at 1..n would silently renumber the
+        protein.
     noise_floor
         Mean within-ensemble Jensen-Shannon distance: the smallest difference
         this much sampling could resolve. A global dissimilarity below it is
@@ -156,6 +161,10 @@ class ComparisonResult:
     noise_floor: float
     n_frames: tuple[int, int]
     measure: str = ""
+    #: Position of each feature on the reference ensemble, one-based. Set when
+    #: the ensembles were reconciled and the columns are a subset; ``None``
+    #: means every column is present and the index is simply 1..n.
+    feature_index: np.ndarray | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -199,6 +208,9 @@ class ComparisonResult:
             "noise_floor": float(self.noise_floor),
             "resolved": self.resolved,
             "n_frames": list(self.n_frames),
+            "feature_index": (
+                None if self.feature_index is None else self.feature_index.tolist()
+            ),
             **self.metadata,
         }
 

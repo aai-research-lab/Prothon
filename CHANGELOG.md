@@ -40,6 +40,21 @@ All notable changes to Prothon are recorded here. This project follows
   common case is two constructs differing by a terminal overhang, and charging
   for it pushes the aligner to absorb the overhang into interior gaps.
 
+- **`Prothon.from_ensembles`**: a study over `Ensemble` objects rather than
+  filenames. Where the molecules differ, the residue correspondence is worked
+  out and each representation reduced to the columns that describe the same
+  positions — so a mutant, a truncated construct or a coarse-grained model can
+  be compared against a reference. A study built from filenames shares one
+  topology and is unchanged.
+- **Per-residue results are indexed by the reference ensemble's numbering.**
+  After reconciliation the surviving columns are a subset, and numbering them
+  1..n would put the label of one residue under the value of another — a
+  figure that looks entirely reasonable and is wrong. `ComparisonResult`
+  carries `feature_index`, and the figures use it.
+- The manifest records what was reconciled: aligned count, identity, coverage,
+  substitutions named as a paper would name them, unmatched residues on each
+  side, and the alignment itself.
+
 ### Refusals
 
 - **Coverage, not just identity.** Free end gaps make the aligner behave
@@ -53,6 +68,18 @@ All notable changes to Prothon are recorded here. This project follows
   complex lets the aligner slide one chain against another, which is cheap in
   score and nonsense as a map.
 - Conformations with differing atom counts within one ensemble.
+- A measure whose windows no difference between the molecules leaves intact —
+  `caba` and `cata` span three and four consecutive alpha carbons, and a
+  deletion can break every one of them. The error says which per-residue
+  measure to reach for instead.
+
+### Known limitations
+
+- Per-frame weights are carried through `Ensemble` and recorded, but the
+  Jensen-Shannon estimator does not yet apply them; every conformation is
+  treated as equally likely and a warning says so. Silently averaging over
+  conformer probabilities would be a correctness bug dressed as a default.
+  Weighted density estimation is next.
 
 ## [2.1.0] — 2026-08-10
 

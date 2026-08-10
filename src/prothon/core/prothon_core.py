@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import warnings
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any
@@ -35,6 +36,7 @@ from .plotting import (
 from .representation import (
     MEASURES,
     compute_ensemble_representation,
+    compute_representation,
     resolve_measure,
 )
 
@@ -74,6 +76,71 @@ class Prothon:
     True
     """
 
+    @classmethod
+    def from_ensembles(
+        cls,
+        ensembles: Sequence[Any],
+        output_dir: str | None = None,
+        verbose: bool = False,
+        random_state: int | None = None,
+    ) -> Prothon:
+        """A study over :class:`~prothon.ingest.Ensemble` objects.
+
+        The route that allows ensembles which are *not the same molecule*. A
+        study built from filenames shares one topology and so compares one
+        protein against itself under different conditions; ensembles carry
+        their own topologies, so a mutant, a truncated construct or a
+        coarse-grained model can be compared against a reference, and the
+        residue correspondence is worked out rather than assumed.
+
+        Examples
+        --------
+        >>> from prothon.ingest import Ensemble
+        >>> wt = Ensemble.from_trajectory("wt.xtc", "wt.pdb", label="wild type")
+        >>> mut = Ensemble.from_trajectory("mut.xtc", "mut.pdb", label="R42A")
+        >>> study = Prothon.from_ensembles([wt, mut], random_state=0)   # doctest: +SKIP
+        """
+        from ..ingest import Ensemble
+
+        items = list(ensembles)
+        if len(items) < 2:
+            raise ValueError(
+                f"A comparison needs at least two ensembles; {len(items)} given."
+            )
+        wrong = [e for e in items if not isinstance(e, Ensemble)]
+        if wrong:
+            raise TypeError(
+                "from_ensembles takes Ensemble objects. Use Prothon(paths, topology) "
+                "for filenames, or Ensemble.from_trajectory to build them."
+            )
+
+        study = cls.__new__(cls)
+        study.ensembles = items
+        study.traj_files = [e.label for e in items]
+        study.topology = None
+        study.output_dir = output_dir
+        study.verbose = verbose
+        study.random_state = random_state
+        study.ensembles_data = {}
+        study.comparison_results = {}
+        study.dimred_results = {}
+        study.correspondences = {}
+        configure_logging(verbose)
+
+        weighted = [e.label for e in items if e.weights is not None]
+        if weighted:
+            # Silently averaging over conformer probabilities would be a
+            # correctness bug dressed as a default. Saying so is the interim.
+            warnings.warn(
+                f"Per-frame weights are recorded for {', '.join(weighted)} but the "
+                f"Jensen-Shannon estimator does not yet apply them; every "
+                f"conformation is treated as equally likely. Weighted density "
+                f"estimation is planned for 3.0.",
+                UserWarning,
+                stacklevel=2,
+            )
+        return study
+
     def __init__(
         self,
         traj_files: str | Sequence[str],
@@ -103,9 +170,11 @@ class Prothon:
         self.verbose = verbose
         self.random_state = random_state
 
+        self.ensembles: list[Any] | None = None
         self.ensembles_data: dict[str, list[np.ndarray]] = {}
         self.comparison_results: dict[str, list[ComparisonResult]] = {}
         self.dimred_results: dict[str, dict[str, dict[str, Any]]] = {}
+        self.correspondences: dict[int, Any] = {}
 
         configure_logging(verbose)
 
@@ -115,9 +184,14 @@ class Prothon:
         """Compute and cache the representation matrices for one measure."""
         spec = resolve_measure(measure)
         logger.info("Computing %s representation", spec.name.upper())
-        reps = compute_ensemble_representation(
-            self.traj_files, self.topology, spec.name, self.verbose
-        )
+        if self.ensembles is not None:
+            reps = [
+                compute_representation(e.trajectory, spec.name) for e in self.ensembles
+            ]
+        else:
+            reps = compute_ensemble_representation(
+                self.traj_files, self.topology, spec.name, self.verbose
+            )
         self.ensembles_data[spec.name] = reps
         return reps
 
@@ -204,8 +278,12 @@ class Prothon:
             for index, rep in enumerate(reps):
                 if index == ref:
                     continue
+
+                left, right, feature_index = self._align_columns(
+                    reference, rep, ref, index, spec.name
+                )
                 result = dissimilarity(
-                    reference, rep, grid_min, grid_max,
+                    left, right, grid_min, grid_max,
                     x_num=x_num, s_num=s_num,
                     circular=spec.circular,
                     alpha=alpha,
@@ -215,11 +293,13 @@ class Prothon:
                     reference_index=ref,
                     measure=spec.name,
                 )
+                result.feature_index = feature_index
                 comparisons.append(result)
                 plot_local_dissimilarity(
                     spec.name, index, result.local_dissimilarity,
                     self.output_dir, self.verbose, color="k",
                     raw_local_diss=result.raw_local_dissimilarity,
+                    feature_index=feature_index,
                 )
 
             plot_combined_local_dissimilarity(
@@ -257,6 +337,65 @@ class Prothon:
 
         return overall
 
+    def _align_columns(self, reference, other, ref_index, other_index, measure):
+        """Reduce two representations to columns describing the same residues.
+
+        For a study built from filenames there is one topology, so the columns
+        already correspond and this returns them untouched. For a study built
+        from ensembles the molecules may differ, and the correspondence decides
+        which columns survive.
+
+        Returns the two matrices and the position of each surviving feature on
+        the *reference* ensemble, one-based -- which is what the per-residue
+        figures are indexed by. Numbering them 1..n after reconciliation would
+        put the label of one residue under the value of another, and the plot
+        would look entirely reasonable.
+        """
+        if self.ensembles is None:
+            return reference, other, None
+
+        from ..ingest import feature_residues, reconcile
+
+        key = (ref_index, other_index)
+        correspondence = self.correspondences.get(key)
+        if correspondence is None:
+            correspondence = reconcile(
+                self.ensembles[ref_index], self.ensembles[other_index]
+            )
+            self.correspondences[key] = correspondence
+
+        reference_topology = self.ensembles[ref_index].topology
+        other_topology = self.ensembles[other_index].topology
+
+        if correspondence.is_identical and reference.shape[1] == other.shape[1]:
+            return reference, other, None
+
+        take_ref, take_other = correspondence.columns_for(
+            measure, reference_topology, other_topology
+        )
+        if take_ref.size == 0:
+            raise ValueError(
+                f"No {measure} feature of {self.ensembles[ref_index].label} has a "
+                f"counterpart in {self.ensembles[other_index].label}, even though "
+                f"{correspondence.n_aligned} residues correspond. The measure is "
+                f"defined on windows that the differences between these molecules "
+                f"break; try a per-residue measure such as cacn or sasa."
+            )
+
+        dropped = reference.shape[1] - take_ref.size
+        if dropped:
+            logger.info(
+                "%s vs %s: %d of %d %s columns comparable (%d dropped)",
+                self.ensembles[ref_index].label,
+                self.ensembles[other_index].label,
+                take_ref.size, reference.shape[1], measure, dropped,
+            )
+
+        windows = feature_residues(reference_topology, measure)
+        # A window measure spans several residues; label it by its first.
+        index = np.array([windows[i][0] + 1 for i in take_ref], dtype=int)
+        return reference[:, take_ref], other[:, take_other], index
+
     # -- manifest ---------------------------------------------------------
 
     def _write_manifest(
@@ -280,9 +419,36 @@ class Prothon:
             "measure": measure,
             "measure_description": MEASURES[measure].description,
             "circular": MEASURES[measure].circular,
-            "topology": os.path.abspath(self.topology),
-            "trajectories": [os.path.abspath(p) for p in self.traj_files],
+            # A study over Ensemble objects has no single shared topology --
+            # that is the point of it. Provenance for those lives on each
+            # ensemble instead, under "ensembles" below.
+            "topology": os.path.abspath(self.topology) if self.topology else None,
+            "trajectories": (
+                None
+                if self.ensembles is not None
+                else [os.path.abspath(p) for p in self.traj_files]
+            ),
             "reference_index": comparisons[0].reference_index if comparisons else None,
+            "ensembles": (
+                [e.to_dict() for e in self.ensembles] if self.ensembles else None
+            ),
+            "correspondences": [
+                {
+                    "reference_index": a,
+                    "ensemble_index": b,
+                    "n_aligned": c.n_aligned,
+                    "identity": c.identity,
+                    "coverage": c.coverage,
+                    "substitutions": [str(x) for x in c.substitutions],
+                    "unmatched_reference": c.unmatched_a.tolist(),
+                    "unmatched_other": c.unmatched_b.tolist(),
+                    "alignment": [
+                        {"reference": al.gapped_a, "other": al.gapped_b}
+                        for al in c.alignments
+                    ],
+                }
+                for (a, b), c in sorted(self.correspondences.items())
+            ] or None,
             "parameters": {
                 "x_num": x_num,
                 "s_num": s_num,

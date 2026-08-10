@@ -215,6 +215,7 @@ def plot_local_dissimilarity(
     verbose: bool = False,
     color: str = "k",
     raw_local_diss: np.ndarray | None = None,
+    feature_index: np.ndarray | None = None,
 ) -> str:
     """Per-residue dissimilarity for one ensemble.
 
@@ -224,7 +225,14 @@ def plot_local_dissimilarity(
     them, and reading a flat zero as "no change" is the easy mistake.
     """
     out_dir = get_method_output_dir(output_dir, measure)
-    x = np.arange(1, len(local_diss) + 1)
+    # After reconciliation the columns are a subset of the reference's, so
+    # plotting them at 1..n would renumber the protein and put the label of
+    # one residue under the value of another.
+    x = (
+        np.arange(1, len(local_diss) + 1)
+        if feature_index is None
+        else np.asarray(feature_index)
+    )
 
     fig, ax = _new_axes()
     if raw_local_diss is not None:
@@ -239,7 +247,7 @@ def plot_local_dissimilarity(
     ax.set_xlabel("Residue / feature index")
     ax.set_ylabel("Local dissimilarity")
     ax.set_title(f"{measure.upper()} local dissimilarity — ensemble {ensemble_index}")
-    ax.xaxis.set_major_locator(MultipleLocator(_tick_step(x[-1])))
+    ax.xaxis.set_major_locator(MultipleLocator(_tick_step(int(x[-1]))))
     if raw_local_diss is not None:
         ax.legend(frameon=False, fontsize="small")
     return _finish(
@@ -262,14 +270,15 @@ def plot_combined_local_dissimilarity(
     longest = 1
     for position, comparison in enumerate(comparisons):
         values = np.asarray(comparison["local_dissimilarity"])
-        x = np.arange(1, len(values) + 1)
-        longest = max(longest, len(values))
+        index = comparison.get("feature_index")
+        x = np.arange(1, len(values) + 1) if index is None else np.asarray(index)
+        longest = max(longest, int(x[-1]) if len(x) else 1)
         ax.plot(
             x, values, marker="o", markersize=3, linestyle="-",
             color=colors[position], label=f"ensemble {comparison['ensemble_index']}",
         )
 
-    ax.set_xlabel("Residue / feature index")
+    ax.set_xlabel("Residue / feature index (reference numbering)")
     ax.set_ylabel("Local dissimilarity")
     ax.set_title(f"{measure.upper()} local dissimilarity vs reference")
     ax.xaxis.set_major_locator(MultipleLocator(_tick_step(longest)))

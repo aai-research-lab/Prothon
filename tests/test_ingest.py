@@ -8,6 +8,8 @@ which breaks the windows the angular measures are defined on.
 
 from __future__ import annotations
 
+import json
+
 import mdtraj as md
 import numpy as np
 import pytest
@@ -336,3 +338,99 @@ class TestFeatureColumns:
         aligned_wt = rep_wt[:, take_wt]
         aligned_mut = rep_mut[:, take_mut]
         assert aligned_wt.shape[1] == aligned_mut.shape[1] > 0
+
+
+class TestStudyAcrossMolecules:
+    """`Prothon.from_ensembles` end to end, where the molecules differ."""
+
+    def _study(self, tmp_path, wt_seq, mut_seq, compact_from=8, n=300):
+        from prothon import Prothon
+
+        wt = Ensemble(build(as_residues(wt_seq), n_frames=n, seed=1), label="wild type")
+        mut = Ensemble(
+            build(as_residues(mut_seq), n_frames=n, seed=2, compact_from=compact_from),
+            label="mutant",
+        )
+        return Prothon.from_ensembles(
+            [wt, mut], output_dir=str(tmp_path), random_state=0
+        )
+
+    def test_a_glycine_mutant_can_be_compared_at_all(self, tmp_path):
+        # F5G removes a C-beta, so the two representations have different
+        # widths and the file-based route refuses outright.
+        study = self._study(tmp_path, "ACDEFHIKLMNPQR", "ACDEGHIKLMNPQR")
+        results = study.compare_ensembles(methods="cbcn", s_num=2)
+        assert len(results["cbcn"]) == 1
+        assert results["cbcn"][0].resolved
+
+    def test_features_are_labelled_by_reference_numbering(self, tmp_path):
+        """The mistake this exists to prevent.
+
+        After reconciliation the columns are a subset of the reference's.
+        Numbering them 1..n would put the label of one residue under the value
+        of another, and the figure would look entirely reasonable.
+        """
+        study = self._study(tmp_path, "ACDEFHIKLMNPQR", "ACDEGHIKLMNPQR")
+        result = study.compare_ensembles(methods="cbcn", s_num=2)["cbcn"][0]
+
+        index = result.feature_index
+        assert index is not None
+        assert len(index) == len(result.local_dissimilarity)
+        # Residue 5 is the glycine: it has no C-beta in the mutant, so it
+        # cannot appear, and everything after it keeps its own number.
+        assert 5 not in index
+        assert list(index) == [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+
+    def test_identical_molecules_need_no_reconciliation(self, tmp_path):
+        study = self._study(tmp_path, "ACDEFHIKLMNPQR", "ACDEFHIKLMNPQR")
+        result = study.compare_ensembles(methods="cbcn", s_num=2)["cbcn"][0]
+        # Nothing was dropped, so the index stays implicit.
+        assert result.feature_index is None
+
+    def test_manifest_records_the_correspondence(self, tmp_path):
+        study = self._study(tmp_path, "ACDEFHIKLMNPQR", "ACDEGHIKLMNPQR")
+        study.compare_ensembles(methods="cbcn", s_num=2)
+        manifest = json.loads((tmp_path / "cbcn_output" / "manifest.json").read_text())
+
+        assert manifest["ensembles"][0]["label"] == "wild type"
+        corr = manifest["correspondences"][0]
+        assert corr["substitutions"] == ["F5G"]
+        assert corr["n_aligned"] == 14
+        assert corr["coverage"] == 1.0
+        assert corr["alignment"][0]["reference"] == "ACDEFHIKLMNPQR"
+
+    def test_a_truncated_construct_is_compared_on_what_it_shares(self, tmp_path):
+        from prothon import Prothon
+
+        full = Ensemble(build(as_residues("ACDEFHIKLMNPQR"), n_frames=300, seed=1),
+                        label="full")
+        short = Ensemble(build(as_residues("EFHIKLMNPQR"), n_frames=300, seed=2),
+                         label="construct")
+        study = Prothon.from_ensembles([full, short], output_dir=str(tmp_path),
+                                       random_state=0)
+        result = study.compare_ensembles(methods="cacn", s_num=2)["cacn"][0]
+        # The construct starts at the full protein's residue 4.
+        assert result.feature_index[0] == 4
+        assert result.feature_index[-1] == 14
+
+    def test_weights_are_recorded_but_not_yet_applied(self, tmp_path):
+        from prothon import Prothon
+
+        a = Ensemble(build(as_residues("ACDEF"), n_frames=60), label="a")
+        b = Ensemble(build(as_residues("ACDEF"), n_frames=60, seed=1), label="b",
+                     weights=np.linspace(1, 2, 60))
+        with pytest.warns(UserWarning, match="does not yet apply them"):
+            Prothon.from_ensembles([a, b], output_dir=str(tmp_path))
+
+    def test_fewer_than_two_ensembles_is_refused(self):
+        from prothon import Prothon
+
+        one = Ensemble(build(as_residues("ACDEF")), label="only")
+        with pytest.raises(ValueError, match="at least two"):
+            Prothon.from_ensembles([one])
+
+    def test_paths_are_not_ensembles(self):
+        from prothon import Prothon
+
+        with pytest.raises(TypeError, match="Ensemble objects"):
+            Prothon.from_ensembles(["a.dcd", "b.dcd"])
