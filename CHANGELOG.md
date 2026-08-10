@@ -133,6 +133,18 @@ for regenerating published figures. It is documented as unsound.
 - Ensembles with fewer than 50 frames now emit a warning that the noise floor
   understates the true uncertainty.
 
+### Licence
+
+Relicensed from GPL-3.0 to **MIT**, matching the rest of the AAI Research Lab
+tooling and removing an adoption barrier: a number of industrial groups have
+blanket policies against GPL dependencies, and they are a large part of the
+audience for ensemble comparison.
+
+The change is not retroactive. Versions up to and including 2.0.0 were
+distributed under GPL-3.0 and copies obtained under it stay governed by it.
+Nothing in the dependency stack required copyleft — MDTraj is LGPL, and NumPy,
+SciPy, Matplotlib and scikit-learn are BSD.
+
 ### Known limitations
 
 - The permutation null assumes frames are exchangeable. Frames from a single

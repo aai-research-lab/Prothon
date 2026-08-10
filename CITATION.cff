@@ -8,7 +8,7 @@ abstract: >-
   corresponding distributions. The local representation requires no structural
   superposition, so the cost is linear rather than quadratic in ensemble size.
 type: software
-license: GPL-3.0-or-later
+license: MIT
 repository-code: "https://github.com/aai-research-lab/Prothon"
 authors:
   - family-names: Aina

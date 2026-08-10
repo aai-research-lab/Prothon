@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "Efficient comparison of protein conformational ensembles using local order parameters"
 readme = "README.md"
 requires-python = ">=3.9, <3.14"
-license = { text = "GPL-3.0-or-later" }
+license = { text = "MIT" }
 authors = [
     { name = "Adekunle Aina", email = "kunleaina@gmail.com" },
 ]
@@ -28,7 +28,7 @@ keywords = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",

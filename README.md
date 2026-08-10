@@ -6,7 +6,7 @@
 
 [![DOI](https://img.shields.io/badge/DOI-10.1021%2Facs.jcim.3c00145-blue)](https://doi.org/10.1021/acs.jcim.3c00145)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://pypi.org/project/prothon/)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-yellow.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 </div>
 
@@ -141,7 +141,12 @@ the 2023 paper is preserved unchanged under `legacy/`.
 
 ## License
 
-GNU GPL v3 or later. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
+
+Prothon was distributed under GPL-3.0 up to and including version 2.0.0.
+From 2.1.0 the project is MIT-licensed. Copies already obtained under
+GPL-3.0 remain governed by that licence — relicensing is not retroactive
+and takes nothing away from anyone who has a copy.
 
 ---
 

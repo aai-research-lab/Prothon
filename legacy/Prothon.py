@@ -22,7 +22,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 __author__ = "Aina Adekunle"
 __copyright__ = "Copyright 2023, Aina Adekunle"
-__license__ = "GPL"
+__license__ = "MIT"
 __version__ = "1.0.1"
 __maintainer__ = "Aina Adekunle"
 __email__ = "aina@phas.ubc.ca"
