@@ -1,126 +1,154 @@
+<div align="center">
+
 # Prothon
 
-**Prothon** is a Python package for the efficient comparison of protein ensembles using local order parameters.  
-It is based on the work:  
-_Adekunle Aina, Shawn C.C. Hsueh, and Steven S. Plotkin.  
-PROTHON: A Local Order Parameter-Based Method for Efficient Comparison of Protein Ensembles.  
-_J. Chem. Inf. Model._
+**How different are two protein ensembles — and is the difference real?**
 
-## Features
+[![DOI](https://img.shields.io/badge/DOI-10.1021%2Facs.jcim.3c00145-blue)](https://doi.org/10.1021/acs.jcim.3c00145)
+[![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://pypi.org/project/prothon/)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-yellow.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-- **Ensemble Representation:** Compute ensemble representations using local structural measures such as:
-  - C-beta contact number (**cbcn**)
-  - C-alpha contact number (**cacn**)
-  - Virtual C-alpha–C-alpha bond angles (**caba**)
-  - Virtual C-alpha–C-alpha torsion angles (**cata**)
-  - Solvent Accessible Surface Area (**sasa**)
-  
-- **Dissimilarity Analysis:** Automatically computes both local (per-residue/feature) and global dissimilarity between ensembles using a Jensen–Shannon distance–based metric with statistical significance testing.
+</div>
 
-- **Output Generation:**  
-  - Saves ensemble matrix representations as CSV files  
-  - Generates heatmap plots of the ensemble matrices (with color bar ticks at regular intervals)  
-  - Produces both bar and line plots for global dissimilarity (the bar plot uses a fixed color palette matching the dimensionality reduction plot, and the line plot defaults to black)  
-  - Creates individual and combined local dissimilarity plots with x-axis tick marks spaced at regular intervals (e.g., 2, 4, 6; 5, 10, 15; or 10, 20, 30)
-
-- **Dimensionality Reduction:**  
-  - Offers dimensionality reduction (PCA, MDS, and t-SNE) on the ensemble representation data.  
-  - Generates 2D scatter plots with each ensemble shown in a distinct color, using the fixed palette (first 12 colors: red, gold, darkgreen, blue, darkorchid, lightcoral, orange, lime, deepskyblue, magenta, navy, cyan; additional ensembles get random colors).  
-  - The reduced data and plot are saved into the same measure output directory (e.g., `cbcn_output`).
-
-- **API Access and Replotting:**  
-  - Retrieve raw ensemble representations, dissimilarity results, and dimensionality-reduction data.  
-  - Replot and customize all generated figures via provided API methods.
-
-## Installation
-
-Ensure that you have Python 3 installed. Install the package using pip from the package root (where setup.py is located):
+---
 
 ```bash
-pip install .
+prothon -traj wild_type.dcd,mutant.dcd -top topology.pdb -m cbcn
 ```
 
-## Command-Line Usage
+```
+CBCN (reference: ensemble 0)
+  ensemble 1: d = 0.2841 (floor 0.0472) — 34/76 residues differ
+```
 
-After installation, the prothon command becomes available in your shell. The following example demonstrates a typical run using the CLI:
+Prothon represents each conformational ensemble as a vector of probability
+distributions over **local order parameters** — contact numbers, virtual bond
+and torsion angles, solvent accessibility — and measures the Jensen–Shannon
+distance between corresponding distributions. Because the representation is
+local, no structural superposition is needed and the cost is linear in the
+number of frames rather than quadratic, which is what makes ensembles of tens
+of thousands of conformations tractable.
+
+**It reports what it cannot resolve.** Two independent halves of a *single*
+ensemble have a non-zero Jensen–Shannon distance, because a finite sample never
+reproduces a continuous distribution exactly. That self-distance is the
+resolution limit of the comparison, and Prothon measures it, prints it beside
+every result, and draws it on every figure. A difference smaller than the floor
+is reported as unresolvable rather than as a small difference.
+
+## Install
 
 ```bash
-prothon -traj "Q99.dcd,Q95.dcd,Q85.dcd,Q75.dcd" -top topology.pdb -m cbcn --dimred tsne 
+pip install prothon
+prothon --info
 ```
 
-### Explanation of CLI arguments:
+## Use it
 
--    -traj or --trajectories
-    A comma-separated list (or glob pattern) of trajectory files.
+From the command line:
 
--    -top or --topology
-    The topology file in PDB format.
+```bash
+prothon -traj a.dcd,b.dcd,c.dcd -top top.pdb -m cbcn,cata -o results --seed 0
+```
 
--    -m or --methods
-    A comma-separated list of the representation measures to use (e.g., "cbcn,sasa"). In the above example, only cbcn is used.
+| flag | meaning |
+|---|---|
+| `-traj` | Trajectory files, one per ensemble, comma-separated. Never concatenated. |
+| `-top` | Topology (PDB), shared by all of them. |
+| `-m` | Measures: `cbcn`, `cacn`, `caba`, `cata`, `sasa`. |
+| `-r` | Reference ensemble index (default 0). |
+| `-o` | Output root. Each measure writes `<measure>_output/`. |
+| `-d` | Projections: `pca`, `mds`, `tsne`. Off by default. |
+| `--seed` | Set it, and the run is reproducible. |
 
--    -d or --dimred
-    A comma-separated list of dimensionality reduction techniques to perform (e.g., "pca,mds,tsne"). In the example, only tsne is requested.
-
--    -o or --output
-    The root output directory where all generated data and plots are saved. If not provided, the package creates measure-specific directories (e.g., cbcn_output).
-
--    -v or --verbose
-    Increases the verbosity for detailed processing messages.
-
-The CLI will save the matrix representations, dissimilarity plots (global and local, including a combined local plot), and (if requested) the dimensionality reduction plot in the output directory.
-
-## API Usage
-
-You can also use Prothon programmatically from within Python. Below is an example:
+Or from Python:
 
 ```python
-from Prothon import Prothon
-import matplotlib.pyplot as plt
+from prothon import Prothon
 
-# List of trajectory files and topology file path
-traj_list = ["Q99.dcd", "Q95.dcd", "Q85.dcd", "Q75.dcd"]
-topology = "topology.pdb"
+study = Prothon(["wild_type.dcd", "mutant.dcd"], "topology.pdb", random_state=0)
+results = study.compare_ensembles(methods="cbcn")
 
-# Create a Prothon instance with desired output directory and verbose output.
-prothon = Prothon(traj_files=traj_list, topology=topology, output_dir="my_outputs", verbose=True)
+comparison = results["cbcn"][0]
+comparison.global_dissimilarity   # 0.2841
+comparison.noise_floor            # 0.0472 — the resolution limit
+comparison.resolved               # True: the difference clears the floor
+comparison.significant            # bool array, one per residue
+comparison.local_dissimilarity    # per residue, zero where not significant
+comparison.raw_local_dissimilarity  # per residue, unmasked
 
-# Compare ensembles using the cbcn measure
-# Use dimensionality reduction with all three techniques by default:
-results = prothon.compare_ensembles(methods="cbcn", ref=0, dimred="pca,mds,tsne")
-
-# Retrieve and work with the computed data:
-cbcn_data = prothon.get_representation_data("cbcn")
-comparison_results = prothon.get_comparison_results("cbcn")
-dimred_results = prothon.get_dimred_results("cbcn")
-
-# To replot a global dissimilarity plot with custom styling:
-fig_global = prothon.replot_global_dissimilarity("cbcn", plot_type="bar", color=None,
-                                                 xlabel="Ensemble Index", ylabel="Global Dissimilarity",
-                                                 title="Custom CBcN Global Dissimilarity")
-plt.show()
-
-# To replot local dissimilarity for ensemble 1 with customized tick intervals:
-fig_local = prothon.replot_local_dissimilarity("cbcn", ensemble_index=1, color="black",
-                                               xlabel="Residue Index", ylabel="Local Dissimilarity",
-                                               title="Custom CBcN Local Dissimilarity for Ensemble 1")
-plt.show()
-
-# Dimensionality reduction scatter plot data can be accessed and re-plotted too.
-# For example, using PCA:
-dimred_pca = dimred_results.get("pca")
-if dimred_pca:
-    reduced_data = dimred_pca["reduced_data"]
-    labels = dimred_pca["labels"]
-    # Custom plotting code can be applied here if required.
+print(study.summary())
 ```
+
+Each measure writes a directory containing the representation matrices as CSV,
+heatmaps, global and per-residue dissimilarity figures, and a `manifest.json`
+recording the inputs, parameters, seed and version that produced them.
+
+## The measures
+
+| name | quantity | circular |
+|---|---|---|
+| `cbcn` | C-beta contact number, smooth cutoff | |
+| `cacn` | C-alpha contact number, smooth cutoff | |
+| `caba` | Virtual Cα–Cα–Cα bond angle | |
+| `cata` | Virtual Cα torsion angle | yes |
+| `sasa` | Per-residue solvent accessible surface area | |
+
+Torsions live on a circle, so they are estimated with a von Mises kernel on a
+grid spanning a full turn. Each measure declares this, so the call site cannot
+forget it.
+
+## Upgrading from 2.0
+
+The API is unchanged and existing scripts run without modification, but
+**numbers will differ**, because the significance test in 2.0 was not sound: it
+compared each ensemble against a bootstrap of itself, a null about half as wide
+as the true sampling variability. Over 40 replicates in which both ensembles
+were drawn from an *identical* distribution, 2.0 called 100% of residues
+significantly different. The permutation test that replaces it sits at 1.2%.
+
+`--legacy-statistics` reproduces the old behaviour for regenerating published
+figures. [CHANGELOG.md](CHANGELOG.md) has the full account.
+
+`from Prothon import Prothon` still works and warns; use
+`from prothon import Prothon`.
+
+## Citation
+
+> Aina, A.; Hsueh, S. C. C.; Plotkin, S. S. PROTHON: A Local Order
+> Parameter-Based Method for Efficient Comparison of Protein Ensembles.
+> *J. Chem. Inf. Model.* **2023**, *63* (11), 3453–3461.
+> DOI: [10.1021/acs.jcim.3c00145](https://doi.org/10.1021/acs.jcim.3c00145)
+
+```bibtex
+@article{aina2023prothon,
+  author  = {Aina, Adekunle and Hsueh, Shawn C. C. and Plotkin, Steven S.},
+  title   = {PROTHON: A Local Order Parameter-Based Method for Efficient
+             Comparison of Protein Ensembles},
+  journal = {Journal of Chemical Information and Modeling},
+  volume  = {63},
+  number  = {11},
+  pages   = {3453--3461},
+  year    = {2023},
+  doi     = {10.1021/acs.jcim.3c00145},
+}
+```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). The original version 1 code accompanying
+the 2023 paper is preserved unchanged under `legacy/`.
 
 ## License
 
-Prothon is released under the GNU GPL license.
+GNU GPL v3 or later. See [LICENSE](LICENSE).
 
-## Citation
-Adekunle Aina, Shawn C.C. Hsueh, and Steven S. Plotkin.  
-PROTHON: A Local Order Parameter-Based Method for Efficient Comparison of Protein Ensembles.  
-_J. Chem. Inf. Model._
+---
 
+<div align="center">
+
+Built in the [AAI Research Lab](https://aai-research-lab.github.io) at
+California State University Dominguez Hills, on MDTraj, NumPy, SciPy,
+scikit-learn and Matplotlib.
+
+</div>
