@@ -37,8 +37,6 @@
 
 ## Ingest and reconciliation
 
-*(In development — on `main`, not in 2.1.0.)*
-
 ```{eval-rst}
 .. automodule:: prothon.ingest.ensemble
    :members: Ensemble, EnsembleQuality
@@ -55,8 +53,6 @@
 ```
 
 ## Whole-ensemble comparison
-
-*(In development.)*
 
 ```{eval-rst}
 .. automodule:: prothon.core.ensemble_metrics

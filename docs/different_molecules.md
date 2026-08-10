@@ -1,7 +1,5 @@
 # Comparing different molecules
 
-*(In development — on `main`, not in 2.1.0.)*
-
 Most interesting comparisons are between ensembles that are not the same
 molecule: a wild type against a point mutant, a construct that resolves a loop
 against one that does not, a coarse-grained model against an all-atom one, an
@@ -33,10 +31,13 @@ CBCN (reference: ensemble 0)
 
 ## What reconciliation does
 
-The sequences are extracted per chain, aligned with an affine-gap
-Needleman–Wunsch under BLOSUM62, and the aligned columns become a residue
-correspondence. End gaps are free by default, because the usual case is two
-constructs differing by a terminal overhang.
+The sequences are extracted per chain and aligned globally (Needleman and
+Wunsch 1970) with affine gap penalties (Gotoh 1982) under BLOSUM62 (Henikoff
+and Henikoff 1992); the aligned columns become the residue correspondence.
+Affine penalties matter here: they make one long gap cheaper than several short
+ones, which is the difference between recognising a missing loop and scattering
+it across the alignment. End gaps are free by default, because the usual case
+is two constructs differing by a terminal overhang.
 
 The alignment, the identity, the coverage, the substitutions named as a paper
 would name them (`F5G`), and the unmatched residues on each side are all
@@ -118,3 +119,8 @@ deposited ensemble compared against a simulation.
   score and nonsense as a map.
 - A measure whose windows no difference between the molecules leaves intact.
   The error names a per-residue measure to use instead.
+
+## References
+
+Gotoh 1982; Henikoff and Henikoff 1992; Kish 1965; Needleman and Wunsch 1970.
+Full citations on the [references page](references.md).

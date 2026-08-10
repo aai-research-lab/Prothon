@@ -1,5 +1,8 @@
 # The measures
 
+The five measures below are those introduced with the method (Aina, Hsueh and
+Plotkin 2023).
+
 A *measure* turns a trajectory into an `(n_frames, n_features)` matrix: one row
 per conformation, one column per residue or per angle. That matrix is the
 ensemble's representation, and everything downstream works on it rather than on
@@ -53,7 +56,8 @@ they will not.
 
 ## Solvent accessible surface area
 
-Shrake–Rupley, per residue, in nm². Useful for detecting changes in burial that
+Shrake–Rupley (1973), per residue, in nm², computed through MDTraj (McGibbon
+et al. 2015). Useful for detecting changes in burial that
 contact numbers can miss, and the measure most likely to contain constant
 columns — a residue with zero exposure in every frame. Those are handled
 explicitly rather than crashing the density estimate.
@@ -74,3 +78,8 @@ when comparing molecules that differ by an insertion or deletion.
 about binding or aggregation is really about.
 
 Running several is cheap and usually informative: `-m cbcn,cata,sasa`.
+
+## References
+
+Aina, Hsueh and Plotkin 2023; McGibbon et al. 2015; Shrake and Rupley 1973.
+Full citations on the [references page](references.md).

@@ -29,10 +29,9 @@ is the smallest difference the sampling can resolve, and Prothon reports it
 beside every result. A dissimilarity below its floor is reported as
 unresolvable, not as a small difference.
 
-[The statistics](statistics.md) explains why, including the measurement that
-motivated the 2.1 release: the significance test in version 2.0 called two
-independent samples of an *identical* distribution different at 100% of
-residues.
+[The statistics](statistics.md) sets out how significance is decided, how
+multiplicity is corrected, what an ensemble's sampling is actually worth, and
+what remains uncorrected.
 
 ## Contents
 
@@ -47,6 +46,7 @@ statistics
 different_molecules
 cli_reference
 api
+references
 ```
 
 ## Citation

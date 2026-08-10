@@ -47,7 +47,7 @@ conformations are ordinary rather than prohibitive.
 **It can compare ensembles that are not the same molecule.** A superposition
 needs a common coordinate frame, and a wild type and its mutant do not have
 one. Local order parameters need only a map between residues, which a sequence
-alignment provides. *(In development — see below.)*
+alignment provides.
 
 ## It reports what it cannot resolve
 
@@ -58,14 +58,14 @@ measures it, prints it beside every result, and draws it on every figure. A
 difference smaller than the floor is reported as unresolvable rather than as a
 small difference.
 
-This matters more than it sounds. The significance test in version 2.0 built
-its null from a bootstrap of each ensemble against itself, which is about half
-as wide as the true sampling variability — so it called two independent samples
-of an *identical* distribution significantly different at **100%** of residues.
-Version 2.1 replaced it with a permutation null, which sits at 1.2%. The
+Significance is decided against a permutation null — pool the frames of both
+ensembles, relabel them at random, measure — which is the exact distribution of
+the statistic when the ensembles are the same and assumes nothing about the
+shape of anything (Good 2005). Per-residue p-values are corrected for
+multiplicity (Benjamini and Hochberg 1995), because a 300-residue protein
+tested at α = 0.05 yields fifteen false positives by construction. The
 [statistics page](https://prothon.readthedocs.io/en/latest/statistics.html)
-gives the full account, and `--legacy-statistics` reproduces the old behaviour
-for regenerating published figures.
+sets out what is and is not corrected for.
 
 ## Install
 
@@ -135,33 +135,32 @@ grid spanning a full turn. Each measure declares this and every estimator reads
 it — a linear treatment of circular data is wrong by large factors and says
 nothing about it.
 
-## In development
-
-Version 2.1.0 is what `pip install` gives you. The following is on `main` and
-unreleased; install from git to try it.
-
-```bash
-pip install "git+https://github.com/aai-research-lab/Prothon.git"
-```
+## What else it does
 
 - **Comparison across different molecules.** `prothon.ingest` builds a residue
-  correspondence from a sequence alignment, so a mutant, a truncated construct
-  or a coarse-grained model can be compared against a reference. Columns are
-  derived from the residue map rather than assumed — a mutation to glycine
-  removes a C-beta and renumbers every `cbcn` column after it.
+  correspondence from an affine-gap alignment under BLOSUM62 (Needleman and
+  Wunsch 1970; Gotoh 1982; Henikoff and Henikoff 1992), so a mutant, a
+  truncated construct or a coarse-grained model can be compared against a
+  reference. Columns are derived from the residue map rather than assumed — a
+  mutation to glycine removes a C-beta and renumbers every `cbcn` column after
+  it.
 - **Weighted ensembles.** Conformer probabilities from a deposited ensemble, or
-  frame weights from a reweighted simulation, reach the density estimate. Kish
-  effective sample size sizes the noise floor: a thousand frames in which one
-  conformer carries half the probability is worth four independent samples.
-- **A metric layer.** Wasserstein-1, which reports in the feature's own units
-  and needs no grid or bandwidth, and the Kolmogorov–Smirnov statistic
-  (Kuiper's, on circular features).
+  frame weights from a reweighted simulation, reach the density estimate. The
+  effective sample size (Kish 1965) sizes the noise floor: a thousand frames in
+  which one conformer carries half the probability is worth four independent
+  samples.
+- **A choice of distance.** Jensen–Shannon (Lin 1991; Endres and Schindelin
+  2003), Wasserstein-1, which reports in the feature's own units and needs no
+  grid or bandwidth (Villani 2009), and the Kolmogorov–Smirnov statistic —
+  Kuiper's (1960) on circular features, which is invariant to where the circle
+  is cut where KS is not.
 - **Whole-ensemble comparison.** Maximum mean discrepancy and a classifier
   two-sample test, which see differences in the relationship *between* residues
   that no per-residue metric can.
-- **Coverage and fidelity.** Precision and recall, per residue, distinguishing
-  a model that misses a state from one that invents one — two failures that any
-  symmetric distance scores alike and that need opposite work.
+- **Coverage and fidelity.** Precision and recall, per residue (after Sajjadi
+  et al. 2018 and Kynkäänniemi et al. 2019), distinguishing an ensemble that
+  misses a state from one that invents one — two failures that any symmetric
+  distance scores alike and that need opposite work.
 
 ## Citation
 
@@ -184,13 +183,10 @@ pip install "git+https://github.com/aai-research-lab/Prothon.git"
 }
 ```
 
-## Upgrading from 2.0
+## References
 
-The API is unchanged and existing scripts run without modification, but
-**numbers will differ**. See [CHANGELOG.md](CHANGELOG.md) for the full account
-and the [statistics page](https://prothon.readthedocs.io/en/latest/statistics.html)
-for why. `from Prothon import Prothon` still works and warns; use
-`from prothon import Prothon`.
+Every method above is referenced in full on the
+[references page](https://prothon.readthedocs.io/en/latest/references.html).
 
 ## Contributing
 
@@ -201,10 +197,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). The version 1 code accompanying the
 
 MIT. See [LICENSE](LICENSE).
 
-Prothon was distributed under GPL-3.0 up to and including version 2.0.0. From
-2.1.0 the project is MIT-licensed. Copies already obtained under GPL-3.0 remain
-governed by that licence — relicensing is not retroactive and takes nothing
-away from anyone who has a copy.
+Earlier releases were distributed under GPL-3.0, and copies obtained under that
+licence remain governed by it; relicensing is not retroactive and takes nothing
+away from anyone holding one.
 
 ---
 

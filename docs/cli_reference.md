@@ -19,7 +19,7 @@ prothon -traj a.dcd,b.dcd -top top.pdb -m cbcn
 | `--s-num` | `5` | Split-half repeats behind the noise floor. |
 | `--alpha` | `0.05` | False-discovery rate for the per-residue test. |
 | `--seed` | none | Random seed. Set it for a reproducible run. |
-| `--legacy-statistics` | off | Reproduce version 2.0 exactly. Documented as unsound. |
+| `--legacy-statistics` | off | Reproduce the historical statistics, for regenerating a published figure. |
 | `--json` | off | Print full results as JSON instead of a summary. |
 | `-v`, `--verbose` | off | Verbose logging. |
 | `--info` | | Print measures, metrics and detected backends, then exit. |
@@ -27,11 +27,11 @@ prothon -traj a.dcd,b.dcd -top top.pdb -m cbcn
 
 ## Notes on the defaults
 
-**Dimensionality reduction is off.** It defaulted to `pca,mds,tsne` in version
-2.0. MDS builds a dense frame-by-frame distance matrix, so on a real trajectory
-that default turned a short comparison into an out-of-memory failure. MDS is
-now refused above 5,000 frames, with a message naming the memory it would have
-needed, and a refusal does not discard the comparison that already succeeded.
+**Dimensionality reduction is off.** The projection is a visualisation rather
+than part of the measurement, and MDS builds a dense frame-by-frame distance
+matrix — asking for tens of gigabytes on a real trajectory. MDS is refused
+above 5,000 frames with a message naming the memory it would have needed, and a
+refusal does not discard the comparison that already succeeded.
 
 **Each `-traj` file is one ensemble.** They are never concatenated.
 
@@ -58,7 +58,7 @@ Machine-readable output:
 prothon -traj a.dcd,b.dcd -top top.pdb --json > results.json
 ```
 
-Regenerating a figure from a paper published with version 2.0:
+Regenerating a figure published under the historical statistics:
 
 ```bash
 prothon -traj a.dcd,b.dcd -top top.pdb --legacy-statistics

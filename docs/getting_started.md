@@ -18,7 +18,8 @@ Three numbers, and none of them means anything without the others.
 
 **`d = 0.2841`** is the global dissimilarity: the mean over residues of the
 Jensen–Shannon distance between the two ensembles' distributions of C-beta
-contact number. It is bounded in [0, 1].
+contact number (Lin 1991; Aina, Hsueh and Plotkin 2023). It is bounded in
+[0, 1].
 
 **`floor 0.0472`** is what two disjoint halves of the reference ensemble score
 against *each other*. It is the smallest difference this much sampling can
@@ -27,7 +28,7 @@ detectable here", not "a small difference".
 
 **`34/76 residues differ`** counts residues whose distributions differ by more
 than a permutation null allows, after correcting for having asked the question
-76 times.
+76 times (Benjamini and Hochberg 1995).
 
 ## What it wrote
 

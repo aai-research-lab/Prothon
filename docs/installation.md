@@ -43,16 +43,9 @@ Python 3.9 or newer. The dependencies are installed automatically:
 | `scikit-learn` | dimensionality reduction, and the classifier two-sample test |
 | `matplotlib` | figures |
 
-## Development version
+## From source
 
-Everything under *In development* in the README lives on `main` and is not in
-2.1.0:
-
-```bash
-pip install "git+https://github.com/aai-research-lab/Prothon.git"
-```
-
-Or for a working copy:
+For a working copy:
 
 ```bash
 git clone https://github.com/aai-research-lab/Prothon.git

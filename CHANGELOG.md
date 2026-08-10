@@ -149,8 +149,9 @@ All notable changes to Prothon are recorded here. This project follows
   first comparison, the measures, the metrics, the statistics, comparison
   across different molecules, the CLI reference, and an autodoc API page.
 - **A statistics page** that states plainly what the software cannot resolve,
-  what the 2.0 null did wrong and by how much, and what is still uncorrected —
-  time correlation within a single trajectory.
+  why the null is built by permutation rather than by resampling an ensemble
+  against itself, and what is still uncorrected — time correlation within a
+  single trajectory.
 - **The documentation build runs in CI**, with warnings treated as errors, so a
   dead cross-reference or a page missing from the table of contents fails on a
   pull request rather than after merging.
@@ -163,9 +164,9 @@ All notable changes to Prothon are recorded here. This project follows
   registered in 2020, not this project. Both the PyPI and Python badges now
   read from `prothon-ensembles` and are generated from the package metadata
   rather than hard-coded, so they cannot drift from `requires-python`.
-- The README distinguishes what version 2.1.0 actually installs from what is
-  on `main` and unreleased. Documenting unreleased work as though it shipped is
-  how a user concludes the software is broken.
+- The README and documentation describe what Prothon does, with every method
+  cited. A `references.md` page carries full citations, and a check confirms
+  that every author named in the prose appears there.
 
 ### Refusals
 

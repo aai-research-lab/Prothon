@@ -20,107 +20,115 @@ CBCN (reference: ensemble 0)
   ensemble 2: d = 0.5859 (floor 0.1426) — 9/12 residues differ
 ```
 
-No other ensemble-comparison package reports this, and it is the single most
-useful thing here. Differences below the resolution limit are routinely
-published.
+Reporting a difference without the resolution limit beside it invites a reader
+to interpret a number the sampling cannot support. The floor is cheap to
+measure and there is no good reason to omit it.
 
 ## The null distribution
 
 For each feature, Prothon asks whether the two ensembles' distributions differ
 by more than chance. The null is built by **permutation**: pool the frames of
 both ensembles, relabel them at random into two groups of the original sizes,
-and measure the distance. Repeat. That is the exact distribution of the
-statistic when the ensembles are the same, and it assumes nothing about the
-shape of anything.
+and measure the distance. Repeat. Under the hypothesis that both ensembles
+sample the same distribution the labels carry no information, so every
+relabelling is as likely as the one observed, and the resulting distances are
+the exact null distribution of the statistic — with no assumption about its
+shape (Good 2005).
 
-### Why version 2.0 was replaced
+### Why not a bootstrap of each ensemble against itself
 
-Version 2.0 built its null differently: it drew two bootstrap resamples from
-the *same* ensemble and measured the distance between them.
+A natural-looking alternative is to resample each ensemble twice and use the
+distance between those resamples as the null. It does not work, and the failure
+is large enough to be worth stating explicitly.
 
 Two resamples of $n$ frames drawn with replacement from the same $n$ frames
 share about 63% of their points. They therefore resemble each other far more
-closely than two independent samples of that size do. Measured on a 400-frame
+closely than two *independent* samples of that size do. Measured on a 400-frame
 Gaussian ensemble:
 
 | quantity | value |
 |---|---|
-| bootstrap null used by 2.0 | 0.046 |
-| two independent samples, same distribution | 0.097 |
+| bootstrap of the ensemble against itself | 0.046 |
+| two independent samples of the same distribution | 0.097 |
 | observed between-ensemble distance | 0.090 |
 
-The null is too tight by roughly a factor of two, so any honest
-between-ensemble distance clears it. Over 40 replicates in which both ensembles
-were drawn from an **identical** distribution:
+A null that tight is cleared by any honest between-ensemble distance. Over 40
+replicates in which both ensembles were drawn from an **identical**
+distribution, such a null calls 100% of features different; the permutation
+null sits at 1.2%.
 
-| | features called different | studies with ≥1 false positive |
-|---|---|---|
-| 2.0 bootstrap null | **100%** | **100%** |
-| 2.1 permutation null | 1.2% | 7.5% |
-
-The old test cannot return a negative.
-
-`legacy=True`, or `--legacy-statistics`, reproduces version 2.0 exactly for
-regenerating published figures. It is documented as unsound.
+`legacy=True`, or `--legacy-statistics`, selects the bootstrap null for anyone
+regenerating a figure published under it. It is documented as unsound.
 
 ### Resolution of the p-values
 
 A per-feature p-value from $n$ relabellings cannot fall below $1/(n+1)$, and
 after correcting across a few hundred residues nothing at that resolution
 survives. Prothon standardises each feature by its own null mean and spread,
-then pools the standardised null values across features, which gives a
-resolution of about $1/(n_{\text{perm}} \times n_{\text{features}})$.
+then pools the standardised null values across features, giving a resolution of
+about $1/(n_{\text{perm}} \times n_{\text{features}})$.
 
-The assumption is that the standardised null is comparable across features.
-For distances computed from equal sample sizes on a shared grid that holds; it
+The assumption is that the standardised null is comparable across features. For
+distances computed from equal sample sizes on a shared grid that holds; it
 would not hold if features had wildly different sample sizes.
 
 ## Multiple testing
 
 A 300-residue protein tested at $\alpha = 0.05$ produces fifteen false
 positives by construction. Per-feature p-values are corrected with the
-Benjamini–Hochberg procedure, controlling the false discovery rate.
-
-Version 2.0 did something different and worse: it computed a single pooled
-p-value and wrote `local_diss[p_value >= 0.05] = 0.0`. With a scalar
-`p_value`, NumPy reads that as a mask over the whole array — so one test
-decided the fate of every residue together.
+Benjamini–Hochberg procedure, which controls the false discovery rate — the
+expected proportion of false positives among the residues declared different
+(Benjamini and Hochberg 1995).
 
 ## How much sampling is enough
 
 The question is not how many frames an ensemble has but how many *independent*
-conformations it is worth. For a weighted ensemble these differ sharply. Kish's
-effective sample size,
+conformations it is worth. For a weighted ensemble the two differ sharply. The
+effective sample size (Kish 1965),
 
 $$n_{\text{eff}} = \frac{\left(\sum_i w_i\right)^2}{\sum_i w_i^2},$$
 
 gives the number that matters: a thousand frames in which one conformer carries
-half the probability is worth **four** independent samples.
+half the probability is worth **four** independent samples. Sizing a noise floor
+by the frame count instead would produce error bars for an ensemble nobody
+sampled.
 
-Prothon warns below 50 effective samples and refuses below 10. Sizing a noise
-floor by the frame count instead would produce error bars for an ensemble
-nobody sampled.
+Prothon warns below 50 effective samples and refuses below 10.
 
-:::{note}
-This is the same failure as the bootstrap null above, arrived at from a
-different direction: a quantity that looks like a sample size, is smaller than
-it appears, and makes everything downstream look more certain than it is. It is
-worth asking of any count that appears in a denominator.
-:::
+## Density estimation
 
-## What Prothon does not yet correct for
+Distances that need a density (Jensen–Shannon, and the supports behind
+precision and recall) use kernel density estimation with Silverman's bandwidth
+rule (Silverman 1986). Circular features use a von Mises kernel with Taylor's
+plug-in concentration (Taylor 2008) on a grid spanning a full turn.
+
+The bandwidth and the grid are choices, and they bias the estimate without
+appearing in the number that comes out. Where that matters, `--metric
+wasserstein` computes the distance from the samples directly and needs neither.
+
+A feature that never varies — a buried residue with zero solvent exposure in
+every frame — has no density in the usual sense and is handled explicitly
+rather than failing.
+
+## What is not corrected for
 
 **Frames from a single continuous trajectory are correlated in time.** The
-permutation null assumes frames are exchangeable. They are not, within one MD
-trajectory, so an ensemble holds fewer independent conformations than it has
-frames and the p-values remain somewhat optimistic. A block permutation over
-the correlation time is planned.
+permutation null assumes frames are exchangeable. Within one molecular dynamics
+trajectory they are not, so an ensemble holds fewer independent conformations
+than it has frames and the p-values are correspondingly optimistic. A block
+permutation over the correlation time is planned.
 
-Until then: the split-half noise floor is *measured* rather than assumed, and
-is the more trustworthy of the two guides. If a difference clears the floor
-comfortably, the conclusion is robust; if it clears only the p-value threshold,
-be careful.
+Two things follow for practice.
 
-**Independent replicate trajectories are the fix available today.** Comparing
-replicate against replicate gives a floor that includes run-to-run variation,
-which is the honest reference for judging a condition-to-condition difference.
+**Trust the floor over the p-value.** The split-half noise floor is *measured*
+rather than assumed. If a difference clears the floor comfortably the
+conclusion is robust; if it clears only the significance threshold, be careful.
+
+**Use independent replicates where they exist.** Comparing replicate against
+replicate gives a floor that includes run-to-run variation, which is the honest
+reference for judging a difference between conditions.
+
+## References
+
+Benjamini and Hochberg 1995; Good 2005; Kish 1965; Silverman 1986; Taylor 2008.
+Full citations on the [references page](references.md).
