@@ -69,11 +69,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from scipy.spatial.distance import jensenshannon
 from scipy.special import ive
 from scipy.stats import gaussian_kde, mannwhitneyu
 
 from ..utils import get_logger
+from .metrics import feature_distance, resolve_metric
 
 logger = get_logger("dissimilarity")
 
@@ -425,11 +425,14 @@ def jsd_local(
     circular: bool = False,
     weights1=None,
     weights2=None,
+    metric: str = "jsd",
 ) -> np.ndarray:
-    """Jensen-Shannon distance per feature between two representation matrices.
+    """Per-feature distance between two representation matrices.
 
-    Returns one value per column, in [0, 1]. Base-2 logarithms, so the bound is
-    1 for distributions with disjoint support.
+    Jensen-Shannon by default, in [0, 1] with base-2 logarithms so the bound is
+    1 for distributions with disjoint support. ``metric`` selects another from
+    :data:`~prothon.core.metrics.METRICS`; the name of this function is kept
+    for the code written against 2.1.
     """
     if ensemble1.shape[1] != ensemble2.shape[1]:
         raise ValueError(
@@ -440,10 +443,10 @@ def jsd_local(
     n_features = ensemble1.shape[1]
     distances = np.zeros(n_features, dtype=np.float64)
     for i in range(n_features):
-        _, pdf1 = estimate_pdf(ensemble1[:, i], x_min, x_max, x_num, circular, weights1)
-        _, pdf2 = estimate_pdf(ensemble2[:, i], x_min, x_max, x_num, circular, weights2)
-        value = jensenshannon(pdf1, pdf2, base=2)
-        distances[i] = 0.0 if not np.isfinite(value) else value
+        distances[i] = feature_distance(
+            ensemble1[:, i], ensemble2[:, i], metric,
+            x_min, x_max, x_num, circular, weights1, weights2,
+        )
     return distances
 
 
@@ -493,6 +496,7 @@ def _permutation_null(
     rng: np.random.Generator,
     weights_a=None,
     weights_b=None,
+    metric: str = "jsd",
 ) -> np.ndarray:
     """Distances between two groups formed by relabelling the pooled frames.
 
@@ -529,7 +533,7 @@ def _permutation_null(
             wl, wr = pooled_w[left], pooled_w[right]
             wl, wr = wl / wl.sum(), wr / wr.sum()
         null[k] = jsd_local(
-            pooled[left], pooled[right], x_min, x_max, x_num, circular, wl, wr
+            pooled[left], pooled[right], x_min, x_max, x_num, circular, wl, wr, metric
         )
     return null
 
@@ -574,6 +578,7 @@ def _split_half_floor(
     repeats: int,
     rng: np.random.Generator,
     weights: tuple = (None, None),
+    metric: str = "jsd",
 ) -> np.ndarray:
     """Distance between two disjoint halves of a single ensemble.
 
@@ -599,7 +604,7 @@ def _split_half_floor(
             values.append(
                 jsd_local(
                     ensemble[left], ensemble[right],
-                    x_min, x_max, x_num, circular, wl, wr,
+                    x_min, x_max, x_num, circular, wl, wr, metric,
                 )
             )
     if not values:
@@ -657,6 +662,7 @@ def dissimilarity(
     n_permutations: int = DEFAULT_PERMUTATIONS,
     weights_ref=None,
     weights=None,
+    metric: str = "jsd",
     alpha: float = 0.05,
     random_state: int | np.random.Generator | None = None,
     legacy: bool = False,
@@ -696,6 +702,9 @@ def dissimilarity(
         Probability per frame, or ``None`` for uniform. A deposited ensemble
         stores these and a reweighted simulation produces them; ignoring them
         answers a question about a distribution nobody sampled.
+    metric
+        Which per-feature distance to use: ``jsd`` (default, bounded),
+        ``wasserstein`` (unbounded, in the feature's own units) or ``ks``.
     alpha
         False-discovery rate for the per-feature test.
     random_state
@@ -791,9 +800,10 @@ def dissimilarity(
     if use_circular:
         x_min, x_max = -np.pi, np.pi
 
+    resolve_metric(metric)  # fail here rather than inside the permutation loop
     if legacy:
         raw_local = jsd_local(
-            ref_rep, rep, x_min, x_max, x_num, False, weights_ref, weights
+            ref_rep, rep, x_min, x_max, x_num, False, weights_ref, weights, metric
         )  # noqa: E501
         between, within = _legacy_bootstrap(
             ref_rep, rep, x_min, x_max, x_num, s_num, sample_size, rng
@@ -824,7 +834,7 @@ def dissimilarity(
                 _split_half_floor(
                     (reference_sample, other_sample),
                     x_min, x_max, x_num, use_circular, max(1, s_num // 2), rng,
-                    weights=(w_ref, w_other),
+                    weights=(w_ref, w_other), metric=metric,
                 )
             )
         )
@@ -859,6 +869,7 @@ def dissimilarity(
             "n_permutations": 0 if legacy else n_permutations,
             "sample_size": sample_size,
             "null": "bootstrap (2.0)" if legacy else "permutation",
+            "metric": "jsd" if legacy else metric,
             "weighted": (weights_ref is not None) or (weights is not None),
             "effective_samples": [
                 effective_sample_size(weights_ref, ref_rep.shape[0]),

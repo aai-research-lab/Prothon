@@ -193,6 +193,7 @@ class Prothon:
         dimred: str | Sequence[str] | None = None,
         alpha: float = 0.05,
         legacy: bool = False,
+        metric: str = "jsd",
     ) -> dict[str, list[ComparisonResult]]:
         """Run the study: represent, compare, plot, and record.
 
@@ -214,6 +215,11 @@ class Prothon:
             False-discovery rate for the per-residue test.
         legacy
             Reproduce version 2.0's statistics exactly.
+        metric
+            Per-feature distance: ``jsd`` (default), ``wasserstein`` or ``ks``.
+            The permutation null, the false-discovery correction and the noise
+            floor are computed under whichever is chosen, so a Wasserstein
+            comparison gets a Wasserstein floor rather than a borrowed one.
 
         Returns
         -------
@@ -279,6 +285,7 @@ class Prothon:
                     weights=(
                         None if self.ensembles is None else self.ensembles[index].weights
                     ),
+                    metric=metric,
                     alpha=alpha,
                     random_state=self.random_state,
                     legacy=legacy,
@@ -326,7 +333,9 @@ class Prothon:
                     }
                 self.dimred_results[spec.name] = projections
 
-            self._write_manifest(spec.name, comparisons, x_num, s_num, alpha, legacy)
+            self._write_manifest(
+                spec.name, comparisons, x_num, s_num, alpha, legacy, metric
+            )
 
         return overall
 
@@ -399,6 +408,7 @@ class Prothon:
         s_num: int,
         alpha: float,
         legacy: bool,
+        metric: str = "jsd",
     ) -> str:
         """Record what was run, so the result can be reproduced rather than
         merely admired."""
@@ -446,6 +456,7 @@ class Prothon:
                 "x_num": x_num,
                 "s_num": s_num,
                 "alpha": alpha,
+                "metric": metric,
                 "legacy_statistics": legacy,
                 "random_state": self.random_state,
             },

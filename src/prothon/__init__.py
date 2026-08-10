@@ -34,7 +34,14 @@ try:  # pragma: no cover - depends on install method
 except ImportError:  # pragma: no cover - source checkout without setuptools-scm
     __version__ = "2.1.0.dev0"
 
-from .core.dissimilarity import ComparisonResult, dissimilarity, estimate_pdf, jsd_local
+from .core.dissimilarity import (
+    ComparisonResult,
+    dissimilarity,
+    effective_sample_size,
+    estimate_pdf,
+    jsd_local,
+)
+from .core.metrics import METRICS, describe_metric, feature_distance
 from .core.prothon_core import Prothon
 from .core.representation import (
     MEASURES,
@@ -47,6 +54,10 @@ __all__ = [
     "Prothon",
     "ComparisonResult",
     "MEASURES",
+    "METRICS",
+    "describe_metric",
+    "effective_sample_size",
+    "feature_distance",
     "compute_ensemble_representation",
     "describe_measure",
     "dissimilarity",

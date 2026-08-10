@@ -55,6 +55,32 @@ All notable changes to Prothon are recorded here. This project follows
   substitutions named as a paper would name them, unmatched residues on each
   side, and the alignment itself.
 
+### Added — the metric layer
+
+- **Three per-feature distances**, selected with `metric=` or `--metric`:
+  `jsd` (default, bounded), `wasserstein` and `ks`. The permutation null, the
+  false-discovery correction and the noise floor are all computed under
+  whichever is chosen, so a Wasserstein comparison gets a Wasserstein floor
+  rather than a threshold borrowed from another scale.
+- **Wasserstein-1 reports in the feature's own units** — contacts, radians,
+  square nanometres. "This residue gains 1.4 contacts" is a sentence about the
+  protein; a Jensen-Shannon distance is a sentence about the comparison. It
+  also needs no grid and no bandwidth, so it carries none of the density
+  estimate's bias. The cost is that it is unbounded and not comparable across
+  measures.
+- **Circular features are measured the short way round.** Two tight torsion
+  populations either side of the wraparound are 0.28 radians apart; a linear
+  Wasserstein distance reports 4.43, twenty-one times too large, without
+  complaint. Circular features use Delon's circular optimal-transport
+  distance.
+- **Kuiper's statistic replaces Kolmogorov–Smirnov on circular features.** The
+  KS statistic is the largest gap between two cumulative distributions, which
+  on a circle depends on where the circle was cut rather than on the data:
+  over 24 rotations of one interleaved pair, KS ranges from 0.25 to 0.50.
+  Kuiper's does not move.
+- KS is offered because PENSA reports it, so a claim that one method finds
+  something another misses can be checked on the same statistic.
+
 ### Refusals
 
 - **Coverage, not just identity.** Free end gaps make the aligner behave

@@ -24,6 +24,7 @@ import sys
 from collections.abc import Sequence
 
 from . import __version__
+from .core.metrics import METRICS, describe_metric
 from .core.prothon_core import DIMRED_TECHNIQUES, Prothon
 from .core.representation import MEASURES, describe_measure
 from .utils import configure_logging
@@ -79,6 +80,11 @@ def build_parser() -> argparse.ArgumentParser:
              f"or 'none' (default). MDS is refused above 5000 frames.",
     )
     parser.add_argument(
+        "--metric", default="jsd", choices=sorted(METRICS),
+        help="Per-feature distance (default: jsd). 'wasserstein' reports in the "
+             "feature's own units; 'jsd' and 'ks' are bounded in [0, 1].",
+    )
+    parser.add_argument(
         "--x-num", type=int, default=100,
         help="Grid points per estimated density (default: 100).",
     )
@@ -109,6 +115,9 @@ def _print_info() -> None:
     print("Measures:")
     for name in sorted(MEASURES):
         print(f"  {describe_measure(name)}")
+    print("\nMetrics:")
+    for name in sorted(METRICS):
+        print(f"  {describe_metric(name)}")
     print("\nBackends:")
     for module, purpose in (
         ("mdtraj", "trajectory I/O and geometry"),
@@ -157,6 +166,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             s_num=args.s_num,
             dimred=dimred,
             alpha=args.alpha,
+            metric=args.metric,
             legacy=args.legacy_statistics,
         )
     except (ValueError, FileNotFoundError) as error:
