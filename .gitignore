@@ -1,15 +1,22 @@
 # Build artifacts
 build/
-
-# Packaging metadata
-prothon.egg-info/
+dist/
+*.egg-info/
+src/prothon/_version.py
 
 # Python cache
 __pycache__/
-*.pyc
+*.py[cod]
 
-# Output files
+# Test and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# Prothon output
 *_output/
 
-# Note
-NOTE
+# Environments
+.venv/
+venv/

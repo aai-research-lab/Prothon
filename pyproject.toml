@@ -1,0 +1,96 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prothon"
+dynamic = ["version"]
+description = "Efficient comparison of protein conformational ensembles using local order parameters"
+readme = "README.md"
+requires-python = ">=3.9, <3.14"
+license = { text = "GPL-3.0-or-later" }
+authors = [
+    { name = "Adekunle Aina", email = "kunleaina@gmail.com" },
+]
+maintainers = [
+    { name = "Adekunle Aina", email = "kunleaina@gmail.com" },
+]
+keywords = [
+    "protein-ensembles",
+    "conformational-ensembles",
+    "molecular-dynamics",
+    "intrinsically-disordered-proteins",
+    "jensen-shannon",
+    "order-parameters",
+    "structural-biology",
+    "biophysics",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    "numpy>=1.22",
+    "mdtraj>=1.9.7",
+    "scipy>=1.9",
+    "matplotlib>=3.5",
+    # Used by prothon.core.plotting for PCA, MDS and t-SNE. Version 2.0
+    # imported it and did not declare it, so a clean install failed on any run
+    # that touched dimensionality reduction -- which was the CLI default.
+    "scikit-learn>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.4",
+]
+
+[project.urls]
+Homepage = "https://github.com/aai-research-lab/Prothon"
+Repository = "https://github.com/aai-research-lab/Prothon"
+Issues = "https://github.com/aai-research-lab/Prothon/issues"
+Publication = "https://doi.org/10.1021/acs.jcim.3c00145"
+
+[project.scripts]
+prothon = "prothon.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+# The 2.0 import name, as a single module. A *package* named Prothon would
+# differ from prothon only in case, which is one path on macOS and Windows.
+py-modules = ["Prothon"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools_scm]
+version_file = "src/prothon/_version.py"
+fallback_version = "2.1.0"
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# The version lookup must run before the re-exports it does not depend on,
+# so the imports below it are deliberately not at the top of the file.
+"src/prothon/__init__.py" = ["E402"]
+# The shim exists to re-export under the old name.
+"src/Prothon.py" = ["F403", "F401", "E402"]

@@ -8,7 +8,7 @@ Example usage:
 
 import argparse
 import json
-from Prothon import Prothon
+from prothon import Prothon
 
 def convert_results(results):
     """
