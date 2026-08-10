@@ -1,0 +1,76 @@
+# Python API
+
+## The study object
+
+```{eval-rst}
+.. autoclass:: prothon.Prothon
+   :members:
+   :undoc-members:
+   :show-inheritance:
+```
+
+## Results
+
+```{eval-rst}
+.. autoclass:: prothon.ComparisonResult
+   :members:
+```
+
+## Representations
+
+```{eval-rst}
+.. automodule:: prothon.core.representation
+   :members: MEASURES, Measure, compute_ensemble_representation, compute_representation, describe_measure, resolve_measure
+```
+
+## Distances and statistics
+
+```{eval-rst}
+.. automodule:: prothon.core.dissimilarity
+   :members: dissimilarity, jsd_local, estimate_pdf, effective_sample_size, benjamini_hochberg
+```
+
+```{eval-rst}
+.. automodule:: prothon.core.metrics
+   :members: METRICS, Metric, feature_distance, describe_metric, resolve_metric
+```
+
+## Ingest and reconciliation
+
+*(In development — on `main`, not in 2.1.0.)*
+
+```{eval-rst}
+.. automodule:: prothon.ingest.ensemble
+   :members: Ensemble, EnsembleQuality
+```
+
+```{eval-rst}
+.. automodule:: prothon.ingest.reconcile
+   :members: Correspondence, Substitution, reconcile, feature_residues
+```
+
+```{eval-rst}
+.. automodule:: prothon.ingest.sequence
+   :members: Alignment, align, sequence_of, chain_sequences, residue_letter
+```
+
+## Whole-ensemble comparison
+
+*(In development.)*
+
+```{eval-rst}
+.. automodule:: prothon.core.ensemble_metrics
+   :members: EnsembleComparison, distinguishability, maximum_mean_discrepancy, classifier_two_sample
+```
+
+```{eval-rst}
+.. automodule:: prothon.core.precision_recall
+   :members: PrecisionRecall, precision_recall
+```
+
+## Plotting
+
+```{eval-rst}
+.. automodule:: prothon.core.plotting
+   :members: replot_global_dissimilarity, replot_local_dissimilarity, get_ensemble_colors
+```

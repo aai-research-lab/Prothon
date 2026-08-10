@@ -33,9 +33,49 @@ jobs:
         run: ruff check src tests
 
       - name: Test
-        run: pytest --cov=prothon --cov-report=term-missing
+        run: pytest --cov=prothon --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v5
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        with:
+          files: ./coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
       - name: Smoke-test the CLI
         run: |
           prothon --version
           prothon --info
+
+  docs:
+    name: Build the documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # A docs build that only runs on Read the Docs breaks in a pull request
+      # and is discovered after merging. -W turns warnings into errors, so a
+      # dead cross-reference or a page missing from the toctree fails here.
+      - name: Install
+        run: python -m pip install -e ".[docs]"
+
+      - name: Build
+        run: |
+          sphinx-build --keep-going -b html docs docs/_build/html 2>&1 | tee sphinx.log
+          # Fail on any warning except an unreachable intersphinx inventory,
+          # which is a transient network problem at python.org or numpy.org and
+          # not something a pull request can fix.
+          if grep -E "WARNING|ERROR" sphinx.log \
+               | grep -v "failed to reach any of the inventories" \
+               | grep -q .; then
+            echo "::error::the documentation build produced warnings"
+            grep -E "WARNING|ERROR" sphinx.log | grep -v "failed to reach any of the inventories"
+            exit 1
+          fi

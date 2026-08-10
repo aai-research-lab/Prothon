@@ -52,6 +52,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+docs = [
+    "sphinx>=7.0",
+    "sphinx-rtd-theme>=2.0",
+    "myst-parser>=2.0",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
@@ -61,7 +66,9 @@ dev = [
 [project.urls]
 Homepage = "https://github.com/aai-research-lab/Prothon"
 Repository = "https://github.com/aai-research-lab/Prothon"
+Documentation = "https://prothon.readthedocs.io"
 Issues = "https://github.com/aai-research-lab/Prothon/issues"
+Changelog = "https://github.com/aai-research-lab/Prothon/blob/main/CHANGELOG.md"
 Publication = "https://doi.org/10.1021/acs.jcim.3c00145"
 
 [project.scripts]
