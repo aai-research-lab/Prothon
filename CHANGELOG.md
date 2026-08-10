@@ -3,7 +3,58 @@
 All notable changes to Prothon are recorded here. This project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.1.0] — unreleased
+## [Unreleased]
+
+### Added — ingest and reconciliation (towards 3.0)
+
+- **`prothon.ingest.Ensemble`**: a set of conformations with per-frame weights,
+  provenance and a quality record. Loads from a trajectory, a set of
+  trajectories joined as one ensemble, a multi-model PDB, or a directory of
+  single-model PDBs — how generative models and structure predictors emit
+  ensembles. Weights are validated and normalised; negative weights are refused
+  rather than normalised, since they usually mean log-weights that were never
+  exponentiated.
+- **`prothon.ingest.reconcile`**: the residue correspondence between two
+  ensembles that are *not the same molecule*. Comparison across differing
+  sequences — a mutant against its wild type, a construct against a longer one,
+  coarse-grained against all-atom — is possible because the representation is
+  local and needs no common coordinate frame. Methods built on superposition
+  cannot ask these questions at all.
+- **`Correspondence.columns_for`**: representation columns are derived from the
+  residue map rather than assumed. A column is not always a residue. Glycine
+  has no C-beta, so a mutation to glycine removes one `cbcn` column and
+  renumbers every column after it; comparing column *k* to column *k* would
+  compare different residues from the mutation onward and report a difference
+  along the whole C-terminal half. `caba` and `cata` are windows of three and
+  four consecutive alpha carbons, so a column survives only where the whole
+  window has a counterpart *and* those counterparts are still consecutive.
+- **Sequence extraction that survives a force field.** `mdtraj` returns `None`
+  for AMBER's `HIE`, `HIP` and `CYX`, so a sequence read from an
+  AMBER-prepared topology comes back with holes and every alignment built on it
+  is wrong. Protonation- and force-field-specific names are resolved
+  explicitly, and a residue carrying N, CA and C is treated as part of the
+  chain whatever it is called — which catches modified residues that would
+  otherwise be dropped, shifting every index after them.
+- **Needleman–Wunsch alignment with Gotoh affine gaps and BLOSUM62**, written
+  in-package rather than adding a dependency. End gaps are free by default: the
+  common case is two constructs differing by a terminal overhang, and charging
+  for it pushes the aligner to absorb the overhang into interior gaps.
+
+### Refusals
+
+- **Coverage, not just identity.** Free end gaps make the aligner behave
+  locally when sequences are unrelated: two unrelated 40-residue sequences
+  align on *two* columns at 50% identity, clearing any identity floor while
+  covering a twentieth of the molecule. Reconciliation therefore requires half
+  the shorter sequence to align, and refuses below it.
+- Sequences below 25% identity — the twilight zone, where an alignment stops
+  being evidence that positions correspond.
+- Ensembles whose protein chain counts differ. Concatenating the chains of a
+  complex lets the aligner slide one chain against another, which is cheap in
+  score and nonsense as a map.
+- Conformations with differing atom counts within one ensemble.
+
+## [2.1.0] — 2026-08-10
 
 A correctness and packaging release. The public API is unchanged: code written
 against 2.0 runs without modification. **Numerical results will differ**, and
