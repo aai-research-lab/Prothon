@@ -105,8 +105,13 @@ for regenerating published figures. It is documented as unsound.
 
 ### Changed
 
-- **Distribution and import name are lowercase**: `pip install prothon`,
-  `from prothon import Prothon`. The CLI is still `prothon`.
+- **Distribution name is `prothon-ensembles`; the import name and the command
+  are both `prothon`.** PyPI's `prothon` was registered in 2020 by an unrelated
+  protobuf generator and names there are permanent. conda-forge, where the name
+  is free, gets `prothon`. Version 2.0 was never published to either index, so
+  nothing that already works breaks.
+- Releases publish to PyPI from a tag via trusted publishing (OpenID Connect),
+  so no long-lived API token exists to leak.
 - **`src/` layout and `pyproject.toml`**, replacing `setup.py`. Versioning via
   `setuptools-scm`.
 - **Dimensionality reduction is off by default.** It defaulted to

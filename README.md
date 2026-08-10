@@ -39,8 +39,17 @@ is reported as unresolvable rather than as a small difference.
 ## Install
 
 ```bash
-pip install prothon
+conda install -c conda-forge prothon      # preferred
+pip install prothon-ensembles             # the distribution name; see below
 prothon --info
+```
+
+The distribution on PyPI is `prothon-ensembles`, because `prothon` was
+registered in 2020 by an unrelated protobuf generator and PyPI names are
+permanent. The import name and the command are both `prothon`:
+
+```python
+from prothon import Prothon
 ```
 
 ## Use it

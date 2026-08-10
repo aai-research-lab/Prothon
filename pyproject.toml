@@ -3,7 +3,7 @@ requires = ["setuptools>=64", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "prothon"
+name = "prothon-ensembles"
 dynamic = ["version"]
 description = "Efficient comparison of protein conformational ensembles using local order parameters"
 readme = "README.md"
@@ -67,6 +67,9 @@ Publication = "https://doi.org/10.1021/acs.jcim.3c00145"
 [project.scripts]
 prothon = "prothon.cli:main"
 
+# The distribution is `prothon-ensembles`; the import name and the command
+# are both `prothon`. PyPI's `prothon` was taken in 2020 by an unrelated
+# protobuf generator, and a name on PyPI is permanent.
 [tool.setuptools]
 package-dir = { "" = "src" }
 # The 2.0 import name, as a single module. A *package* named Prothon would
