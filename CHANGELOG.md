@@ -199,6 +199,31 @@ All notable changes to Prothon are recorded here. This project follows
 - A null built from a single relabelling returned a NaN standard deviation from
   a division by zero degrees of freedom. It returns zero.
 
+### Fixed — contact-number memory
+
+- **The pair block is sized from a memory budget, not a fixed pair count.**
+  Each block of pair distances costs `pairs x frames`, so a block fixed at 4096
+  pairs allocated 30 MB over a thousand frames and 6.5 GB over two hundred
+  thousand — the chunking stopped chunking exactly when it began to matter.
+  Measured at 8,000 frames the fix takes `cbcn` from 11.07 s to 3.72 s and peak
+  memory from 1.24 GB to 0.64 GB, and the measured scaling in ensemble size
+  from 1.38 to **1.00**. Peak memory now holds roughly flat as a trajectory
+  lengthens.
+
+### Added — a measured performance envelope
+
+- **`scripts/scale_envelope.py`** and a `performance` documentation page giving
+  time and peak memory across chain length and ensemble size, with fitted
+  scaling exponents. Each point runs in its own process and reports its own
+  peak resident memory, because the expensive allocations happen inside
+  compiled extensions and a high-water mark in one process would attribute the
+  largest allocation to everything after it.
+- The page records three facts a user needs and the documentation previously
+  only asserted: representation is linear in conformations (measured slope
+  1.00); comparison is nearly independent of ensemble size (0.25), because
+  ensembles are subsampled before the permutation null; and comparison
+  dominates the total above about fifty residues.
+
 ### Refusals
 
 - **Coverage, not just identity.** Free end gaps make the aligner behave

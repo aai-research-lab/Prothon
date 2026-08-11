@@ -45,6 +45,7 @@ metrics
 statistics
 different_molecules
 cli_reference
+performance
 api
 references
 ```

@@ -61,10 +61,33 @@ CONTACT_CUTOFF = 1.0
 #: information about the fold, so they are excluded from contact counts.
 MIN_SEQUENCE_SEPARATION = 3
 
-#: Beyond this many pair-distances at once, the distance matrix is computed in
-#: blocks. Chosen so a block stays comfortably inside a few hundred megabytes
-#: for trajectories of a few tens of thousands of frames.
+#: Memory budget for one block of pair distances. The block is sized from this
+#: rather than fixed in pairs, because the allocation is pairs x frames: a
+#: block of 4096 pairs costs 30 MB over a thousand frames and 6.5 GB over two
+#: hundred thousand, so a fixed pair count stops chunking anything useful
+#: exactly when chunking starts to matter.
+_BLOCK_BYTES = 128 * 1024 * 1024
+
+#: Floor on the block size, so that a very long trajectory still processes a
+#: sensible number of pairs at a time rather than one.
+_MIN_PAIR_BLOCK = 64
+
+#: Retained as the block size used when the frame count is unknown, and as the
+#: value the tests force down to exercise the blocked path.
 _PAIR_BLOCK = 4096
+
+
+def _pair_block(n_frames: int) -> int:
+    """How many pairs to measure at once, given the trajectory length.
+
+    Each pair costs ``n_frames`` float64 distances plus MDTraj's float32 copy.
+    Sizing the block from a memory budget keeps peak memory flat as the
+    trajectory grows, where a fixed pair count makes it grow linearly.
+    """
+    if n_frames <= 0:
+        return _PAIR_BLOCK
+    per_pair = n_frames * 8 * 1.5  # float64 result plus the float32 source
+    return int(max(_MIN_PAIR_BLOCK, min(_PAIR_BLOCK, _BLOCK_BYTES // per_pair)))
 
 
 @dataclass(frozen=True)
@@ -229,8 +252,13 @@ def _contact_number(
     # indexing a column axis.
     accumulated = np.zeros((n_atoms, traj.n_frames), dtype=np.float64)
 
-    for start in range(0, i_local.size, _PAIR_BLOCK):
-        stop = start + _PAIR_BLOCK
+    block = _pair_block(traj.n_frames)
+    logger.debug(
+        "contact numbers: %d pairs in blocks of %d over %d frames",
+        i_local.size, block, traj.n_frames,
+    )
+    for start in range(0, i_local.size, block):
+        stop = start + block
         block_i, block_j = i_local[start:stop], j_local[start:stop]
         pairs = np.column_stack([atom_indices[block_i], atom_indices[block_j]])
         # mdtraj returns float32. exp() of a float32 overflows above ~88,
