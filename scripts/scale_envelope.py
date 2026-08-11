@@ -111,16 +111,28 @@ def measure(residues: int, frames: int, task: str, timeout: float) -> dict | Non
     }
 
 
-def fit_exponent(sizes, seconds) -> float:
-    """Slope of log time against log size: 1 is linear, 2 is quadratic."""
+#: Timings below this are dominated by process start-up and imports rather
+#: than by the work, and a slope fitted through them describes the harness. On
+#: two machines the same measurement gave 1.80 and 2.41 for a quantity whose
+#: true exponent is 2, entirely because the fastest points were 0.02 s.
+_TIMING_FLOOR = 0.1
+
+
+def fit_exponent(sizes, seconds) -> tuple[float, int]:
+    """Slope of log time against log size: 1 is linear, 2 is quadratic.
+
+    Returns the slope and the number of points it was fitted through, because
+    a slope from two points is worth reporting differently from one through
+    five.
+    """
     import numpy as np
 
-    usable = [(s, t) for s, t in zip(sizes, seconds) if t and t > 1e-4]
+    usable = [(s, t) for s, t in zip(sizes, seconds) if t and t >= _TIMING_FLOOR]
     if len(usable) < 2:
-        return float("nan")
+        return float("nan"), len(usable)
     x = np.log([s for s, _ in usable])
     y = np.log([t for _, t in usable])
-    return float(np.polyfit(x, y, 1)[0])
+    return float(np.polyfit(x, y, 1)[0]), len(usable)
 
 
 def main() -> int:
@@ -173,11 +185,15 @@ def main() -> int:
         emit(f"| {n_res} | " + " | ".join(row) + f" | {peak:.2f} |")
     emit("")
     emit("Slope of log time against log chain length "
-         "(1 is linear, 2 is quadratic):")
+         "(1 is linear, 2 is quadratic), fitted only through points slower "
+         f"than {_TIMING_FLOOR} s:")
     emit("")
     for task in tasks:
-        exponent = fit_exponent(residue_grid, by_task[task])
-        emit(f"- `{task}`: {exponent:.2f}")
+        exponent, points = fit_exponent(residue_grid, by_task[task])
+        emit(
+            f"- `{task}`: too fast to fit at these sizes" if points < 2
+            else f"- `{task}`: {exponent:.2f} (from {points} points)"
+        )
     emit("")
 
     # --- frames, at fixed residues ---
@@ -201,11 +217,15 @@ def main() -> int:
                 peak = max(peak, result["gb"])
         emit(f"| {n_frames} | " + " | ".join(row) + f" | {peak:.2f} |")
     emit("")
-    emit("Slope of log time against log ensemble size:")
+    emit("Slope of log time against log ensemble size, fitted only through "
+         f"points slower than {_TIMING_FLOOR} s:")
     emit("")
     for task in tasks:
-        exponent = fit_exponent(frame_grid, by_task[task])
-        emit(f"- `{task}`: {exponent:.2f}")
+        exponent, points = fit_exponent(frame_grid, by_task[task])
+        emit(
+            f"- `{task}`: too fast to fit at these sizes" if points < 2
+            else f"- `{task}`: {exponent:.2f} (from {points} points)"
+        )
     emit("")
 
     table = "\n".join(lines)
