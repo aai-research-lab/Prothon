@@ -118,9 +118,9 @@ rather than failing.
 
 ## What is not corrected for
 
-**Frames from a single continuous trajectory are correlated in time**, and the
-permutation null assumes they are not. The consequence has been measured rather
-than left as a caveat, and it is large:
+**Frames from a single continuous trajectory are correlated in time**, and a
+null that relabels individual frames assumes they are not. The consequence was
+measured rather than left as a caveat, and it is large:
 
 | correlation time (frames) | independent conformations in 2000 | features called different |
 |---|---|---|
@@ -132,28 +132,48 @@ than left as a caveat, and it is large:
 Nominal rate 5%; both ensembles drawn from the same distribution at every row.
 The full measurement is on the [calibration page](calibration.md).
 
-**So the p-values from a single continuous trajectory are not trustworthy.** At
-a correlation time of twenty frames — unremarkable for a loop — essentially
-every residue is called different when nothing differs.
+**Prothon therefore relabels blocks, not frames.** The correlation time is
+estimated from the data by an integrated autocorrelation with Sokal's window,
+blocks are made a couple of correlation times long, and whole blocks are
+relabelled — so the null is built from data that still looks like a trajectory.
+On the same data as the table above:
 
-Three things follow for practice.
+| correlation time (frames) | frame permutation | block permutation |
+|---|---|---|
+| 1 | 3.1% | 0.0% |
+| 5 | 64.1% | 1.6% |
+| 20 | 100.0% | 1.6% |
 
-**Subsample to the correlation time.** Every τ-th frame, or subsample by the
-estimated statistical inefficiency. The ensemble is smaller and the p-values
-mean what they say.
+This happens automatically. `block_permutation=False` disables it for an
+ensemble whose frames genuinely are independent — generated structures, or an
+already-subsampled trajectory — where blocking costs resolution for nothing.
 
-**Use independent replicates where they exist.** Comparing replicate against
-replicate gives a floor that includes run-to-run variation, which is the honest
-reference for judging a difference between conditions, and needs no estimate of
-a correlation time.
+**Rows must be in the order the frames were generated.** A shuffled or
+concatenated matrix has no correlation time to estimate, and the correction
+silently finds none.
 
-**Trust the floor over the p-value.** The split-half noise floor is *measured*
-rather than assumed. Correlation degrades it too, but far more gracefully than
-it degrades the null.
+### When there is not enough to test with
 
-A block permutation — relabelling contiguous blocks of length ~τ rather than
-individual frames — is the fix, and the table above is the argument for
-prioritising it.
+Two situations leave too little independent information for any p-value, and
+Prothon reports the measured floor and withholds the p-value rather than
+printing one it cannot support:
+
+A permutation p-value over six blocks cannot resolve a 5% threshold, let alone
+survive correction across a few hundred residues. Prothon therefore refuses
+below eight.
+
+What makes that check trustworthy is that **the block length is never shortened
+to manufacture blocks**. A block shorter than the correlation time does not
+contain the correlation, so the null it builds is the frame-permutation null
+under a block-shaped name — and the block count that was meant to reveal the
+problem is the count that was forced to look healthy. A short trajectory of a
+slow system therefore reports few blocks and is refused, even where the
+correlation time itself has saturated: 300 frames of a system whose estimator
+saturates at 33 leaves four blocks.
+
+`ComparisonResult.p_values_withheld` is set and the summary says
+why. Sample for longer, or compare independent replicates — which gives a floor
+including run-to-run variation and needs no correlation time at all.
 
 ## References
 

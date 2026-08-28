@@ -94,6 +94,24 @@ The first row is the control: with frames essentially independent the rate is
 5.5%, and its interval brackets the nominal level. Everything below it is the
 cost of correlation alone.
 
+### The fix
+
+Relabelling contiguous blocks of length ~2τ rather than individual frames
+restores calibration across the whole range, on the same data:
+
+| correlation time τ | frame permutation | block permutation |
+|---|---|---|
+| 1 | 3.1% | 0.0% |
+| 5 | 64.1% | 1.6% |
+| 20 | 100.0% | 1.6% |
+| 50 | 100.0% | 0.0% |
+
+It keeps its power: a real 0.8σ shift at τ = 20 is still detected at 96% of
+features.
+
+Reproduce with `python scripts/calibration.py --study correlation`, which now
+runs both nulls on the same data.
+
 ### What this means for a result
 
 **The p-values from a single continuous trajectory are not trustworthy.** At a
@@ -108,7 +126,7 @@ would, and the null is too narrow. The same argument applies to any
 per-feature test that treats frames as independent draws, including a
 Kolmogorov–Smirnov or a bootstrap test.
 
-**What to do instead, today.**
+**If the p-value is withheld.**
 
 *Subsample to the correlation time.* Take every $\tau$-th frame, or estimate
 the statistical inefficiency and subsample by it. The ensemble is smaller and
@@ -124,10 +142,9 @@ rather than assumed. It is degraded by correlation too — halves of a correlate
 trajectory resemble each other more than independent samples would — but it
 degrades far more gracefully than the null does.
 
-**What is planned.** A block permutation, which relabels contiguous blocks of
-length ~τ instead of individual frames and so preserves the correlation
-structure under the null. The table above is the argument for prioritising it,
-and the measurement against which it will be judged.
+**Where blocking cannot help.** With too few blocks, or a trajectory shorter
+than about twenty correlation times, there is no p-value to be had at any block
+size. Prothon says so rather than printing one.
 
 ## Correlated features
 

@@ -73,6 +73,12 @@ from scipy.special import ive
 from scipy.stats import gaussian_kde, mannwhitneyu
 
 from ..utils import get_logger
+from .correlation import (
+    MINIMUM_BLOCKS,
+    block_labels,
+    correlation_time,
+    plan_blocks,
+)
 from .metrics import feature_distance, resolve_metric
 
 logger = get_logger("dissimilarity")
@@ -172,6 +178,16 @@ class ComparisonResult:
     #: Kish effective sample size of each ensemble. Equal to the frame count
     #: when unweighted; much smaller when a few conformers carry the mass.
     effective_samples: tuple[float, float] = (0.0, 0.0)
+    #: Estimated correlation time in frames, and the number of independent
+    #: blocks the null was built from. A correlation time of 1.0 means the
+    #: frames were treated as independent.
+    correlation_time: float = 1.0
+    n_blocks: int = 0
+    #: Set when the sampling could not support a p-value at all, in which case
+    #: every entry of ``p_values`` is 1 and the floor is the only guide. Two
+    #: things cause it: too few blocks to permute, and a trajectory too short
+    #: for its own correlation time to be estimable.
+    p_values_withheld: bool = False
     measure: str = ""
     #: Position of each feature on the reference ensemble, one-based. Set when
     #: the ensembles were reconciled and the columns are a subset; ``None``
@@ -187,6 +203,15 @@ class ComparisonResult:
     @property
     def resolved(self) -> bool:
         return bool(self.global_dissimilarity > self.noise_floor)
+
+    @property
+    def p_values_reported(self) -> bool:
+        """Whether the sampling supported a p-value at all.
+
+        False when too few independent blocks were available, in which case
+        the floor is the only guide and every p-value is 1.
+        """
+        return not self.p_values_withheld
 
     @property
     def n_significant(self) -> int:
@@ -221,6 +246,9 @@ class ComparisonResult:
             "resolved": self.resolved,
             "n_frames": list(self.n_frames),
             "effective_samples": list(self.effective_samples),
+            "correlation_time": float(self.correlation_time),
+            "n_blocks": int(self.n_blocks),
+            "p_values_withheld": bool(self.p_values_withheld),
             "feature_index": (
                 None if self.feature_index is None else self.feature_index.tolist()
             ),
@@ -497,6 +525,7 @@ def _permutation_null(
     weights_a=None,
     weights_b=None,
     metric: str = "jsd",
+    block_length: int = 1,
 ) -> np.ndarray:
     """Distances between two groups formed by relabelling the pooled frames.
 
@@ -524,9 +553,32 @@ def _permutation_null(
         if weighted else None
     )
 
+    # Blocks of consecutive frames are the exchangeable unit, not frames. Each
+    # ensemble is blocked separately, because they are separate trajectories
+    # and a block must not straddle the join between them.
+    if block_length > 1:
+        labels_a = block_labels(n_reference, block_length)
+        labels_b = block_labels(total - n_reference, block_length) + labels_a[-1] + 1
+        labels = np.concatenate([labels_a, labels_b])
+        blocks = [np.nonzero(labels == b)[0] for b in np.unique(labels)]
+    else:
+        blocks = None
+
     null = np.empty((n_permutations, reference.shape[1]), dtype=np.float64)
     for k in range(n_permutations):
-        order = rng.permutation(total)
+        if blocks is None:
+            order = rng.permutation(total)
+        else:
+            # Relabel whole blocks. The groups end up close to the original
+            # sizes rather than exactly equal, which is what a block design
+            # gives and is not a problem: the statistic is computed on whatever
+            # each group holds.
+            shuffled = rng.permutation(len(blocks))
+            taken, order = 0, []
+            for index in shuffled:
+                order.append(blocks[index])
+                taken += blocks[index].size
+            order = np.concatenate(order)
         left, right = order[:n_reference], order[n_reference:]
         wl = wr = None
         if weighted:
@@ -663,6 +715,8 @@ def dissimilarity(
     weights_ref=None,
     weights=None,
     metric: str = "jsd",
+    block_permutation: bool | None = None,
+    correlation_time_frames: float | None = None,
     alpha: float = 0.05,
     random_state: int | np.random.Generator | None = None,
     legacy: bool = False,
@@ -705,6 +759,20 @@ def dissimilarity(
     metric
         Which per-feature distance to use: ``jsd`` (default, bounded),
         ``wasserstein`` (unbounded, in the feature's own units) or ``ks``.
+    block_permutation
+        Relabel contiguous blocks rather than individual frames, so the null
+        is built from data that looks like a trajectory. ``None`` (the
+        default) enables it whenever a correlation time longer than one frame
+        is detected. Set ``False`` for an ensemble whose frames genuinely are
+        independent -- a set of generated structures, or an already-subsampled
+        trajectory -- where blocking costs resolution for nothing.
+
+        **Rows must be in the order the frames were generated.** A shuffled or
+        concatenated matrix has no correlation time, and this will silently
+        find none.
+    correlation_time_frames
+        Use this correlation time instead of estimating one. Useful when it is
+        known from elsewhere, and for reproducing a published analysis.
     alpha
         False-discovery rate for the per-feature test.
     random_state
@@ -801,6 +869,20 @@ def dissimilarity(
         x_min, x_max = -np.pi, np.pi
 
     resolve_metric(metric)  # fail here rather than inside the permutation loop
+
+    # How much of this trajectory is independent, and therefore what the null
+    # can be built from.
+    tau = 1.0
+    block_length, n_blocks = 1, min(ref_rep.shape[0], rep.shape[0])
+    if not legacy and block_permutation is not False:
+        tau = (
+            float(correlation_time_frames)
+            if correlation_time_frames is not None
+            else max(correlation_time(ref_rep), correlation_time(rep))
+        )
+        if tau > 1.0 or block_permutation is True:
+            smaller = min(ref_rep.shape[0], rep.shape[0])
+            block_length, n_blocks = plan_blocks(smaller, tau)
     if legacy:
         raw_local = jsd_local(
             ref_rep, rep, x_min, x_max, x_num, False, weights_ref, weights, metric
@@ -813,6 +895,7 @@ def dissimilarity(
             pooled = mannwhitneyu(between.flatten(), within.flatten()).pvalue
         p_values = np.full(raw_local.shape, float(pooled))
         noise_floor = float(np.mean(within))
+        withheld = False
     else:
         # Subsample once, then use the same matrices for the observed statistic
         # and for every relabelling: the null must be built from exactly the
@@ -827,8 +910,30 @@ def dissimilarity(
         null = _permutation_null(
             reference_sample, other_sample, x_min, x_max, x_num,
             use_circular, n_permutations, rng, w_ref, w_other, metric,
+            block_length,
         )
         p_values = _studentised_p_values(raw_local, null)
+
+        # One check, because the block length is no longer shortened to
+        # manufacture blocks: a trajectory too short for its own correlation
+        # time now shows up as too few blocks, which is what it is.
+        withheld = block_length > 1 and n_blocks < MINIMUM_BLOCKS
+        if withheld:
+            # Fewer independent units than a p-value can be built from. The
+            # floor is still measured and still means something; the p-value
+            # would not, so it is withheld rather than printed.
+            p_values = np.ones_like(p_values)
+            warnings.warn(
+                f"A correlation time of about {tau:.0f} frames leaves only "
+                f"{n_blocks} independent blocks in "
+                f"{min(ref_rep.shape[0], rep.shape[0])} frames, fewer than the "
+                f"{MINIMUM_BLOCKS} a permutation p-value can be built from. No "
+                f"p-value is reported. The noise floor is measured and still "
+                f"applies. Sample this system for longer, or compare independent "
+                f"replicates.",
+                UserWarning,
+                stacklevel=3,
+            )
         noise_floor = float(
             np.mean(
                 _split_half_floor(
@@ -841,6 +946,8 @@ def dissimilarity(
 
     significant = p_values < alpha
     local = np.where(significant, raw_local, 0.0)
+    if legacy:
+        withheld = False
 
     logger.debug(
         "%s: global=%.4f floor=%.4f significant=%d/%d",
@@ -862,12 +969,16 @@ def dissimilarity(
         noise_floor=noise_floor,
         n_frames=(int(ref_rep.shape[0]), int(rep.shape[0])),
         effective_samples=n_eff,
+        correlation_time=float(tau),
+        n_blocks=int(n_blocks),
+        p_values_withheld=bool(withheld),
         measure=measure,
         metadata={
             "alpha": alpha,
             "s_num": s_num,
             "n_permutations": 0 if legacy else n_permutations,
             "sample_size": sample_size,
+            "block_length": int(block_length),
             "null": "bootstrap (2.0)" if legacy else "permutation",
             "metric": "jsd" if legacy else metric,
             "weighted": (weights_ref is not None) or (weights is not None),

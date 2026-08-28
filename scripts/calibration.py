@@ -131,6 +131,7 @@ def one_replicate(job):
     span = max(abs(a).max(), abs(b).max()) * 1.1
     result = dissimilarity(
         a, b, -span, span,
+        block_permutation=settings.get("block_permutation"),
         x_num=settings["x_num"],
         s_num=2,
         metric=settings["metric"],
@@ -196,6 +197,7 @@ BASE = {
     "permutations": 100,
     "alpha": 0.05,
     "tau": 1.0,
+    "block_permutation": None,
 }
 
 
@@ -234,15 +236,21 @@ def study_time_correlation(replicates, workers, quick):
     taus = [1.0, 20.0] if quick else [1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
     rows = []
     for tau in taus:
-        settings = {
-            **BASE, "generator": "time_correlated", "tau": tau,
-            "frames": 2000, "sample_size": 2000,
-        }
-        print(f"  correlation time {tau} frames", file=sys.stderr)
-        row = run(settings, replicates, workers)
-        row["tau"] = tau
-        row["theoretical_neff"] = theoretical_neff(2000, tau)
-        rows.append(row)
+        # Both nulls on the same data, so the comparison is like for like.
+        for blocked in (False, None):
+            settings = {
+                **BASE, "generator": "time_correlated", "tau": tau,
+                "frames": 2000, "sample_size": 2000,
+                "block_permutation": blocked,
+            }
+            label = "block" if blocked is None else "frame"
+            print(f"  correlation time {tau} frames, {label} permutation",
+                  file=sys.stderr)
+            row = run(settings, replicates, workers)
+            row["tau"] = tau
+            row["blocked"] = blocked is None
+            row["theoretical_neff"] = theoretical_neff(2000, tau)
+            rows.append(row)
     return rows
 
 
@@ -274,14 +282,15 @@ def render(name, rows) -> str:
             )
     else:
         lines.append(
-            "| correlation time (frames) | independent conformations "
-            "in 2000 | features called | 95% CI |"
+            "| correlation time (frames) | independent conformations in 2000 "
+            "| null | features called | 95% CI |"
         )
-        lines.append("|---|---|---|---|")
+        lines.append("|---|---|---|---|---|")
         for r in rows:
             lo, hi = r["feature_ci"]
+            null = "block" if r.get("blocked") else "frame"
             lines.append(
-                f"| {r['tau']:.0f} | {r['theoretical_neff']:.0f} | "
+                f"| {r['tau']:.0f} | {r['theoretical_neff']:.0f} | {null} | "
                 f"{r['feature_rate']:.2%} | {lo:.2%}–{hi:.2%} |"
             )
     return "\n".join(lines)

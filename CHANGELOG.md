@@ -276,6 +276,27 @@ All notable changes to Prothon are recorded here. This project follows
 - It surfaced from a calibration run: three metrics agreeing to five decimal
   places across eight thousand features, which no two estimators do.
 
+### Added — block permutation
+
+- **The null relabels contiguous blocks rather than individual frames**, so it
+  is built from data that still looks like a trajectory. The correlation time
+  is estimated per feature by an integrated autocorrelation with Sokal's
+  window, summarised by a high quantile across features, and blocks are made a
+  couple of correlation times long. On the same null data as before:
+
+  | correlation time τ | frame permutation | block permutation |
+  |---|---|---|
+  | 1 | 6.5% | 2.4% |
+  | 5 | 72.1% | 1.8% |
+  | 20 | 99.0% | 3.1% |
+  | 50 | 99.9% | 1.9% |
+
+  Nominal 5%. Power is retained: a real 0.8σ shift at τ = 20 is detected at 96%
+  of features.
+- On by default; `block_permutation=False` disables it where frames genuinely
+  are independent. `ComparisonResult` now carries `correlation_time`,
+  `n_blocks` and `p_values_withheld`.
+
 ### Refusals
 
 - **Coverage, not just identity.** Free end gaps make the aligner behave
@@ -289,6 +310,12 @@ All notable changes to Prothon are recorded here. This project follows
   complex lets the aligner slide one chain against another, which is cheap in
   score and nonsense as a map.
 - Conformations with differing atom counts within one ensemble.
+- **A p-value where the sampling cannot support one**: fewer independent
+  blocks than a permutation null can be built from. The block length is never
+  shortened to manufacture blocks, so a short trajectory of a slow system
+  shows up as a shortfall rather than being papered over — 300 frames of a
+  system whose correlation time saturates the estimator at 33 leaves four
+  blocks, and four is refused. The measured noise floor is reported either way.
 - A measure whose windows no difference between the molecules leaves intact —
   `caba` and `cata` span three and four consecutive alpha carbons, and a
   deletion can break every one of them. The error says which per-residue

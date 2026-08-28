@@ -636,11 +636,17 @@ class Prothon:
         for measure, comparisons in self.comparison_results.items():
             lines.append(f"{measure.upper()} (reference: ensemble {comparisons[0].reference_index})")
             for c in comparisons:
-                verdict = (
-                    f"{c.n_significant}/{c.local_dissimilarity.size} residues differ"
-                    if c.resolved
-                    else "not resolvable at this sampling"
-                )
+                if not c.p_values_reported:
+                    verdict = (
+                        f"no p-value: correlation time {c.correlation_time:.0f} "
+                        f"frames leaves {c.n_blocks} independent blocks"
+                    )
+                elif c.resolved:
+                    verdict = (
+                        f"{c.n_significant}/{c.local_dissimilarity.size} residues differ"
+                    )
+                else:
+                    verdict = "not resolvable at this sampling"
                 lines.append(
                     f"  ensemble {c.ensemble_index}: "
                     f"d = {c.global_dissimilarity:.4f} "
