@@ -252,6 +252,14 @@ All notable changes to Prothon are recorded here. This project follows
 - The statistics page now carries the measurement instead of the caveat, with
   three things a user can do today: subsample to the correlation time, use
   independent replicates, or read the floor rather than the p-value.
+- **All three metrics are calibrated on exchangeable frames**, measured over
+  1000 replicates each. The rate to compare against α is the probability of any
+  rejection, which is what Benjamini–Hochberg controls under the complete null.
+- **The default of 100 permutations is mildly anticonservative.** Averaged over
+  metrics and thresholds, the observed rate is 1.39 times α at 100
+  permutations and 1.18 times at 200 — roughly 6% where 5% is asked for. This
+  is the discreteness of a permutation p-value, and the fix is to raise
+  `n_permutations`, at linear cost.
 
 ### Fixed — the metric was not reaching the estimator
 

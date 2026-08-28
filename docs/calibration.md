@@ -11,38 +11,59 @@ Reproduce with `scripts/calibration.py`.
 ## Independent frames
 
 With exchangeable frames the test is calibrated. Measured over 1000 replicates
-per setting, 8 features each, Jensen–Shannon distance:
+per setting, 8 features each:
 
-| α | permutations | features called different | 95% CI | studies with ≥1 rejection |
-|---|---|---|---|---|
-| 0.01 | 100 | 0.19% | 0.11–0.31% | 1.4% |
-| 0.01 | 200 | 0.15% | 0.09–0.26% | 1.1% |
-| 0.05 | 100 | 0.84% | 0.66–1.06% | 6.1% |
-| 0.05 | 200 | 0.76% | 0.59–0.98% | 5.6% |
-| 0.10 | 100 | 1.66% | 1.40–1.97% | 10.6% |
-| 0.10 | 200 | 1.54% | 1.29–1.83% | 9.9% |
+| metric | α | permutations | features called different | 95% CI | studies with ≥1 rejection |
+|---|---|---|---|---|---|
+| `jsd` | 0.01 | 100 | 0.19% | 0.11–0.31% | 1.4% |
+| `jsd` | 0.01 | 200 | 0.15% | 0.09–0.26% | 1.1% |
+| `jsd` | 0.05 | 100 | 0.84% | 0.66–1.06% | 6.1% |
+| `jsd` | 0.05 | 200 | 0.76% | 0.59–0.98% | 5.6% |
+| `jsd` | 0.10 | 100 | 1.66% | 1.40–1.97% | 10.6% |
+| `jsd` | 0.10 | 200 | 1.54% | 1.29–1.83% | 9.9% |
+| `wasserstein` | 0.01 | 100 | 0.24% | 0.15–0.37% | 1.9% |
+| `wasserstein` | 0.01 | 200 | 0.15% | 0.09–0.26% | 1.2% |
+| `wasserstein` | 0.05 | 100 | 1.00% | 0.80–1.24% | 7.0% |
+| `wasserstein` | 0.05 | 200 | 0.83% | 0.65–1.05% | 6.0% |
+| `wasserstein` | 0.10 | 100 | 2.01% | 1.73–2.34% | 11.9% |
+| `wasserstein` | 0.10 | 200 | 1.84% | 1.57–2.16% | 11.4% |
+| `ks` | 0.01 | 100 | 0.24% | 0.15–0.37% | 1.9% |
+| `ks` | 0.01 | 200 | 0.20% | 0.12–0.32% | 1.6% |
+| `ks` | 0.05 | 100 | 0.88% | 0.69–1.10% | 6.2% |
+| `ks` | 0.05 | 200 | 0.81% | 0.64–1.03% | 5.8% |
+| `ks` | 0.10 | 100 | 1.90% | 1.62–2.22% | 12.2% |
+| `ks` | 0.10 | 200 | 1.66% | 1.40–1.97% | 10.9% |
 
-**Read the last column, not the third.** Benjamini–Hochberg controls the false
-discovery rate, which is the expected proportion of false positives *among the
-rejections* — not the per-feature rate. Under the complete null, where nothing
-differs anywhere, controlling the false discovery rate is equivalent to
-controlling the probability of making any rejection at all. That probability
-is what the last column measures, and it tracks α: 1.4% at 0.01, 6.1% at 0.05,
-10.6% at 0.10.
+### Read the last column, not the third
 
-The per-feature rate is well below α by construction and should not be compared
-to it.
+Benjamini–Hochberg controls the false discovery rate: the expected proportion
+of false positives *among the rejections*, not the per-feature rate. Under the
+complete null, where nothing differs anywhere, controlling the false discovery
+rate is the same as controlling the probability of making any rejection at all.
+That probability is the last column, and it is what should be compared to α.
 
-More permutations shift the rate slightly downward, as the finer p-value
-resolution stops marginal features from crossing the threshold.
+The per-feature rate is far below α by construction and comparing it to α says
+nothing.
 
-:::{note}
-The measurement above was made with the Jensen–Shannon distance. An equivalent
-run for the Wasserstein and Kolmogorov–Smirnov metrics is pending: the
-comparison pipeline was, until recently, silently computing Jensen–Shannon
-whatever metric was requested, so the numbers previously obtained for the other
-two describe the default rather than themselves.
-:::
+### More permutations are worth buying
+
+The study rate runs consistently above α, and doubling the permutations moves
+it toward α: averaged over all nine metric-threshold combinations, the ratio of
+observed rate to α is **1.39 at 100 permutations and 1.18 at 200**.
+
+That is the discreteness of a permutation p-value. With ``n`` relabellings a
+p-value is a multiple of ``1/(n+1)``, and the pooling across features softens
+that without removing it, so a threshold falls between attainable values and
+lands slightly on the permissive side. More permutations make the grid finer.
+
+**The default of 100 permutations is therefore mildly anticonservative** —
+about 6% instead of 5% — which is worth knowing and is not the same order of
+problem as anything else on this page. For a result going into a paper, raise
+`n_permutations` to 200 or beyond; the cost is linear.
+
+All three metrics behave the same way, which is the expected result: the
+permutation null makes no assumption about the statistic, so any of them is
+calibrated, and the residual differences between them are within the intervals.
 
 ## Frames correlated in time
 

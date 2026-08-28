@@ -72,6 +72,12 @@ The assumption is that the standardised null is comparable across features. For
 distances computed from equal sample sizes on a shared grid that holds; it
 would not hold if features had wildly different sample sizes.
 
+The p-values remain discrete, and the consequence is measurable: at the default
+100 permutations the test rejects about 1.4 times as often as the threshold
+allows, falling to about 1.2 times at 200 — roughly 6% instead of 5%. Raise
+`n_permutations` for a result going into a paper. See the
+[calibration page](calibration.md).
+
 ## Multiple testing
 
 A 300-residue protein tested at $\alpha = 0.05$ produces fifteen false
