@@ -218,11 +218,13 @@ All notable changes to Prothon are recorded here. This project follows
   peak resident memory, because the expensive allocations happen inside
   compiled extensions and a high-water mark in one process would attribute the
   largest allocation to everything after it.
-- The page records three facts a user needs and the documentation previously
-  only asserted: representation is linear in conformations (measured slope
-  1.00); comparison is nearly independent of ensemble size (0.25), because
-  ensembles are subsampled before the permutation null; and comparison
-  dominates the total above about fifty residues.
+- The page records what the documentation previously only asserted, measured
+  to 400 residues and 50,000 conformations: representation is linear in
+  conformations (1.01 for cbcn, 0.99 for sasa) and quadratic in chain length
+  (2.03, as the pair count requires); a comparison is nearly independent of
+  ensemble size (0.20 — a hundredfold larger ensemble for under three times the
+  time, because ensembles are subsampled before the permutation null); and the
+  comparison dominates the total above about fifty residues.
 
 ### Refusals
 

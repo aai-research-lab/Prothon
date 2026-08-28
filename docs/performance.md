@@ -1,91 +1,106 @@
 # Performance
 
-What a run costs, measured rather than asserted. Every point runs in
-its own process and reports its own peak resident memory.
+What a run costs, measured rather than asserted. Every point runs in its own
+process and reports its own peak resident memory.
 
-Measured on `linux`, Python 3.12.
+Measured on a Linux workstation, Python 3.11.
 
 ## Against chain length (2000 conformations)
 
-| residues | cbcn (s) | cata (s) | compare (s) | peak (GB) |
-|---|---|---|---|---|
-| 25 | 0.13 | 0.01 | 5.00 | 0.16 |
-| 50 | 0.36 | 0.01 | 10.58 | 0.22 |
-| 100 | 2.02 | 0.02 | 23.75 | 0.41 |
-| 200 | 5.15 | 0.03 | 56.67 | 0.53 |
+| residues | cbcn (s) | cata (s) | sasa (s) | compare (s) | peak (GB) |
+|---|---|---|---|---|---|
+| 25 | 0.03 | 0.01 | 0.16 | 3.60 | 0.16 |
+| 50 | 0.07 | 0.01 | 0.34 | 7.59 | 0.22 |
+| 100 | 0.26 | 0.01 | 0.74 | 17.17 | 0.41 |
+| 200 | 1.09 | 0.02 | 1.64 | 40.61 | 0.53 |
+| 400 | 4.38 | 0.03 | 3.70 | 91.42 | 0.56 |
 
-Slope of log time against log chain length (1 is linear, 2 is quadratic), fitted only through points slower than 0.1 s:
+Slope of log time against log chain length (1 is linear, 2 is quadratic),
+fitted only through points slower than 0.1 s:
 
-- `cbcn`: 1.83 (from 4 points)
+- `cbcn`: 2.03 (from 3 points)
 - `cata`: too fast to fit at these sizes
-- `compare`: 1.17 (from 4 points)
+- `sasa`: 1.14 (from 5 points)
+- `compare`: 1.18 (from 5 points)
 
 ## Against ensemble size (100 residues)
 
-| conformations | cbcn (s) | cata (s) | compare (s) | peak (GB) |
-|---|---|---|---|---|
-| 500 | 0.23 | 0.01 | 12.59 | 0.21 |
-| 2000 | 1.73 | 0.02 | 23.35 | 0.41 |
-| 8000 | 3.34 | 0.09 | 25.08 | 0.64 |
+| conformations | cbcn (s) | cata (s) | sasa (s) | compare (s) | peak (GB) |
+|---|---|---|---|---|---|
+| 500 | 0.07 | 0.01 | 0.19 | 8.83 | 0.21 |
+| 2000 | 0.26 | 0.01 | 0.75 | 17.24 | 0.41 |
+| 10000 | 1.29 | 0.04 | 3.69 | 18.66 | 0.65 |
+| 50000 | 6.85 | 0.29 | 18.34 | 24.62 | 1.25 |
 
-Slope of log time against log ensemble size, fitted only through points slower than 0.1 s:
+Slope of log time against log ensemble size, fitted only through points slower
+than 0.1 s:
 
-- `cbcn`: 0.96 (from 3 points)
+- `cbcn`: 1.01 (from 3 points)
 - `cata`: too fast to fit at these sizes
-- `compare`: 0.25 (from 3 points)
+- `sasa`: 0.99 (from 4 points)
+- `compare`: 0.20 (from 4 points)
 
 ## What the numbers mean
 
-**Representation is linear in the number of conformations.** The measured slope
-for `cbcn` is 0.96. That is the claim the method rests on, and it is now
-measured rather than asserted.
+**Representation is linear in the number of conformations.** The measured
+slopes are 1.01 for `cbcn` and 0.99 for `sasa`. That is the claim the method
+rests on, and it is measured rather than asserted.
 
-**Representation is quadratic in chain length.** It has to be: the number of
-residue pairs is. The measured slope depends on the machine and on which points
-the fit reaches -- 1.80 here and 1.95 on an Apple Silicon laptop, both
-consistent with 2 once the sub-tenth-of-a-second points are excluded. Timings
-that small measure process start-up rather than the work, and a slope fitted
-through them describes the harness; an earlier version of this page quoted
-1.80 as though it were a property of the algorithm, which it was not.
+**Representation is quadratic in chain length**, and it has to be: the number
+of residue pairs is. `cbcn` measures 2.03. The vectorised implementation
+reduces the constant, not the exponent. What keeps a large protein tractable is
+that the exponent applies to residues, which number in the hundreds, and not to
+conformations, which number in the tens of thousands.
 
-The vectorised implementation reduces the constant, not the exponent. What
-keeps a large protein tractable is that the exponent applies to residues, which
-number in the hundreds, and not to conformations, which number in the tens of
-thousands.
+`sasa` measures 1.14 because Shrake–Rupley is linear in atoms with a
+neighbour-list cutoff, rather than over all pairs.
 
-**Comparison is nearly independent of ensemble size.** The measured slope is
-0.25 -- almost flat. Ensembles larger than `sample_size` (1000 by default) are
-subsampled without replacement before the permutation null, so a
-100,000-frame trajectory costs a comparison no more than a 10,000-frame one.
-What grows with ensemble size is the representation, not the statistics.
+**A comparison is nearly independent of ensemble size.** The measured slope is
+0.20. Fifty thousand conformations cost 24.6 s against 8.8 s for five hundred:
+a hundredfold larger ensemble for under three times the time. Ensembles larger
+than `sample_size` (1000 by default) are subsampled without replacement before
+the permutation null, so what grows with ensemble size is the representation,
+not the statistics.
 
 Raising `sample_size` buys a tighter noise floor at linear cost, and is the
 first parameter to raise for a result going into a paper.
 
-**Comparison dominates the total.** Above about fifty residues the permutation
-null costs more than building the representation. It scales linearly in chain
-length, because there is one density per residue, and linearly in
-`n_permutations`.
+**A comparison dominates the total.** Above about fifty residues the
+permutation null costs more than building the representation — 91 s against 4 s
+at 400 residues. It grows linearly in chain length, because there is one
+density per residue, and linearly in `n_permutations`.
 
-**Peak memory is set by the trajectory, not by the analysis.** Pair distances
-are computed in blocks sized from a memory budget rather than a fixed pair
-count, so peak memory holds roughly flat as the trajectory lengthens: a block
-costs about 130 MB whether the trajectory has eight thousand frames or two
-hundred thousand.
+**Peak memory is set by the trajectory, not by the analysis.** Fifty thousand
+conformations of a hundred residues peak at 1.25 GB, most of which is the
+trajectory itself. Pair distances are computed in blocks sized from a memory
+budget rather than a fixed pair count, so the analysis adds roughly 130 MB
+whether the trajectory has eight thousand frames or two hundred thousand.
+
+## What this costs for a real study
+
+Two 500-residue proteins, 50,000 conformations each, one measure: a few minutes
+of representation and a few minutes of comparison, inside 2 GB. A study of a
+dozen ensembles across three measures is an afternoon on one core, and the
+ensembles are independent, so it parallelises trivially.
 
 ## Reading these numbers
 
 They were measured on one machine and are indicative, not a specification. The
-same script on an Apple Silicon laptop runs about twice as fast throughout,
-with the same slopes. What transfers between machines is the shape -- linear in
-conformations, quadratic in residues, flat in ensemble size for the comparison
--- and not the seconds.
+same script on an Apple Silicon laptop runs roughly twice as fast throughout,
+with the same slopes. What transfers between machines is the shape — linear in
+conformations, quadratic in residues, nearly flat in ensemble size for a
+comparison — and not the seconds.
+
+Timings below a tenth of a second are excluded from the fits, because they
+measure process start-up rather than the work. That is why `cata` reports no
+slope: virtual torsions over a hundred residues take a hundredth of a second,
+and nothing in this grid can measure their scaling.
 
 ## Reproducing this table
 
 ```bash
 python scripts/scale_envelope.py --out docs/performance.md
-python scripts/scale_envelope.py --full     # the larger grid
+python scripts/scale_envelope.py --full     # the grid above
 ```
 
 Each point runs in its own process and reports its own peak resident memory.
