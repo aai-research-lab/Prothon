@@ -138,11 +138,16 @@ blocks are made a couple of correlation times long, and whole blocks are
 relabelled — so the null is built from data that still looks like a trajectory.
 On the same data as the table above:
 
-| correlation time (frames) | frame permutation | block permutation |
+| correlation time τ | frame permutation | block permutation |
 |---|---|---|
-| 1 | 3.1% | 0.0% |
-| 5 | 64.1% | 1.6% |
-| 20 | 100.0% | 1.6% |
+| 1 | 5.5% | 1.7% |
+| 5 | 72.1% | 2.3% |
+| 20 | 99.0% | 2.2% |
+| 50 | 99.9% | 2.3% |
+
+Nominal 5%, 1000 replicates each. The block rate is flat across the range
+rather than degrading with τ, so the test does not require a user to know
+their correlation time in order to be honest.
 
 This happens automatically. `block_permutation=False` disables it for an
 ensemble whose frames genuinely are independent — generated structures, or an

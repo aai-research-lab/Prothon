@@ -55,7 +55,6 @@ logger = get_logger("correlation")
 
 __all__ = [
     "MINIMUM_BLOCKS",
-    "MIN_TRAJECTORY_IN_TAUS",
     "block_labels",
     "correlation_time",
     "effective_frames",
@@ -77,14 +76,6 @@ BLOCK_MULTIPLIER = 2.0
 #: With 8 blocks there are 35 balanced splits; the resolution before any
 #: multiplicity correction is already coarser than a 5% threshold.
 MINIMUM_BLOCKS = 8
-
-#: A trajectory must be at least this many correlation times long for the
-#: correlation time itself to be estimable. Below it, the autocorrelation sum
-#: runs out of data before it runs out of correlation, and the estimate
-#: saturates at a value set by the series length rather than by the physics --
-#: 300 frames of a system with a true correlation time of 120 frames returns
-#: about 36. The number that matters is the ratio, so that is what is checked.
-MIN_TRAJECTORY_IN_TAUS = 20.0
 
 #: Features whose values never change carry no autocorrelation and would
 #: otherwise contribute a meaningless estimate to the summary.

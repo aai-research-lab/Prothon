@@ -97,20 +97,29 @@ cost of correlation alone.
 ### The fix
 
 Relabelling contiguous blocks of length ~2τ rather than individual frames
-restores calibration across the whole range, on the same data:
+restores calibration across the whole range. Both nulls, 1000 replicates each,
+on the same data:
 
-| correlation time τ | frame permutation | block permutation |
-|---|---|---|
-| 1 | 3.1% | 0.0% |
-| 5 | 64.1% | 1.6% |
-| 20 | 100.0% | 1.6% |
-| 50 | 100.0% | 0.0% |
+| correlation time τ | independent conformations in 2000 | frame permutation | block permutation |
+|---|---|---|---|
+| 1 | 924 | 5.45% | 1.66% |
+| 2 | 490 | 23.67% | 2.04% |
+| 5 | 199 | 72.11% | 2.30% |
+| 10 | 100 | 93.73% | 2.17% |
+| 20 | 50 | 99.01% | 2.24% |
+| 50 | 20 | 99.92% | 2.31% |
 
-It keeps its power: a real 0.8σ shift at τ = 20 is still detected at 96% of
-features.
+Nominal 5%. The block rate is flat at about 2% from τ = 1 to τ = 50 — it does
+not degrade as the correlation lengthens, which is the property that matters:
+a user does not have to know their correlation time for the test to be honest.
 
-Reproduce with `python scripts/calibration.py --study correlation`, which now
-runs both nulls on the same data.
+It is slightly conservative, as a block permutation with a finite number of
+blocks will be, and conservative in the direction that costs power rather than
+credibility. Power is not the price: a real 0.8σ shift at τ = 20 is still found
+at 98% of features.
+
+Reproduce with `python scripts/calibration.py --study correlation`, which runs
+both nulls on the same data.
 
 ### What this means for a result
 
