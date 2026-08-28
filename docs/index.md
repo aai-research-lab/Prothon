@@ -30,8 +30,11 @@ beside every result. A dissimilarity below its floor is reported as
 unresolvable, not as a small difference.
 
 [The statistics](statistics.md) sets out how significance is decided, how
-multiplicity is corrected, what an ensemble's sampling is actually worth, and
-what remains uncorrected.
+multiplicity is corrected, and what an ensemble's sampling is actually worth.
+[Calibration](calibration.md) measures the error rate rather than asserting it,
+including the case that matters most: frames correlated in time, where a null
+built on individual frames calls 99% of residues different when nothing
+differs.
 
 ## Contents
 

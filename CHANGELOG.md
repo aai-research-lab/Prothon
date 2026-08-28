@@ -281,18 +281,20 @@ All notable changes to Prothon are recorded here. This project follows
 - **The null relabels contiguous blocks rather than individual frames**, so it
   is built from data that still looks like a trajectory. The correlation time
   is estimated per feature by an integrated autocorrelation with Sokal's
-  window, summarised by a high quantile across features, and blocks are made a
-  couple of correlation times long. On the same null data as before:
+  window, summarised by the upper quartile across features, and blocks are made
+  a couple of correlation times long. On the same null data, 1000 replicates
+  per setting:
 
   | correlation time τ | frame permutation | block permutation |
   |---|---|---|
-  | 1 | 6.5% | 2.4% |
-  | 5 | 72.1% | 1.8% |
-  | 20 | 99.0% | 3.1% |
-  | 50 | 99.9% | 1.9% |
+  | 1 | 5.45% | 1.66% |
+  | 5 | 72.11% | 2.30% |
+  | 20 | 99.01% | 2.24% |
+  | 50 | 99.92% | 2.31% |
 
-  Nominal 5%. Power is retained: a real 0.8σ shift at τ = 20 is detected at 96%
-  of features.
+  Nominal 5%. The block rate is flat across the range rather than degrading
+  with τ. Power is not the price: a real 0.8σ shift at τ = 20 is still found at
+  98% of features.
 - On by default; `block_permutation=False` disables it where frames genuinely
   are independent. `ComparisonResult` now carries `correlation_time`,
   `n_blocks` and `p_values_withheld`.

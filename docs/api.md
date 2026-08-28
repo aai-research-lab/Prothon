@@ -35,6 +35,13 @@
    :members: METRICS, Metric, feature_distance, describe_metric, resolve_metric
 ```
 
+## Correlation and blocking
+
+```{eval-rst}
+.. automodule:: prothon.core.correlation
+   :members: correlation_time, effective_frames, plan_blocks, block_labels, MINIMUM_BLOCKS
+```
+
 ## Ingest and reconciliation
 
 ```{eval-rst}

@@ -16,6 +16,7 @@
 [**Documentation**](https://prothon.readthedocs.io) ·
 [**Quick start**](https://prothon.readthedocs.io/en/latest/getting_started.html) ·
 [**The statistics**](https://prothon.readthedocs.io/en/latest/statistics.html) ·
+[**Calibration**](https://prothon.readthedocs.io/en/latest/calibration.html) ·
 [**Cite**](#citation)
 
 </div>
@@ -58,12 +59,36 @@ measures it, prints it beside every result, and draws it on every figure. A
 difference smaller than the floor is reported as unresolvable rather than as a
 small difference.
 
-Significance is decided against a permutation null — pool the frames of both
-ensembles, relabel them at random, measure — which is the exact distribution of
-the statistic when the ensembles are the same and assumes nothing about the
-shape of anything (Good 2005). Per-residue p-values are corrected for
-multiplicity (Benjamini and Hochberg 1995), because a 300-residue protein
-tested at α = 0.05 yields fifteen false positives by construction. The
+Significance is decided against a permutation null — pool the conformations of
+both ensembles, relabel them at random, measure — which is the exact
+distribution of the statistic when the ensembles are the same and assumes
+nothing about the shape of anything (Good 2005). Per-residue p-values are
+corrected for multiplicity (Benjamini and Hochberg 1995), because a
+300-residue protein tested at α = 0.05 yields fifteen false positives by
+construction.
+
+**What gets relabelled is a block, not a frame.** Consecutive conformations in
+a trajectory are nearly the same conformation, so a null built by relabelling
+individual frames is far too narrow. Prothon estimates the correlation time
+from the data and relabels contiguous blocks of it. The difference is not
+subtle — on data where both ensembles are drawn from the *same* distribution,
+against a nominal 5%:
+
+| correlation time τ (frames) | frame permutation | block permutation |
+|---|---|---|
+| 1 | 5.5% | 1.7% |
+| 5 | 72.1% | 2.3% |
+| 20 | 99.0% | 2.2% |
+| 50 | 99.9% | 2.3% |
+
+The block rate is flat across the range rather than degrading with τ, so a
+result does not depend on the user knowing their correlation time. Where a
+trajectory holds too few independent blocks to build a null from, Prothon
+reports the floor and withholds the p-value rather than printing one it cannot
+support.
+
+The [calibration page](https://prothon.readthedocs.io/en/latest/calibration.html)
+carries the full measurement, and the
 [statistics page](https://prothon.readthedocs.io/en/latest/statistics.html)
 sets out what is and is not corrected for.
 
@@ -92,6 +117,7 @@ prothon -traj a.dcd,b.dcd,c.dcd -top top.pdb -m cbcn,cata -o results --seed 0
 | `-top` | Topology (PDB), shared by all of them. |
 | `-m` | Measures: `cbcn`, `cacn`, `caba`, `cata`, `sasa`. |
 | `--metric` | Distance: `jsd` (default), `wasserstein`, `ks`. |
+| `--s-num` | Split-half repeats behind the noise floor. |
 | `-r` | Reference ensemble index (default 0). |
 | `-o` | Output root. Each measure writes `<measure>_output/`. |
 | `-d` | Projections: `pca`, `mds`, `tsne`. Off by default. |
@@ -112,6 +138,8 @@ comparison.resolved                 # True: the difference clears the floor
 comparison.significant              # bool array, one per residue
 comparison.local_dissimilarity      # per residue, zero where not significant
 comparison.raw_local_dissimilarity  # per residue, unmasked
+comparison.correlation_time         # 18.4 frames, estimated from the data
+comparison.p_values_withheld        # False: the sampling supported a test
 
 print(study.summary())
 ```
@@ -161,6 +189,15 @@ nothing about it.
   et al. 2018 and Kynkäänniemi et al. 2019), distinguishing an ensemble that
   misses a state from one that invents one — two failures that any symmetric
   distance scores alike and that need opposite work.
+
+## What it costs
+
+Linear in the number of conformations and quadratic in chain length, both
+measured rather than asserted. Fifty thousand conformations of a hundred
+residues take about seven seconds to represent and peak at 1.25 GB; a
+comparison is nearly independent of ensemble size, because ensembles are
+subsampled before the permutation null. Full tables on the
+[performance page](https://prothon.readthedocs.io/en/latest/performance.html).
 
 ## Citation
 

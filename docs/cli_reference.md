@@ -35,6 +35,15 @@ refusal does not discard the comparison that already succeeded.
 
 **Each `-traj` file is one ensemble.** They are never concatenated.
 
+**Blocks, not frames.** The null relabels contiguous blocks of conformations,
+with the block length set from a correlation time estimated from the data. This
+needs no flag and no knowledge of the system. It does need the frames to be in
+the order they were generated — a trajectory written in a shuffled order has no
+correlation time to find.
+
+Where the sampling cannot support a p-value the summary says so, and the exit
+code is still 0: an honest refusal is a successful run.
+
 ## Exit codes
 
 | code | meaning |
