@@ -10,9 +10,39 @@ Reproduce with `scripts/calibration.py`.
 
 ## Independent frames
 
-With exchangeable frames the test is calibrated. Across metrics, thresholds
-and permutation counts the false-positive rate sits at or below the nominal
-level, and the split-half floor is not cleared.
+With exchangeable frames the test is calibrated. Measured over 1000 replicates
+per setting, 8 features each, Jensen–Shannon distance:
+
+| α | permutations | features called different | 95% CI | studies with ≥1 rejection |
+|---|---|---|---|---|
+| 0.01 | 100 | 0.19% | 0.11–0.31% | 1.4% |
+| 0.01 | 200 | 0.15% | 0.09–0.26% | 1.1% |
+| 0.05 | 100 | 0.84% | 0.66–1.06% | 6.1% |
+| 0.05 | 200 | 0.76% | 0.59–0.98% | 5.6% |
+| 0.10 | 100 | 1.66% | 1.40–1.97% | 10.6% |
+| 0.10 | 200 | 1.54% | 1.29–1.83% | 9.9% |
+
+**Read the last column, not the third.** Benjamini–Hochberg controls the false
+discovery rate, which is the expected proportion of false positives *among the
+rejections* — not the per-feature rate. Under the complete null, where nothing
+differs anywhere, controlling the false discovery rate is equivalent to
+controlling the probability of making any rejection at all. That probability
+is what the last column measures, and it tracks α: 1.4% at 0.01, 6.1% at 0.05,
+10.6% at 0.10.
+
+The per-feature rate is well below α by construction and should not be compared
+to it.
+
+More permutations shift the rate slightly downward, as the finer p-value
+resolution stops marginal features from crossing the threshold.
+
+:::{note}
+The measurement above was made with the Jensen–Shannon distance. An equivalent
+run for the Wasserstein and Kolmogorov–Smirnov metrics is pending: the
+comparison pipeline was, until recently, silently computing Jensen–Shannon
+whatever metric was requested, so the numbers previously obtained for the other
+two describe the default rather than themselves.
+:::
 
 ## Frames correlated in time
 
@@ -30,12 +60,18 @@ identical in distribution at every row.
 
 | correlation time τ (frames) | independent conformations in 2000 | features called different | 95% CI |
 |---|---|---|---|
-| 1 | 924 | 6.5% | 4.6–9.0% |
-| 2 | 490 | 23.1% | 18.8–28.1% |
-| 5 | 199 | 70.6% | 65.4–75.3% |
-| 20 | 50 | **98.8%** | 97.3–99.4% |
+| 1 | 924 | 5.5% | 5.0–6.0% |
+| 2 | 490 | 23.7% | 22.8–24.6% |
+| 5 | 199 | 72.1% | 71.1–73.1% |
+| 10 | 100 | 93.7% | 93.2–94.2% |
+| 20 | 50 | **99.0%** | 98.8–99.2% |
+| 50 | 20 | **99.9%** | 99.8–100.0% |
 
-Nominal rate: 5%.
+Nominal rate: 5%. Measured over 1000 replicates per row.
+
+The first row is the control: with frames essentially independent the rate is
+5.5%, and its interval brackets the nominal level. Everything below it is the
+cost of correlation alone.
 
 ### What this means for a result
 
@@ -76,8 +112,19 @@ and the measurement against which it will be judged.
 
 Residues in a protein do not move independently. Benjamini–Hochberg controls
 the false discovery rate under positive dependence, which is a theorem about
-the procedure; the script measures the whole pipeline, with an exponentially
-decaying correlation along the chain.
+the procedure; this measures the whole pipeline, with a correlation decaying
+exponentially along the chain, 20 features, 1000 replicates.
+
+| correlation between neighbouring features | features called different | 95% CI |
+|---|---|---|
+| 0.0 | 0.38% | 0.30–0.48% |
+| 0.5 | 0.62% | 0.52–0.74% |
+| 0.9 | 0.62% | 0.52–0.74% |
+
+Correlation between features raises the rate slightly and then stops mattering:
+0.5 and 0.9 are indistinguishable. Both remain far below the nominal 5%. This
+is the failure mode that does **not** occur — unlike correlation between
+frames, which is catastrophic.
 
 ## Reproducing
 

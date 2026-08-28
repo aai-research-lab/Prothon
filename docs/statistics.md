@@ -118,9 +118,10 @@ than left as a caveat, and it is large:
 
 | correlation time (frames) | independent conformations in 2000 | features called different |
 |---|---|---|
-| 1 | 924 | 6.5% |
-| 5 | 199 | 70.6% |
-| 20 | 50 | **98.8%** |
+| 1 | 924 | 5.5% |
+| 5 | 199 | 72.1% |
+| 20 | 50 | **99.0%** |
+| 50 | 20 | **99.9%** |
 
 Nominal rate 5%; both ensembles drawn from the same distribution at every row.
 The full measurement is on the [calibration page](calibration.md).

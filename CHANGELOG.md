@@ -238,10 +238,12 @@ All notable changes to Prothon are recorded here. This project follows
 
   | τ (frames) | independent conformations in 2000 | features called different |
   |---|---|---|
-  | 1 | 924 | 6.5% |
-  | 2 | 490 | 23.1% |
-  | 5 | 199 | 70.6% |
-  | 20 | 50 | **98.8%** |
+  | 1 | 924 | 5.5% |
+  | 2 | 490 | 23.7% |
+  | 5 | 199 | 72.1% |
+  | 10 | 100 | 93.7% |
+  | 20 | 50 | **99.0%** |
+  | 50 | 20 | **99.9%** |
 
   At a correlation time of twenty frames — unremarkable for a loop — essentially
   every residue is called different when nothing differs. The documentation
@@ -250,6 +252,21 @@ All notable changes to Prothon are recorded here. This project follows
 - The statistics page now carries the measurement instead of the caveat, with
   three things a user can do today: subsample to the correlation time, use
   independent replicates, or read the floor rather than the p-value.
+
+### Fixed — the metric was not reaching the estimator
+
+- **`dissimilarity` accepted `metric=`, recorded it, and ignored it.** The two
+  calls that compute the observed statistic and its permutation null were made
+  without the argument, so every comparison used the Jensen–Shannon default
+  whatever was requested. `--metric wasserstein` and `--metric ks` produced
+  Jensen–Shannon results.
+- Every test passed over it, because they checked that the metadata carried the
+  right label rather than that the number was different. Two tests now assert
+  the behaviour: that no two metrics produce identical statistics on the same
+  data, and that Wasserstein through the full pipeline returns the separation
+  between two Gaussians in feature units.
+- It surfaced from a calibration run: three metrics agreeing to five decimal
+  places across eight thousand features, which no two estimators do.
 
 ### Refusals
 

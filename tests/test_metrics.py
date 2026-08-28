@@ -8,6 +8,8 @@ version 2.0.
 
 from __future__ import annotations
 
+import itertools
+
 import numpy as np
 import pytest
 
@@ -141,6 +143,47 @@ class TestWeights:
 
 
 class TestThroughTheStatistics:
+    def test_the_metric_reaches_the_estimator(self):
+        """The test that was missing, and the bug it would have caught.
+
+        `dissimilarity` accepted `metric=` and recorded it in the metadata
+        while calling the estimator without it, so every comparison was
+        Jensen-Shannon whatever was asked for. Every test passed: they checked
+        the label rather than the number, and a null calibration run cannot
+        notice, because all three metrics are correctly calibrated and so give
+        the same rate. It showed up as three metrics agreeing to five decimal
+        places over eight thousand features, which no two estimators do.
+        """
+        rng = np.random.default_rng(31)
+        a = rng.normal(size=(400, 6))
+        b = rng.normal(0.8, 1.0, (400, 6))
+
+        raw = {}
+        for metric in sorted(METRICS):
+            raw[metric] = dissimilarity(
+                a, b, -4, 5, x_num=60, s_num=2, metric=metric, random_state=3
+            ).raw_local_dissimilarity
+
+        for left, right in itertools.combinations(sorted(METRICS), 2):
+            assert not np.allclose(raw[left], raw[right]), (
+                f"{left} and {right} produced identical statistics; the metric "
+                f"is not reaching the estimator"
+            )
+
+    def test_wasserstein_through_dissimilarity_is_in_feature_units(self):
+        """A second, independent check on the same thing: the statistic that
+        comes back must be the quantity the metric promises, not merely
+        different from the others."""
+        rng = np.random.default_rng(32)
+        a = rng.normal(0.0, 1.0, (3000, 3))
+        b = rng.normal(2.0, 1.0, (3000, 3))
+        result = dissimilarity(
+            a, b, -5, 7, x_num=80, s_num=2, metric="wasserstein",
+            sample_size=3000, random_state=4,
+        )
+        # Two Gaussians of equal width two apart: W1 is the separation.
+        assert result.raw_local_dissimilarity.mean() == pytest.approx(2.0, abs=0.1)
+
     @pytest.mark.parametrize("metric", sorted(METRICS))
     def test_every_metric_gets_its_own_noise_floor(self, metric):
         """A Wasserstein comparison needs a Wasserstein floor. Borrowing one

@@ -822,11 +822,11 @@ def dissimilarity(
 
         raw_local = jsd_local(
             reference_sample, other_sample, x_min, x_max, x_num, use_circular,
-            w_ref, w_other,
+            w_ref, w_other, metric,
         )
         null = _permutation_null(
             reference_sample, other_sample, x_min, x_max, x_num,
-            use_circular, n_permutations, rng, w_ref, w_other,
+            use_circular, n_permutations, rng, w_ref, w_other, metric,
         )
         p_values = _studentised_p_values(raw_local, null)
         noise_floor = float(
