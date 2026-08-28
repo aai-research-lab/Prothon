@@ -226,6 +226,31 @@ All notable changes to Prothon are recorded here. This project follows
   time, because ensembles are subsampled before the permutation null); and the
   comparison dominates the total above about fifty residues.
 
+### Added — a measured calibration, and what it found
+
+- **`scripts/calibration.py`** measures the false-positive rate under the null
+  across metrics, thresholds, permutation counts, correlated features, and
+  frames correlated in time. Every replicate draws both ensembles from the same
+  distribution, so every rejection is a false positive.
+- **The p-values are not trustworthy on a single continuous trajectory, and the
+  size of the problem is now known.** With frames from an Ornstein–Uhlenbeck
+  process at correlation time τ, against a nominal 5%:
+
+  | τ (frames) | independent conformations in 2000 | features called different |
+  |---|---|---|
+  | 1 | 924 | 6.5% |
+  | 2 | 490 | 23.1% |
+  | 5 | 199 | 70.6% |
+  | 20 | 50 | **98.8%** |
+
+  At a correlation time of twenty frames — unremarkable for a loop — essentially
+  every residue is called different when nothing differs. The documentation
+  previously described this as the p-values being "somewhat optimistic", which
+  understated it by a wide margin.
+- The statistics page now carries the measurement instead of the caveat, with
+  three things a user can do today: subsample to the correlation time, use
+  independent replicates, or read the floor rather than the p-value.
+
 ### Refusals
 
 - **Coverage, not just identity.** Free end gaps make the aligner behave

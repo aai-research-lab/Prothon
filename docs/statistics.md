@@ -112,21 +112,41 @@ rather than failing.
 
 ## What is not corrected for
 
-**Frames from a single continuous trajectory are correlated in time.** The
-permutation null assumes frames are exchangeable. Within one molecular dynamics
-trajectory they are not, so an ensemble holds fewer independent conformations
-than it has frames and the p-values are correspondingly optimistic. A block
-permutation over the correlation time is planned.
+**Frames from a single continuous trajectory are correlated in time**, and the
+permutation null assumes they are not. The consequence has been measured rather
+than left as a caveat, and it is large:
 
-Two things follow for practice.
+| correlation time (frames) | independent conformations in 2000 | features called different |
+|---|---|---|
+| 1 | 924 | 6.5% |
+| 5 | 199 | 70.6% |
+| 20 | 50 | **98.8%** |
 
-**Trust the floor over the p-value.** The split-half noise floor is *measured*
-rather than assumed. If a difference clears the floor comfortably the
-conclusion is robust; if it clears only the significance threshold, be careful.
+Nominal rate 5%; both ensembles drawn from the same distribution at every row.
+The full measurement is on the [calibration page](calibration.md).
+
+**So the p-values from a single continuous trajectory are not trustworthy.** At
+a correlation time of twenty frames — unremarkable for a loop — essentially
+every residue is called different when nothing differs.
+
+Three things follow for practice.
+
+**Subsample to the correlation time.** Every τ-th frame, or subsample by the
+estimated statistical inefficiency. The ensemble is smaller and the p-values
+mean what they say.
 
 **Use independent replicates where they exist.** Comparing replicate against
 replicate gives a floor that includes run-to-run variation, which is the honest
-reference for judging a difference between conditions.
+reference for judging a difference between conditions, and needs no estimate of
+a correlation time.
+
+**Trust the floor over the p-value.** The split-half noise floor is *measured*
+rather than assumed. Correlation degrades it too, but far more gracefully than
+it degrades the null.
+
+A block permutation — relabelling contiguous blocks of length ~τ rather than
+individual frames — is the fix, and the table above is the argument for
+prioritising it.
 
 ## References
 

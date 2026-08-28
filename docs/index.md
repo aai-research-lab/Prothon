@@ -43,6 +43,7 @@ getting_started
 measures
 metrics
 statistics
+calibration
 different_molecules
 cli_reference
 performance
