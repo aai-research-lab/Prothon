@@ -70,6 +70,12 @@ def _p(*args, **kwargs) -> Parameter:
 PARAMETERS: tuple[Parameter, ...] = (
     # -- what to compare --------------------------------------------------
     _p(
+        "config", short="-c", metavar="PATH",
+        help="A study in a YAML file: which ensembles, which order parameters, "
+             "which settings. Anything also given as a flag overrides it.",
+        commands=("compare",),
+    ),
+    _p(
         "ensembles", short="-e", nargs="+", metavar="SOURCE",
         help="Ensembles to compare, one per source. A trajectory file, a "
              "directory of single-model PDBs, a glob, a multi-model PDB, or a "

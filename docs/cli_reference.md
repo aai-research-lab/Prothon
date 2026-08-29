@@ -37,7 +37,8 @@ conditions averages away the difference being measured.
 
 | flag | short | default | meaning |
 |---|---|---|---|
-| `--ensembles` | `-e` | required | Sources to compare. |
+| `--config` | `-c` | | A study in a YAML file. Flags override it. |
+| `--ensembles` | `-e` | required | Sources to compare, unless `--config` names them. |
 | `--topology` | `-t` | | For sources that need one. |
 | `--reference` | `-r` | `0` | An index into `--ensembles`, or a source of its own. |
 | `--order-parameters` | `-p` | `cbcn` | `cbcn`, `cacn`, `caba`, `cata`, `sasa`. |
@@ -75,6 +76,16 @@ the margin above each ensemble's own noise floor rather than by raw distance,
 with coverage and fidelity beside each row. There is no separate `benchmark`
 command, because there is no separate calculation, and two commands for one
 operation is how they come to disagree. See [benchmarking](benchmark.md).
+
+### A study in a file
+
+```bash
+prothon compare --config study.yml
+```
+
+A configuration expresses what flags cannot: a topology, a label and a weight
+vector per ensemble. Every key is checked against the schema, so a misspelled
+setting is refused rather than ignored. See [the study as a file](config.md).
 
 ## `prothon validate`
 

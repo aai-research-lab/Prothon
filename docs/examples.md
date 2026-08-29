@@ -1,6 +1,6 @@
 # Examples
 
-Nine things people actually want to do. Every output below is real, from a run
+Ten things people actually want to do. Every output below is real, from a run
 of the code as written.
 
 ---
@@ -242,6 +242,36 @@ A simulation, a deposited ensemble and a generative model, compared on equal
 terms. Only the trajectory uses `--topology`; the other two carry their own.
 
 ---
+
+## 10. The study, written down
+
+```bash
+prothon compare --config study.yml
+```
+
+```yaml
+description: wild type against the F5G mutant
+
+ensembles:
+  - source: wt.xtc
+    topology: wt.pdb        # each ensemble may have its own
+    label: wild type
+  - source: mut.xtc
+    topology: mut.pdb
+    label: F5G
+
+reference: wild type
+
+compare:
+  order_parameters: [cbcn, cata]
+  random_state: 0
+  n_permutations: 200
+```
+
+Something to commit beside the manuscript rather than reconstruct from a shell
+history. A flag given on the command line overrides the file, so the same study
+re-runs with a different seed without being edited. See
+[the study as a file](config.md).
 
 ## Things worth knowing
 

@@ -49,6 +49,9 @@ dependencies = [
     # imported it and did not declare it, so a clean install failed on any run
     # that touched dimensionality reduction -- which was the CLI default.
     "scikit-learn>=1.0",
+    # Reading a study from a file. Small, pure Python, and already a
+    # transitive dependency of most scientific stacks.
+    "pyyaml>=5.1",
 ]
 
 [project.optional-dependencies]

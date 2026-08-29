@@ -408,6 +408,27 @@ All notable changes to Prothon are recorded here. This project follows
 - Every flag, method and keyword shown is checked against the code rather than
   written from memory.
 
+### Added — the study as a file
+
+- **`prothon compare --config study.yml`**. A command line asks a question
+  once; a file records one, and can be committed beside the manuscript, diffed
+  when it changes, and handed to somebody who has the data but not the terminal
+  session.
+- **It expresses three things a flag cannot**: a topology per ensemble —
+  `--topology` is one path for every source, which is right for conditions of
+  one system and wrong for a mutant or an ortholog — a label per ensemble, and
+  per-frame weights from a file. A `stride` too.
+- **Every key is checked against the schema.** A configuration that silently
+  ignores what it does not recognise is a file that lies: a misspelled
+  `random_seed` would leave the study unseeded and say nothing, and the run
+  would look fine. Unknown keys are refused with the closest known name
+  offered, at the top level, inside `compare`, and inside an ensemble.
+- Flags override the file, so a study re-runs with a different seed or output
+  directory without being edited.
+- **The manifest records the study**, so a result found later carries the
+  question it answered rather than only the answer.
+- `pyyaml` is now a declared dependency.
+
 ### Refusals
 
 - **Coverage, not just identity.** Free end gaps make the aligner behave

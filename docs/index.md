@@ -44,6 +44,7 @@ differs.
 installation
 getting_started
 examples
+config
 order_parameters
 metrics
 statistics

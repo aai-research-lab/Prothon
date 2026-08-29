@@ -101,6 +101,7 @@ class Prothon:
         verbose: bool = False,
         random_state: int | None = None,
         cache_dir: str | None = None,
+        study=None,
         *,
         traj_files=None,
     ) -> None:
@@ -121,6 +122,10 @@ class Prothon:
         random_state
             Seed for the resampling behind the noise floor and the p-values.
             Set it and a rerun gives the same numbers.
+        study
+            The :class:`~prothon.config.Study` this run came from, if any.
+            Recorded in the manifest, so a result found later carries the
+            question it answered rather than only the answer.
         traj_files
             The name this argument had in 2.x. Accepted, and warns.
         """
@@ -158,6 +163,7 @@ class Prothon:
         self.output_dir = output_dir
         self.verbose = verbose
         self.random_state = random_state
+        self.study = study
 
         self.ensembles_data: dict[str, list[np.ndarray]] = {}
         self.comparison_results: dict[str, list[ComparisonResult]] = {}
@@ -575,6 +581,7 @@ class Prothon:
             "topology": os.path.abspath(self.topology) if self.topology else None,
             "reference_index": comparisons[0].reference_index if comparisons else None,
             "ensembles": [e.to_dict() for e in self.ensembles],
+            "study": None if self.study is None else self.study.to_dict(),
             "correspondences": [
                 {
                     "reference_index": a,
