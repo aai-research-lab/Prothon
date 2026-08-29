@@ -198,7 +198,7 @@ nothing about it.
 ## Benchmarking several ensembles
 
 ```bash
-prothon --reference md.xtc --benchmark bioemu/ alphaflow/ bbflow/ -top target.pdb
+prothon compare -e bioemu/ alphaflow/ bbflow/ -r md.xtc -t target.pdb --report table
 ```
 
 One table, one reference, the same treatment for each model — with each row

@@ -472,8 +472,20 @@ class TestStudyAcrossMolecules:
         with pytest.raises(ValueError, match="at least two"):
             Prothon.from_ensembles([one])
 
-    def test_paths_are_not_ensembles(self):
+    def test_paths_are_resolved_rather_than_refused(self, tmp_path):
+        """`from_ensembles` used to take only Ensemble objects and reject
+        paths. There is now one way in, and it takes either -- so a path is
+        loaded rather than refused, and a path that does not exist says so."""
         from prothon import Prothon
 
-        with pytest.raises(TypeError, match="Ensemble objects"):
+        with pytest.raises(FileNotFoundError, match="No such source"):
             Prothon.from_ensembles(["a.dcd", "b.dcd"])
+
+        traj = build(as_residues("ACDEF"), n_frames=20)
+        traj.save_dcd(str(tmp_path / "x.dcd"))
+        traj[0].save_pdb(str(tmp_path / "t.pdb"))
+        study = Prothon(
+            ensembles=[str(tmp_path / "x.dcd"), str(tmp_path / "x.dcd")],
+            topology=str(tmp_path / "t.pdb"),
+        )
+        assert len(study.ensembles) == 2

@@ -1,19 +1,16 @@
 """The ``prothon`` command.
 
-    prothon -traj wt.dcd,mutant.dcd -top top.pdb -m cbcn
+    prothon compare  --ensembles wt.xtc mutant.xtc --topology top.pdb
+    prothon compare  --ensembles bioemu/ alphaflow/ -r md.xtc --report table
+    prothon validate --ensembles md.xtc -t top.pdb --experimental rg.txt
+    prothon info
 
-The flags of version 2.0 all still work. Two defaults changed, both because
-the old ones were traps:
+Every flag here is generated from :data:`prothon.config.schema.PARAMETERS`, so
+the command line and the Python API cannot drift apart: ``--random-state`` on
+the command line is ``random_state`` in Python because both read the same row.
 
-**Dimensionality reduction is off unless asked for.** It used to default to
-``pca,mds,tsne``. MDS builds a dense frame-by-frame distance matrix, so the
-default turned a two-minute comparison over a real trajectory into an
-out-of-memory failure, and the projection is a picture rather than part of the
-measurement.
-
-**Results print as a readable summary**, with the full JSON written to the
-manifest in the output directory. ``--json`` restores the old behaviour of
-dumping everything to stdout.
+The 2.x form -- ``prothon -traj a.dcd,b.dcd -top top.pdb`` with no subcommand --
+still works and says once where it went.
 """
 
 from __future__ import annotations
@@ -22,222 +19,369 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from typing import Any
 
 from . import __version__
+from .config.schema import COMMANDS, parameters_for
 from .core.metrics import METRICS, describe_metric
-from .core.prothon_core import DIMRED_TECHNIQUES, Prothon
 from .core.representation import MEASURES, describe_measure
-from .utils import configure_logging
+from .utils import configure_logging, split_list_arg
 
 __all__ = ["build_parser", "main"]
 
 
-def _to_serialisable(value):
-    """Recursively convert results, including NumPy arrays, for JSON."""
-    if hasattr(value, "to_dict"):
-        return value.to_dict()
-    if isinstance(value, dict):
-        return {key: _to_serialisable(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_to_serialisable(item) for item in value]
-    if hasattr(value, "tolist"):
-        return value.tolist()
-    return value
+def _add(parser: argparse.ArgumentParser, command: str) -> None:
+    """Give a parser the flags its subcommand declares."""
+    for spec in parameters_for(command):
+        kwargs: dict[str, Any] = {"help": spec.help, "dest": spec.name}
+        if spec.action:
+            kwargs["action"] = spec.action
+        else:
+            kwargs["type"] = spec.kind
+            kwargs["default"] = spec.default
+            if spec.nargs:
+                kwargs["nargs"] = spec.nargs
+            if spec.choices:
+                kwargs["choices"] = list(spec.choices)
+            if spec.metavar:
+                kwargs["metavar"] = spec.metavar
+        parser.add_argument(*spec.flags, **kwargs)
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="prothon",
-        description="Compare protein conformational ensembles using local order parameters.",
-        epilog="Measures:\n  " + "\n  ".join(describe_measure(m) for m in sorted(MEASURES)),
+        description="Compare protein conformational ensembles.",
+        epilog=(
+            "Measures:\n  "
+            + "\n  ".join(describe_measure(m) for m in sorted(MEASURES))
+            + "\n\nMetrics:\n  "
+            + "\n  ".join(describe_metric(m) for m in sorted(METRICS))
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        # Without this, argparse resolves any unambiguous prefix -- and the
+        # hidden 2.x flags below make `-t` ambiguous against `-traj` and
+        # `-top`, so a subcommand's own short flag stops working.
+        allow_abbrev=False,
     )
     parser.add_argument("--version", action="version", version=f"prothon {__version__}")
-    parser.add_argument(
-        "--info", action="store_true",
-        help="Print the available measures and installed backends, then exit.",
-    )
-    parser.add_argument(
-        "--benchmark", metavar="DIR", nargs="+",
-        help="Compare each of these against the reference on equal terms. Each "
-             "is a trajectory file, or a directory of single-model PDBs as a "
-             "generative model emits them. Requires --reference.",
-    )
-    parser.add_argument(
-        "--reference", metavar="PATH",
-        help="The ensemble the others are measured against, for --benchmark.",
-    )
-    parser.add_argument(
-        "-traj", "--trajectories",
-        help="Comma-separated trajectory files, one per ensemble.",
-    )
-    parser.add_argument("-top", "--topology", help="Topology file (PDB).")
-    parser.add_argument(
-        "-m", "--methods", default="cbcn",
-        help="Comma-separated measures (default: cbcn).",
-    )
-    parser.add_argument(
-        "-r", "--ref", type=int, default=0,
-        help="Reference ensemble index (default: 0).",
-    )
-    parser.add_argument(
-        "-o", "--output", default=None,
-        help="Root output directory (default: <measure>_output in the working directory).",
-    )
-    parser.add_argument(
-        "-d", "--dimred", default="none",
-        help=f"Comma-separated projections ({', '.join(DIMRED_TECHNIQUES)}), "
-             f"or 'none' (default). MDS is refused above 5000 frames.",
-    )
-    parser.add_argument(
-        "--metric", default="jsd", choices=sorted(METRICS),
-        help="Per-feature distance (default: jsd). 'wasserstein' reports in the "
-             "feature's own units; 'jsd' and 'ks' are bounded in [0, 1].",
-    )
-    parser.add_argument(
-        "--x-num", type=int, default=100,
-        help="Grid points per estimated density (default: 100).",
-    )
-    parser.add_argument(
-        "--s-num", type=int, default=5,
-        help="Resamples per ensemble for the noise floor (default: 5).",
-    )
-    parser.add_argument(
-        "--alpha", type=float, default=0.05,
-        help="False-discovery rate for the per-residue test (default: 0.05).",
-    )
-    parser.add_argument(
-        "--seed", type=int, default=None,
-        help="Random seed. Set it for a reproducible run.",
-    )
-    parser.add_argument(
-        "--legacy-statistics", action="store_true",
-        help="Reproduce version 2.0's statistics exactly (one pooled two-sided "
-             "test, no per-residue correction, linear grid for torsions).",
-    )
-    parser.add_argument("--json", action="store_true", help="Print full results as JSON.")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging.")
+
+    subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
+    for command in COMMANDS:
+        sub = subparsers.add_parser(
+            command.name,
+            help=command.help,
+            description=command.description or command.help,
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+        )
+        _add(sub, command.name)
+
     return parser
 
 
-def _print_info() -> None:
+def _legacy_parser() -> argparse.ArgumentParser:
+    """The 2.x flags, in a parser of their own.
+
+    Kept off the main parser because argparse resolves option prefixes across
+    every parser in play, and `-traj`/`-top` make a subcommand's own `-t`
+    ambiguous. A published command line keeps working; a new one is not
+    shaped by it.
+    """
+    parser = argparse.ArgumentParser(prog="prothon", add_help=False)
+    parser.add_argument("-traj", "--trajectories")
+    parser.add_argument("-top", dest="legacy_topology")
+    parser.add_argument("-m", "--methods")
+    parser.add_argument("--seed", type=int)
+    parser.add_argument("-o", "--output")
+    parser.add_argument("--info", action="store_true")
+    parser.add_argument("-r", "--ref", type=int)
+    parser.add_argument("-d", "--dimred")
+    parser.add_argument("--metric")
+    parser.add_argument("--x-num", type=int, dest="x_num")
+    parser.add_argument("--s-num", type=int, dest="s_num")
+    parser.add_argument("--alpha", type=float)
+    parser.add_argument("--legacy-statistics", action="store_true",
+                        dest="legacy_statistics")
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("-v", "--verbose", action="store_true")
+    return parser
+
+
+def _serialisable(value):
+    if hasattr(value, "to_dict"):
+        return value.to_dict()
+    if isinstance(value, dict):
+        return {k: _serialisable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_serialisable(v) for v in value]
+    if hasattr(value, "tolist"):
+        return value.tolist()
+    return value
+
+
+def _reference_index(reference, ensembles, topology, cache_dir=None):
+    """A reference given as an index, or as a source of its own.
+
+    Returns the ensembles with the reference first, and its index.
+    """
+    from .ingest.sources import resolve
+
+    if reference is None:
+        return ensembles, 0
+    text = str(reference)
+    if text.isdigit():
+        index = int(text)
+        if not 0 <= index < len(ensembles):
+            raise ValueError(
+                f"Reference index {index} is out of range for "
+                f"{len(ensembles)} ensembles (0 to {len(ensembles) - 1})."
+            )
+        return ensembles, index
+    # A source: prepend it, and it becomes the reference.
+    return [resolve(text, topology, cache_dir=cache_dir), *ensembles], 0
+
+
+# ---------------------------------------------------------------------------
+# Subcommands
+# ---------------------------------------------------------------------------
+def run_compare(args) -> int:
+    from .core.prothon_core import Prothon
+    from .ingest.sources import resolve_all
+
+    ensembles = resolve_all(args.ensembles, args.topology)
+    ensembles, reference = _reference_index(
+        args.reference, ensembles, args.topology
+    )
+
+    if getattr(args, "report", "summary") == "table":
+        # The same comparison, ranked, with coverage and fidelity beside each
+        # row. Not a separate command: a benchmark is this view.
+        return _run_table(args, ensembles, reference)
+
+    block = None
+    if getattr(args, "no_block_permutation", False):
+        block = False
+    elif getattr(args, "block_permutation", False):
+        block = True
+
+    study = Prothon(
+        ensembles=ensembles,
+        output_dir=args.output_dir,
+        verbose=args.verbose,
+        random_state=args.random_state,
+    )
+    dimred = None if str(args.dimred).lower() in {"none", ""} else args.dimred
+    results = study.compare_ensembles(
+        methods=args.measures,
+        ref=reference,
+        x_num=args.x_num,
+        s_num=args.s_num,
+        dimred=dimred,
+        alpha=args.alpha,
+        metric=args.metric,
+        legacy=args.legacy_statistics,
+        n_permutations=args.n_permutations,
+        block_permutation=block,
+    )
+    print(json.dumps(_serialisable(results), indent=2) if args.json else study.summary())
+    return 0
+
+
+def _run_table(args, ensembles, reference) -> int:
+    """Every other ensemble against the reference, ranked.
+
+    Ranked by the margin above each ensemble's own noise floor rather than by
+    distance, because a thinly sampled ensemble carries a higher floor *and* a
+    depressed distance, so a table of distances flatters it.
+    """
+    from .batch import benchmark
+
+    others = [e for i, e in enumerate(ensembles) if i != reference]
+    if not others:
+        raise ValueError("Nothing to compare against the reference.")
+
+    result = benchmark(
+        ensembles[reference], others,
+        measures=args.measures,
+        random_state=args.random_state,
+        output_dir=args.output_dir,
+    )
+    if args.json:
+        print(json.dumps(result.to_dict(), indent=2, default=float))
+    else:
+        print(result.summary())
+        for measure in result.measures:
+            print()
+            print(result.table(measure))
+    return 0
+
+
+def run_validate(args) -> int:
+    import numpy as np
+
+    from .ingest.sources import resolve_all
+    from .validate import score_observable
+    from .validate.observables import (
+        end_to_end,
+        j_coupling_hn_ha,
+        radius_of_gyration,
+    )
+
+    if not args.experimental:
+        raise ValueError("validate needs --experimental: the measured values.")
+
+    ensembles = resolve_all(args.ensembles, args.topology)
+    data = np.atleast_2d(np.loadtxt(args.experimental))
+    if data.shape[0] == 1 and data.shape[1] > 2:
+        data = data.T
+    measured = data[:, 0]
+    if data.shape[1] > 1:
+        sigma = data[:, 1]
+    elif args.uncertainty:
+        try:
+            sigma = np.full(measured.size, float(args.uncertainty))
+        except ValueError:
+            sigma = np.loadtxt(args.uncertainty).ravel()
+    else:
+        raise ValueError(
+            "No uncertainties. Give a second column in --experimental, or "
+            "--uncertainty as a file or a single number. A chi-squared without "
+            "them is a sum of squares in arbitrary units."
+        )
+
+    compute = {
+        "rg": lambda t: radius_of_gyration(t)[:, None],
+        "end_to_end": lambda t: end_to_end(t)[:, None],
+        "j_hn_ha": lambda t: j_coupling_hn_ha(t)[0],
+    }[args.observable]
+
+    results = []
+    for ensemble in ensembles:
+        result = score_observable(
+            compute(ensemble.trajectory), measured, sigma,
+            observable=f"{args.observable} [{ensemble.label}]",
+            weights=ensemble.weights,
+            random_state=args.random_state,
+        )
+        results.append(result)
+        if not args.json:
+            print(result.summary())
+    if args.json:
+        print(json.dumps([r.to_dict() for r in results], indent=2, default=float))
+    return 0
+
+
+def run_info(args=None) -> int:
     print(f"prothon {__version__}\n")
-    print("Measures:")
+    print("Commands:")
+    for command in COMMANDS:
+        print(f"  {command.name:<12} {command.help}")
+    print("\nMeasures:")
     for name in sorted(MEASURES):
         print(f"  {describe_measure(name)}")
     print("\nMetrics:")
     for name in sorted(METRICS):
         print(f"  {describe_metric(name)}")
+    print("\nSources accepted by --ensembles:")
+    for line in (
+        "a trajectory file, with --topology",
+        "a directory of single-model PDBs",
+        "a glob such as 'samples/*.pdb'",
+        "a multi-model PDB",
+        "a PED accession such as PED00024, or PED00001:e002",
+    ):
+        print(f"  {line}")
     print("\nBackends:")
     for module, purpose in (
         ("mdtraj", "trajectory I/O and geometry"),
         ("scipy", "density estimation and statistics"),
-        ("sklearn", "dimensionality reduction"),
+        ("sklearn", "dimensionality reduction and the classifier test"),
         ("matplotlib", "figures"),
     ):
         try:
-            version = __import__(module).__version__
-            print(f"  {module:<12} {version:<10} {purpose}")
+            print(f"  {module:<12} {__import__(module).__version__:<10} {purpose}")
         except Exception:
-            print(f"  {module:<12} {'not installed':<10} {purpose}  -> pip install {module}")
+            print(f"  {module:<12} {'not installed':<10} {purpose}")
+    return 0
 
 
-def _load(path: str, topology: str | None):
-    """A trajectory file, or a directory of single-model structures."""
-    import os
-
-    from .ingest import Ensemble
-
-    label = os.path.basename(str(path).rstrip("/")) or str(path)
-    if os.path.isdir(path) or any(c in str(path) for c in "*?"):
-        return Ensemble.from_pdb_models(path, label=label)
-    if topology is None:
-        return Ensemble.from_pdb_models(path, label=label)
-    return Ensemble.from_trajectory(path, topology, label=label)
+RUNNERS = {
+    "compare": run_compare,
+    "validate": run_validate,
+    "info": run_info,
+}
 
 
-def _run_benchmark(args) -> int:
-    """Compare several ensembles against one reference."""
-    from .batch import benchmark
+def _legacy(argv, parser) -> int:
+    """The 2.x invocation, translated into the new one."""
+    import warnings
 
-    try:
-        reference = _load(args.reference, args.topology)
-        models = [_load(p, args.topology) for p in args.benchmark]
-        result = benchmark(
-            reference, models,
-            measures=args.methods,
-            random_state=args.seed,
-            output_dir=args.output,
-        )
-    except (ValueError, FileNotFoundError) as error:
-        print(f"prothon: {error}", file=sys.stderr)
+    args, unknown = _legacy_parser().parse_known_args(argv)
+    if args.info:
+        return run_info()
+    if not args.trajectories:
+        parser.print_help()
+        return 0
+    if unknown:
+        print(f"prothon: unrecognised arguments: {' '.join(unknown)}", file=sys.stderr)
         return 2
 
-    if args.json:
-        print(json.dumps(result.to_dict(), indent=2, default=float))
-    else:
-        print(result.summary())
-        print()
-        for measure in result.measures:
-            print(result.table(measure))
-            print()
-    return 0
+    warnings.warn(
+        "`prothon -traj ... -top ...` is now `prothon compare --ensembles ... "
+        "--topology ...`, and --seed is --random-state. The old form still "
+        "works and will be removed in 4.0.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    namespace = argparse.Namespace(
+        ensembles=split_list_arg(args.trajectories),
+        topology=args.legacy_topology,
+        reference=str(args.ref if args.ref is not None else 0),
+        measures=args.methods or "cbcn",
+        metric=args.metric or "jsd",
+        random_state=args.seed,
+        n_permutations=100,
+        s_num=args.s_num if args.s_num is not None else 5,
+        x_num=args.x_num if args.x_num is not None else 100,
+        alpha=args.alpha if args.alpha is not None else 0.05,
+        block_permutation=False,
+        no_block_permutation=False,
+        report="summary",
+        legacy_statistics=args.legacy_statistics,
+        output_dir=args.output,
+        dimred=args.dimred or "none",
+        json=args.json,
+        verbose=args.verbose,
+    )
+    return run_compare(namespace)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
+    raw = list(sys.argv[1:] if argv is None else argv)
+    commands = {c.name for c in COMMANDS}
 
-    if args.info:
-        _print_info()
-        return 0
+    # No subcommand means either the 2.x form or nothing at all. Deciding this
+    # before argparse runs keeps the old flags from shaping the new parser.
+    if not any(token in commands for token in raw):
+        if raw and raw[0] in {"--version"}:
+            parser.parse_args(raw)          # exits
+        try:
+            return _legacy(raw, parser)
+        except (ValueError, FileNotFoundError, TypeError) as error:
+            print(f"prothon: {error}", file=sys.stderr)
+            return 2
 
-    if args.benchmark:
-        if not args.reference:
-            parser.error("--benchmark requires --reference")
-        return _run_benchmark(args)
-
-    missing = [
-        flag for flag, value in (("-traj", args.trajectories), ("-top", args.topology))
-        if not value
-    ]
-    if missing:
-        parser.error(f"the following arguments are required: {', '.join(missing)}")
-
-    configure_logging(args.verbose)
-
-    dimred = None if args.dimred.strip().lower() in {"none", ""} else args.dimred
+    args = parser.parse_args(raw)
+    configure_logging(getattr(args, "verbose", False))
 
     try:
-        study = Prothon(
-            traj_files=args.trajectories,
-            topology=args.topology,
-            output_dir=args.output,
-            verbose=args.verbose,
-            random_state=args.seed,
-        )
-        results = study.compare_ensembles(
-            methods=args.methods,
-            ref=args.ref,
-            x_num=args.x_num,
-            s_num=args.s_num,
-            dimred=dimred,
-            alpha=args.alpha,
-            metric=args.metric,
-            legacy=args.legacy_statistics,
-        )
-    except (ValueError, FileNotFoundError) as error:
-        # These are the errors that mean the study was described wrongly. A
-        # traceback would bury the one sentence that says what to change.
+        return RUNNERS[args.command](args)
+    except (ValueError, FileNotFoundError, TypeError) as error:
+        # These mean the study was described wrongly. A traceback would bury
+        # the one sentence that says what to change.
         print(f"prothon: {error}", file=sys.stderr)
         return 2
-
-    if args.json:
-        print(json.dumps(_to_serialisable(results), indent=2))
-    else:
-        print(study.summary())
-
-    return 0
 
 
 if __name__ == "__main__":  # pragma: no cover

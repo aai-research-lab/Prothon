@@ -193,9 +193,15 @@ class TestCli:
         assert main(["--info"]) == 0
         assert "cbcn" in capsys.readouterr().out
 
-    def test_missing_arguments_exit_two(self):
-        with pytest.raises(SystemExit):
-            main(["-m", "cbcn"])
+    def test_no_arguments_prints_help_rather_than_failing(self, capsys):
+        """A bare invocation should show what the tool can do. It used to
+        error on missing required flags, which told a new reader nothing."""
+        assert main([]) == 0
+        assert "compare" in capsys.readouterr().out
+
+    def test_an_unrecognised_argument_exits_two(self, capsys):
+        assert main(["-traj", "a.dcd", "--nonsense"]) == 2
+        assert "unrecognised" in capsys.readouterr().err
 
     def test_end_to_end_run(self, ensemble_files, topology_file, tmp_path, capsys):
         code = main([

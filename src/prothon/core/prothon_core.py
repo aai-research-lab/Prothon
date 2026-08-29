@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import warnings
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any
@@ -34,7 +35,6 @@ from .plotting import (
 )
 from .representation import (
     MEASURES,
-    compute_ensemble_representation,
     compute_representation,
     resolve_measure,
 )
@@ -78,96 +78,105 @@ class Prothon:
     @classmethod
     def from_ensembles(
         cls,
-        ensembles: Sequence[Any],
+        ensembles,
         output_dir: str | None = None,
         verbose: bool = False,
         random_state: int | None = None,
     ) -> Prothon:
-        """A study over :class:`~prothon.ingest.Ensemble` objects.
+        """The 2.x name for ``Prothon(ensembles=...)``.
 
-        The route that allows ensembles which are *not the same molecule*. A
-        study built from filenames shares one topology and so compares one
-        protein against itself under different conditions; ensembles carry
-        their own topologies, so a mutant, a truncated construct or a
-        coarse-grained model can be compared against a reference, and the
-        residue correspondence is worked out rather than assumed.
-
-        Examples
-        --------
-        >>> from prothon.ingest import Ensemble
-        >>> wt = Ensemble.from_trajectory("wt.xtc", "wt.pdb", label="wild type")
-        >>> mut = Ensemble.from_trajectory("mut.xtc", "mut.pdb", label="R42A")
-        >>> study = Prothon.from_ensembles([wt, mut], random_state=0)   # doctest: +SKIP
+        Kept because it appears in published scripts. The constructor now
+        takes sources and loaded ensembles alike, so there is one way in.
         """
-        from ..ingest import Ensemble
-
-        items = list(ensembles)
-        if len(items) < 2:
-            raise ValueError(
-                f"A comparison needs at least two ensembles; {len(items)} given."
-            )
-        wrong = [e for e in items if not isinstance(e, Ensemble)]
-        if wrong:
-            raise TypeError(
-                "from_ensembles takes Ensemble objects. Use Prothon(paths, topology) "
-                "for filenames, or Ensemble.from_trajectory to build them."
-            )
-
-        study = cls.__new__(cls)
-        study.ensembles = items
-        study.traj_files = [e.label for e in items]
-        study.topology = None
-        study.output_dir = output_dir
-        study.verbose = verbose
-        study.random_state = random_state
-        study.ensembles_data = {}
-        study.comparison_results = {}
-        study.dimred_results = {}
-        study.correspondences = {}
-        study.distinguishability_results = {}
-        study.coverage_results = {}
-        configure_logging(verbose)
-
-        return study
+        return cls(
+            ensembles=ensembles, output_dir=output_dir,
+            verbose=verbose, random_state=random_state,
+        )
 
     def __init__(
         self,
-        traj_files: str | Sequence[str],
-        topology: str,
+        ensembles=None,
+        topology: str | None = None,
         output_dir: str | None = None,
         verbose: bool = False,
         random_state: int | None = None,
+        cache_dir: str | None = None,
+        *,
+        traj_files=None,
     ) -> None:
-        files = split_list_arg(traj_files) if isinstance(traj_files, str) else list(traj_files)
-        if len(files) < 2:
+        """Set up a comparison.
+
+        Parameters
+        ----------
+        ensembles
+            Two or more sources, or already-loaded
+            :class:`~prothon.ingest.Ensemble` objects, or a mixture. A source
+            is a trajectory, a directory of structures, a glob, a multi-model
+            PDB, or a PED accession -- see
+            :func:`~prothon.ingest.sources.resolve`.
+        topology
+            Used by the sources that need one. Not required for PED
+            accessions or multi-model PDBs, and not required at all when
+            every ensemble is already loaded.
+        random_state
+            Seed for the resampling behind the noise floor and the p-values.
+            Set it and a rerun gives the same numbers.
+        traj_files
+            The name this argument had in 2.x. Accepted, and warns.
+        """
+        from ..ingest.sources import resolve_all
+
+        if traj_files is not None:
+            if ensembles is not None:
+                raise TypeError(
+                    "Give either ensembles= or traj_files=, not both. "
+                    "traj_files is the old name for the same thing."
+                )
+            warnings.warn(
+                "traj_files= is now ensembles=, and takes any source rather "
+                "than only trajectory files. The old name will be removed in "
+                "4.0.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            ensembles = traj_files
+
+        if ensembles is None:
+            raise TypeError("Prothon needs ensembles= : two or more sources.")
+
+        loaded = resolve_all(ensembles, topology, cache_dir=cache_dir)
+        if len(loaded) < 2:
             raise ValueError(
-                f"A comparison needs at least two ensembles; {len(files)} given. "
-                f"Pass one trajectory file per ensemble."
+                f"A comparison needs at least two ensembles; {len(loaded)} "
+                f"given. Each source is one ensemble, and they are never "
+                f"concatenated."
             )
 
-        missing = [path for path in files if not os.path.exists(path)]
-        if missing:
-            raise FileNotFoundError(
-                "Trajectory file(s) not found: " + ", ".join(missing)
-            )
-        if not os.path.exists(topology):
-            raise FileNotFoundError(f"Topology file not found: {topology}")
-
-        self.traj_files = files
+        self.ensembles = loaded
+        self.traj_files = [e.label for e in loaded]
         self.topology = topology
         self.output_dir = output_dir
         self.verbose = verbose
         self.random_state = random_state
 
-        self.ensembles: list[Any] | None = None
         self.ensembles_data: dict[str, list[np.ndarray]] = {}
         self.comparison_results: dict[str, list[ComparisonResult]] = {}
         self.dimred_results: dict[str, dict[str, dict[str, Any]]] = {}
-        self.correspondences: dict[int, Any] = {}
+        self.correspondences: dict[tuple[int, int], Any] = {}
         self.distinguishability_results: dict[str, dict[str, list]] = {}
         self.coverage_results: dict[str, list] = {}
 
         configure_logging(verbose)
+
+    @property
+    def shares_topology(self) -> bool:
+        """Whether every ensemble has the same number of atoms.
+
+        When they do, representation columns already correspond and no
+        reconciliation is needed. When they do not, a residue correspondence
+        is built from a sequence alignment.
+        """
+        return len({e.trajectory.n_atoms for e in self.ensembles}) == 1
 
     # -- representation ---------------------------------------------------
 
@@ -175,14 +184,9 @@ class Prothon:
         """Compute and cache the representation matrices for one measure."""
         spec = resolve_measure(measure)
         logger.info("Computing %s representation", spec.name.upper())
-        if self.ensembles is not None:
-            reps = [
-                compute_representation(e.trajectory, spec.name) for e in self.ensembles
-            ]
-        else:
-            reps = compute_ensemble_representation(
-                self.traj_files, self.topology, spec.name, self.verbose
-            )
+        reps = [
+            compute_representation(e.trajectory, spec.name) for e in self.ensembles
+        ]
         self.ensembles_data[spec.name] = reps
         return reps
 
@@ -198,6 +202,8 @@ class Prothon:
         alpha: float = 0.05,
         legacy: bool = False,
         metric: str = "jsd",
+        n_permutations: int = 100,
+        block_permutation: bool | None = None,
     ) -> dict[str, list[ComparisonResult]]:
         """Run the study: represent, compare, plot, and record.
 
@@ -283,13 +289,11 @@ class Prothon:
                     left, right, grid_min, grid_max,
                     x_num=x_num, s_num=s_num,
                     circular=spec.circular,
-                    weights_ref=(
-                        None if self.ensembles is None else self.ensembles[ref].weights
-                    ),
-                    weights=(
-                        None if self.ensembles is None else self.ensembles[index].weights
-                    ),
+                    weights_ref=self.ensembles[ref].weights,
+                    weights=self.ensembles[index].weights,
                     metric=metric,
+                    n_permutations=n_permutations,
+                    block_permutation=block_permutation,
                     alpha=alpha,
                     random_state=self.random_state,
                     legacy=legacy,
@@ -357,7 +361,7 @@ class Prothon:
         put the label of one residue under the value of another, and the plot
         would look entirely reasonable.
         """
-        if self.ensembles is None:
+        if self.shares_topology and reference.shape[1] == other.shape[1]:
             return reference, other, None
 
         from ..ingest import feature_residues, reconcile
@@ -458,12 +462,8 @@ class Prothon:
                 extra["feature_index"] = feature_index
             result = compare(
                 left, right, method,
-                weights_a=(
-                    None if self.ensembles is None else self.ensembles[ref].weights
-                ),
-                weights_b=(
-                    None if self.ensembles is None else self.ensembles[index].weights
-                ),
+                weights_a=self.ensembles[ref].weights,
+                weights_b=self.ensembles[index].weights,
                 circular=spec.circular,
                 random_state=self.random_state if random_state is None else random_state,
                 measure=spec.name,
@@ -513,12 +513,8 @@ class Prothon:
             )
             result = precision_recall(
                 left, right,
-                weights_ref=(
-                    None if self.ensembles is None else self.ensembles[ref].weights
-                ),
-                weights=(
-                    None if self.ensembles is None else self.ensembles[index].weights
-                ),
+                weights_ref=self.ensembles[ref].weights,
+                weights=self.ensembles[index].weights,
                 circular=spec.circular,
                 feature_index=feature_index,
                 random_state=self.random_state,
@@ -561,15 +557,8 @@ class Prothon:
             # that is the point of it. Provenance for those lives on each
             # ensemble instead, under "ensembles" below.
             "topology": os.path.abspath(self.topology) if self.topology else None,
-            "trajectories": (
-                None
-                if self.ensembles is not None
-                else [os.path.abspath(p) for p in self.traj_files]
-            ),
             "reference_index": comparisons[0].reference_index if comparisons else None,
-            "ensembles": (
-                [e.to_dict() for e in self.ensembles] if self.ensembles else None
-            ),
+            "ensembles": [e.to_dict() for e in self.ensembles],
             "correspondences": [
                 {
                     "reference_index": a,

@@ -6,9 +6,14 @@ runs the same comparison for every model against the same reference and reports
 the same things for each.
 
 ```bash
-prothon --reference md.xtc --benchmark bioemu/ alphaflow/ bbflow/ \
-        -top target.pdb -m cbcn -o results --seed 0
+prothon compare --ensembles bioemu/ alphaflow/ bbflow/ --reference md.xtc \
+                --topology target.pdb --measures cbcn --report table \
+                --output-dir results --random-state 0
 ```
+
+A benchmark is a comparison against a reference, presented as a ranked table.
+It is `compare --report table` rather than a command of its own, because it is
+the same calculation.
 
 ```
 3 comparisons against md
@@ -21,8 +26,15 @@ prothon --reference md.xtc --benchmark bioemu/ alphaflow/ bbflow/ \
 | target | bioemu | 250 | 0.067 | 0.162 | -0.094 | 0.96 | 0.97 | indistinguishable from the reference at this sampling |
 ```
 
-Each model may be a trajectory file or a directory of single-model PDBs, which
-is how most generative models emit their output.
+Each model is a source: a trajectory, a directory of single-model PDBs — which
+is how most generative models emit output — a glob, a multi-model PDB, or a PED
+accession. Only sources that need a topology use `--topology`, so a deposited
+ensemble can sit in the same run as a simulation:
+
+```bash
+prothon compare -e bioemu/ PED00024 -r md.xtc -t target.pdb -m cacn -s 0 \
+                --report table
+```
 
 ## Read the margin, not the distance
 
