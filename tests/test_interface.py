@@ -178,6 +178,74 @@ class TestTextIsReadAsUtf8:
         )
 
 
+class TestDocumentedCommandsRun:
+    """Every `prothon ...` in a bash block should be a command that exists.
+
+    Three pages still showed the version 2 invocation long after it changed,
+    because each documentation pass edited by matching text: once the text had
+    moved, the replacement matched nothing and succeeded silently. Checking the
+    commands against the parser is the only version of this that cannot pass
+    by accident.
+
+    Blocks marked ```text rather than ```bash are exempt, which is how the
+    superseded flags are documented without being asserted to work.
+    """
+
+    @staticmethod
+    def _commands():
+        import pathlib
+        import re
+
+        for parent in pathlib.Path(__file__).resolve().parents:
+            if (parent / "docs").is_dir():
+                root = parent
+                break
+        else:
+            pytest.skip("docs/ not found beside the tests")
+
+        for path in sorted((root / "docs").glob("*.md")) + [root / "README.md"]:
+            if not path.exists():
+                continue
+            text = path.read_text(encoding="utf-8")
+            for block in re.finditer(r"```bash\n(.*?)```", text, re.S):
+                start = text[: block.start()].count("\n") + 1
+                for offset, raw in enumerate(block.group(1).splitlines()):
+                    line = raw.strip().rstrip("\\").strip()
+                    if line.startswith("prothon "):
+                        yield path.name, start + offset + 1, line
+
+    def test_every_documented_command_uses_flags_that_exist(self):
+        from prothon.cli import build_parser
+
+        subparsers = build_parser()._subparsers._group_actions[0].choices
+        known = {"--help", "--version"}
+        for parser in subparsers.values():
+            known |= {o for a in parser._actions for o in a.option_strings}
+
+        problems = []
+        for name, line, command in self._commands():
+            tokens = command.split()
+            if len(tokens) > 1 and not tokens[1].startswith("-"):
+                if tokens[1] not in subparsers:
+                    problems.append(f"{name}:{line} unknown subcommand {tokens[1]!r}")
+            for token in tokens[1:]:
+                if token.startswith("-") and token not in known:
+                    problems.append(f"{name}:{line} unknown flag {token}")
+        assert not problems, "\n".join(problems)
+
+    def test_every_documented_command_names_a_subcommand(self):
+        from prothon.cli import build_parser
+
+        subparsers = set(build_parser()._subparsers._group_actions[0].choices)
+        problems = [
+            f"{name}:{line} has no subcommand: {command}"
+            for name, line, command in self._commands()
+            if command.split()[1:] and command.split()[1] not in subparsers
+            and not command.split()[1].startswith("--")
+        ]
+        assert not problems, "\n".join(problems)
+
+
 class TestDocumentedCodeBlocks:
     """A fenced block labelled `json` is lexed as JSON when the docs are built,
     and a block that does not parse fails the build -- after the tests pass, on

@@ -1,31 +1,23 @@
 # The order parameters
 
-The five order parameters below are those introduced with the method (Aina,
-Hsueh and Plotkin 2023).
+An order parameter is a local structural quantity — how many neighbours a
+residue has, what angle its backbone makes — evaluated on every conformation.
+Computing one over an ensemble gives an `(n_frames, n_features)` matrix: one
+row per conformation, one column per residue or per angle. That matrix is the
+ensemble's **representation**, and everything downstream works on it rather
+than on coordinates, which is why nothing is ever superposed.
 
-## Four words, four levels
-
-They are worth keeping apart, because three of them are distances or matrices
-and only one is the quantity itself:
+Four words appear throughout, and they mean different things:
 
 | word | what it is |
 |---|---|
-| **order parameter** | the local quantity — a contact number at one residue |
-| **representation** | the `(frames × features)` matrix built from one |
-| **metric** | the distance between two distributions of it |
-| **observable** | something an experiment measures |
+| order parameter | the local quantity — a contact number at one residue |
+| representation | the `(frames × features)` matrix computed from one |
+| metric | the distance between two distributions of it |
+| observable | something an experiment measures |
 
-An earlier version of this package called the first a *measure*, which collides
-with *metric* — a metric is a measure of distance — so `--measures cbcn
---metric jsd` read as a distinction without a difference. "Local order
-parameter" is the term of the paper and of the original code's own docstrings.
-
-## What one is
-
-An *order parameter* turns a trajectory into an `(n_frames, n_features)` matrix: one row
-per conformation, one column per residue or per angle. That matrix is the
-ensemble's representation, and everything downstream works on it rather than on
-coordinates — which is why nothing is ever superposed.
+The five below are those introduced with the method (Aina, Hsueh and Plotkin
+2023).
 
 | name | quantity | units | per residue | circular |
 |---|---|---|---|---|

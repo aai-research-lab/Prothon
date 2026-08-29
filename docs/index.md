@@ -12,7 +12,7 @@ quadratic.
 
 ```bash
 pip install prothon-ensembles
-prothon -traj wild_type.dcd,mutant.dcd -top topology.pdb -p cbcn
+prothon compare --ensembles wild_type.dcd mutant.dcd --topology topology.pdb
 ```
 
 ```

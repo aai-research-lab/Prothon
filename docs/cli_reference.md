@@ -126,14 +126,21 @@ backends.
 | 0 | success — including an honest refusal to report a p-value |
 | 2 | the study was described wrongly. The message names what to change; there is no traceback, because a traceback would bury it |
 
-## The 2.x form
+## Superseded flags
 
-```bash
-prothon -traj a.dcd,b.dcd -top top.pdb -p cbcn --seed 0
+Commands written against version 2 still run, and warn once:
+
+```text
+prothon -traj a.dcd,b.dcd -top top.pdb -m cbcn --seed 0
 ```
 
-still works and warns once. `-traj` is `--ensembles`, `-top` is `--topology`,
-and `--seed` is `--random-state`.
+| old | now |
+|---|---|
+| `-traj` | `--ensembles` / `-e` |
+| `-top` | `--topology` / `-t` |
+| `-m` | `--order-parameters` / `-p` |
+| `--seed` | `--random-state` / `-s` |
+| `--info` | `prothon info` |
 
 ## Notes on the defaults
 

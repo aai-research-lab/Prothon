@@ -1,12 +1,18 @@
 # Your first comparison
 
-A comparison needs two or more ensembles and a topology they share. Each
-trajectory file is **one ensemble** — Prothon never concatenates them, because
-joining two conditions averages away the difference the study exists to
-measure.
+A comparison needs two or more ensembles. Each source is **one ensemble** —
+Prothon never concatenates them, because joining two conditions averages away
+the difference the study exists to measure.
 
 ```bash
-prothon -traj wild_type.dcd,mutant.dcd -top topology.pdb -p cbcn --seed 0
+prothon compare --ensembles wild_type.dcd mutant.dcd --topology topology.pdb \
+                --order-parameters cbcn --random-state 0
+```
+
+or, the same thing more briefly:
+
+```bash
+prothon compare -e wild_type.dcd mutant.dcd -t topology.pdb -p cbcn -s 0
 ```
 
 ```
@@ -49,17 +55,22 @@ p-value the data does not justify.
 
 ## What it wrote
 
-```
+```text
 results/
 └── cbcn_output/
-    ├── ensemble_0_matrix.csv           the representation, frames × residues
-    ├── ensemble_0_matrix.png           the same as a heatmap
-    ├── cbcn_ensemble_1_local_dissimilarity.png
-    ├── cbcn_combined_local_dissimilarity.png
+    ├── ensemble_0_matrix.csv                    frames × residues
+    ├── ensemble_0_matrix.png                    the same as a heatmap
+    ├── ensemble_1_matrix.csv
+    ├── ensemble_1_matrix.png
+    ├── cbcn_ensemble_1_local_dissimilarity.png  per residue, one per comparison
+    ├── cbcn_combined_local_dissimilarity.png    every comparison on one figure
     ├── cbcn_global_dissimilarity_bar.png
     ├── cbcn_global_dissimilarity_line.png
-    └── manifest.json
+    └── manifest.json                            what produced all of it
 ```
+
+One directory per order parameter, so `-p cbcn,cata` writes `cbcn_output/` and
+`cata_output/`.
 
 `manifest.json` holds the inputs, every parameter, the seed, the Prothon
 version, and the full numerical results. A run that cannot say what produced it

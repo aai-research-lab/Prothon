@@ -7,10 +7,11 @@ pip install prothon-ensembles
 Then check what was found:
 
 ```bash
-prothon --info
+prothon info
 ```
 
-which lists the measures, the metrics, and the versions of every backend.
+which lists the order parameters, the metrics, the sources `--ensembles`
+accepts, and the version of every backend.
 
 ## The name
 

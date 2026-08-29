@@ -218,7 +218,4 @@ study.save("study.yml")       # and write it down
 `study.resolve()` returns the loaded ensembles without running anything, for
 when you want to do something else with them.
 
-## The older key name
-
-`source:` was the first name for `ensemble:`. Files written against it keep
-working.
+`source:` is accepted as a synonym for `ensemble:`.
