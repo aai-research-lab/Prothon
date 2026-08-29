@@ -254,4 +254,4 @@ class TestDissimilarity:
 
         a, b = shifted_matrices
         result = dissimilarity(a, b, -4, 10, x_num=50, s_num=3, random_state=0)
-        assert json.loads(json.dumps(result.to_dict()))["measure"] == ""
+        assert json.loads(json.dumps(result.to_dict()))["order_parameter"] == ""

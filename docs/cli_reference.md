@@ -40,7 +40,7 @@ conditions averages away the difference being measured.
 | `--ensembles` | `-e` | required | Sources to compare. |
 | `--topology` | `-t` | | For sources that need one. |
 | `--reference` | `-r` | `0` | An index into `--ensembles`, or a source of its own. |
-| `--measures` | `-m` | `cbcn` | `cbcn`, `cacn`, `caba`, `cata`, `sasa`. |
+| `--order-parameters` | `-p` | `cbcn` | `cbcn`, `cacn`, `caba`, `cata`, `sasa`. |
 | `--metric` | | `jsd` | `jsd`, `wasserstein`, `ks`. |
 | `--random-state` | `-s` | | Seed. Set it and the run is reproducible. |
 | `--n-permutations` | | `100` | Relabellings behind the null. |
@@ -67,7 +67,7 @@ Several ensembles against one reference is `compare --report table`:
 
 ```bash
 prothon compare -e bioemu/ alphaflow/ bbflow/ -r md.xtc -t target.pdb \
-                -m cbcn -s 0 -o results --report table
+                -p cbcn -s 0 -o results --report table
 ```
 
 Same comparison, same estimator, same floor — presented as a table ranked by
@@ -93,7 +93,7 @@ arbitrary units. See [validation](validate.md).
 
 ## `prothon info`
 
-Measures, metrics, the sources `--ensembles` accepts, and the detected
+Order parameters, metrics, the sources `--ensembles` accepts, and the detected
 backends.
 
 ## Exit codes
@@ -106,7 +106,7 @@ backends.
 ## The 2.x form
 
 ```bash
-prothon -traj a.dcd,b.dcd -top top.pdb -m cbcn --seed 0
+prothon -traj a.dcd,b.dcd -top top.pdb -p cbcn --seed 0
 ```
 
 still works and warns once. `-traj` is `--ensembles`, `-top` is `--topology`,

@@ -7,7 +7,7 @@ the same things for each.
 
 ```bash
 prothon compare --ensembles bioemu/ alphaflow/ bbflow/ --reference md.xtc \
-                --topology target.pdb --measures cbcn --report table \
+                --topology target.pdb --order-parameters cbcn --report table \
                 --output-dir results --random-state 0
 ```
 
@@ -32,7 +32,7 @@ accession. Only sources that need a topology use `--topology`, so a deposited
 ensemble can sit in the same run as a simulation:
 
 ```bash
-prothon compare -e bioemu/ PED00024 -r md.xtc -t target.pdb -m cacn -s 0 \
+prothon compare -e bioemu/ PED00024 -r md.xtc -t target.pdb -p cacn -s 0 \
                 --report table
 ```
 
@@ -105,7 +105,7 @@ models = [
     Ensemble.from_pdb_models("alphaflow/*.pdb", label="AlphaFlow"),
 ]
 
-result = benchmark(reference, models, measures="cbcn,cata", random_state=0)
+result = benchmark(reference, models, order_parameters="cbcn,cata", random_state=0)
 print(result.table("cbcn"))
 result.write("results/")
 ```
@@ -124,11 +124,11 @@ from prothon.batch import BenchmarkResult
 rows = []
 for name in targets:
     rows += benchmark(
-        references[name], models[name], measures="cbcn",
+        references[name], models[name], order_parameters="cbcn",
         target=name, random_state=0,
     ).rows
 
-BenchmarkResult(rows, measures=("cbcn",)).write("results/")
+BenchmarkResult(rows, order_parameters=("cbcn",)).write("results/")
 ```
 
 The comparisons are independent, so this parallelises across targets without

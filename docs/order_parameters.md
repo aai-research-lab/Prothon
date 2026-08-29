@@ -1,9 +1,28 @@
-# The measures
+# The order parameters
 
-The five measures below are those introduced with the method (Aina, Hsueh and
-Plotkin 2023).
+The five order parameters below are those introduced with the method (Aina,
+Hsueh and Plotkin 2023).
 
-A *measure* turns a trajectory into an `(n_frames, n_features)` matrix: one row
+## Four words, four levels
+
+They are worth keeping apart, because three of them are distances or matrices
+and only one is the quantity itself:
+
+| word | what it is |
+|---|---|
+| **order parameter** | the local quantity — a contact number at one residue |
+| **representation** | the `(frames × features)` matrix built from one |
+| **metric** | the distance between two distributions of it |
+| **observable** | something an experiment measures |
+
+An earlier version of this package called the first a *measure*, which collides
+with *metric* — a metric is a measure of distance — so `--measures cbcn
+--metric jsd` read as a distinction without a difference. "Local order
+parameter" is the term of the paper and of the original code's own docstrings.
+
+## What one is
+
+An *order parameter* turns a trajectory into an `(n_frames, n_features)` matrix: one row
 per conformation, one column per residue or per angle. That matrix is the
 ensemble's representation, and everything downstream works on it rather than on
 coordinates — which is why nothing is ever superposed.
@@ -77,7 +96,7 @@ when comparing molecules that differ by an insertion or deletion.
 `sasa` speaks to burial and exposure directly, which is often what a question
 about binding or aggregation is really about.
 
-Running several is cheap and usually informative: `-m cbcn,cata,sasa`.
+Running several is cheap and usually informative: `-p cbcn,cata,sasa`.
 
 ## References
 

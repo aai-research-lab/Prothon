@@ -361,6 +361,41 @@ All notable changes to Prothon are recorded here. This project follows
 - Experimental uncertainties are required rather than optional: a chi-squared
   without them is a sum of squares in arbitrary units.
 
+### Changed — order parameters, not measures
+
+- **`--measures` is `--order-parameters`, short `-p`**, and `MEASURES` is
+  `ORDER_PARAMETERS`. "Measure" collided with "metric" — a metric *is* a
+  measure of distance — so `--measures cbcn --metric jsd` read as a
+  distinction without a difference. "Local order parameter" is the term of the
+  paper and of the original code's own docstrings. Four words now separate four
+  levels: **order parameter** (the local quantity), **representation** (the
+  matrix built from it), **metric** (the distance between distributions of it),
+  **observable** (what an experiment measures).
+- The rename reaches everything a user sees, not only the Python names: the
+  `manifest.json` key is `order_parameter`, `ComparisonResult`,
+  `BenchmarkRow` and `PrecisionRecall` carry `order_parameter`, `prothon info`
+  says "order parameters", and the documentation page is
+  `order_parameters.md`. A test asserts that no user-visible name still says
+  "measure", because a `measure` key in a manifest beside an
+  `--order-parameters` flag is exactly the drift this was meant to end.
+- The 2.x names remain as aliases and warn: `MEASURES`, `Measure`,
+  `resolve_measure`, `describe_measure`, `measures=`, `methods=`, `-m`.
+
+### Fixed — compiled readers no longer print over the results
+
+- MDTraj reads several formats through VMD's molfile plugins, which announce
+  themselves on file descriptor 1 from C: two lines per trajectory, which
+  `contextlib.redirect_stdout` cannot catch because the C code never consults
+  `sys.stdout`. On a study of a dozen ensembles the plugin outnumbered the
+  result, and under `--json` it made the output unparseable. The descriptor is
+  now redirected while a file is read, and restored in a `finally` so an
+  exception cannot leave a process writing to `/dev/null`.
+- `--verbose` turns the redirect off, so a genuine diagnostic from a reader is
+  visible when somebody is looking for one.
+- **`prothon info | head` no longer ends in a traceback.** Closing a pipe
+  mid-write raised `BrokenPipeError` out of `main`, so the only thing a reader
+  saw of an otherwise successful run was a stack trace.
+
 ### Refusals
 
 - **Coverage, not just identity.** Free end gaps make the aligner behave

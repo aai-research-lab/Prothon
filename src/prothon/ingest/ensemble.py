@@ -35,6 +35,7 @@ from typing import Any
 import mdtraj as md
 import numpy as np
 
+from ..quiet import quiet_c_output
 from ..utils import get_logger
 from .sequence import THREE_TO_ONE, chain_sequences, sequence_of
 
@@ -160,7 +161,8 @@ class Ensemble:
         if not os.path.exists(topology):
             raise FileNotFoundError(f"Topology not found: {topology}")
 
-        traj = md.load(path, top=topology, stride=stride)
+        with quiet_c_output():
+            traj = md.load(path, top=topology, stride=stride)
         logger.info("%s: %d frames from %s", label or path, traj.n_frames, path)
         return cls(
             trajectory=traj,
@@ -190,7 +192,8 @@ class Ensemble:
         difference the study exists to measure -- so this is never done
         implicitly.
         """
-        parts = [md.load(p, top=topology, stride=stride) for p in paths]
+        with quiet_c_output():
+            parts = [md.load(p, top=topology, stride=stride) for p in paths]
         widths = {p.n_atoms for p in parts}
         if len(widths) > 1:
             raise ValueError(
@@ -231,21 +234,23 @@ class Ensemble:
         if not files:
             raise FileNotFoundError(f"No PDB files matched {pattern!r}.")
 
-        if len(files) == 1:
-            traj = md.load(files[0])
-        else:
-            first = md.load(files[0])
-            frames = [first]
-            for path in files[1:]:
-                model = md.load(path)
-                if model.n_atoms != first.n_atoms:
-                    raise ValueError(
-                        f"{os.path.basename(path)} has {model.n_atoms} atoms and "
-                        f"{os.path.basename(files[0])} has {first.n_atoms}. Every "
-                        f"conformation in an ensemble must be the same molecule."
-                    )
-                frames.append(model)
-            traj = md.join(frames)
+        with quiet_c_output():
+            if len(files) == 1:
+                traj = md.load(files[0])
+            else:
+                first = md.load(files[0])
+                frames = [first]
+                for path in files[1:]:
+                    model = md.load(path)
+                    if model.n_atoms != first.n_atoms:
+                        raise ValueError(
+                            f"{os.path.basename(path)} has {model.n_atoms} atoms "
+                            f"and {os.path.basename(files[0])} has {first.n_atoms}. "
+                            f"Every conformation in an ensemble must be the same "
+                            f"molecule."
+                        )
+                    frames.append(model)
+                traj = md.join(frames)
 
         logger.info(
             "%s: %d conformations from %d file(s)",

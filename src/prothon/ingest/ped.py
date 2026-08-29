@@ -47,6 +47,7 @@ from typing import Any
 
 import mdtraj as md
 
+from ..quiet import quiet_c_output
 from ..utils import get_logger
 from .ensemble import Ensemble
 
@@ -196,7 +197,8 @@ def ped_ensemble(
     # mdtraj reads a multi-model PDB from a file, not from a string, so a
     # temporary file is needed when nothing is being cached.
     if path:
-        trajectory = md.load(path)
+        with quiet_c_output():
+            trajectory = md.load(path)
     else:
         import tempfile
 
@@ -204,7 +206,8 @@ def ped_ensemble(
             temporary = os.path.join(directory, name)
             with open(temporary, "w", encoding="utf-8") as handle:
                 handle.write(text)
-            trajectory = md.load(temporary)
+            with quiet_c_output():
+                trajectory = md.load(temporary)
 
     ensemble = Ensemble(
         trajectory=trajectory,

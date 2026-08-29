@@ -38,7 +38,7 @@ from typing import Any
 
 from ..core.dissimilarity import dissimilarity
 from ..core.precision_recall import precision_recall
-from ..core.representation import resolve_measure
+from ..core.representation import resolve_order_parameter
 from ..ingest import Ensemble
 from ..utils import get_logger
 
@@ -53,7 +53,7 @@ class BenchmarkRow:
 
     target: str
     model: str
-    measure: str
+    order_parameter: str
     n_reference: int = 0
     n_model: int = 0
     dissimilarity: float | None = None
@@ -103,7 +103,7 @@ class BenchmarkRow:
         return {
             "target": self.target,
             "model": self.model,
-            "measure": self.measure,
+            "order_parameter": self.order_parameter,
             "n_reference": self.n_reference,
             "n_model": self.n_model,
             "dissimilarity": self.dissimilarity,
@@ -130,18 +130,21 @@ class BenchmarkResult:
 
     rows: list[BenchmarkRow]
     reference_label: str = "reference"
-    measures: tuple[str, ...] = ()
+    order_parameters: tuple[str, ...] = ()
 
     def for_model(self, model: str) -> list[BenchmarkRow]:
         return [r for r in self.rows if r.model == model]
 
-    def table(self, measure: str | None = None) -> str:
+    def table(self, order_parameter: str | None = None) -> str:
         """A markdown table, ordered by margin.
 
         Ranked on the margin above the floor rather than on the dissimilarity,
         because the dissimilarity rewards a model for sampling thinly.
         """
-        rows = [r for r in self.rows if measure is None or r.measure == measure]
+        rows = [
+            r for r in self.rows
+            if order_parameter is None or r.order_parameter == order_parameter
+        ]
         if not rows:
             return "_no comparisons_"
 
@@ -184,7 +187,7 @@ class BenchmarkResult:
             "prothon_version": __version__,
             "written_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "reference": self.reference_label,
-            "measures": list(self.measures),
+            "order_parameters": list(self.order_parameters),
             "rows": [r.to_dict() for r in self.rows],
         }
 
@@ -196,8 +199,8 @@ class BenchmarkResult:
             json.dumps(self.to_dict(), indent=2, default=float), encoding="utf-8"
         )
         report = ["# Benchmark", "", self.summary(), ""]
-        for measure in self.measures:
-            report += [f"## {measure.upper()}", "", self.table(measure), ""]
+        for name in self.order_parameters:
+            report += [f"## {name.upper()}", "", self.table(name), ""]
         (path / "benchmark.md").write_text("\n".join(report), encoding="utf-8")
         logger.info("Wrote %s", path / "benchmark.md")
         return path
@@ -206,7 +209,7 @@ class BenchmarkResult:
 def _compare_one(
     reference: Ensemble,
     model: Ensemble,
-    measure: str,
+    order_parameter: str,
     target: str,
     reference_reps,
     random_state,
@@ -215,11 +218,11 @@ def _compare_one(
     """One model against the reference, catching a refusal as a result."""
     from ..core.prothon_core import Prothon
 
-    spec = resolve_measure(measure)
+    spec = resolve_order_parameter(order_parameter)
     row = BenchmarkRow(
         target=target,
         model=model.label,
-        measure=spec.name,
+        order_parameter=spec.name,
         n_reference=reference.n_frames,
         n_model=model.n_frames,
     )
@@ -238,7 +241,7 @@ def _compare_one(
             left, right, low, high,
             circular=spec.circular,
             random_state=random_state,
-            measure=spec.name,
+            order_parameter=spec.name,
             # Conformations from a generative model are independent draws, not
             # a trajectory, so there is no correlation to block against and
             # blocking would cost resolution for nothing.
@@ -250,7 +253,7 @@ def _compare_one(
             circular=spec.circular,
             feature_index=index,
             random_state=random_state,
-            measure=spec.name,
+            order_parameter=spec.name,
         )
     except ValueError as error:
         row.refused = str(error).split(".")[0]
@@ -277,7 +280,7 @@ def _compare_one(
 def benchmark(
     reference: Ensemble,
     models: Sequence[Ensemble],
-    measures: str | Sequence[str] = "cbcn",
+    order_parameters: str | Sequence[str] = "cbcn",
     target: str = "target",
     random_state: int | None = None,
     output_dir: str | os.PathLike | None = None,
@@ -292,7 +295,7 @@ def benchmark(
         precision and recall swap when it is.
     models
         The ensembles being assessed.
-    measures
+    order_parameters
         One or more local order parameters.
     target
         A name for this system, used in the table when several are run.
@@ -306,15 +309,15 @@ def benchmark(
     from ..core.prothon_core import Prothon
     from ..utils import split_list_arg
 
-    names = split_list_arg(measures)
+    names = split_list_arg(order_parameters)
     if not names:
-        raise ValueError("No measures requested.")
+        raise ValueError("No order parameters requested.")
     if not models:
         raise ValueError("No models to compare against the reference.")
 
     rows: list[BenchmarkRow] = []
     for name in names:
-        spec = resolve_measure(name)
+        spec = resolve_order_parameter(name)
         # The reference is measured once per measure and reused, rather than
         # recomputed for every model.
         reference_reps = Prothon.from_ensembles(
@@ -331,7 +334,8 @@ def benchmark(
             )
 
     result = BenchmarkResult(
-        rows=rows, reference_label=reference.label, measures=tuple(names)
+        rows=rows, reference_label=reference.label,
+        order_parameters=tuple(names)
     )
     if output_dir:
         result.write(output_dir)

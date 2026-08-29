@@ -132,7 +132,7 @@ class EnsembleComparison:
     effective_samples: tuple[float, float] = (0.0, 0.0)
     feature_importance: np.ndarray | None = None
     feature_index: np.ndarray | None = None
-    measure: str = ""
+    order_parameter: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -172,7 +172,7 @@ class EnsembleComparison:
     def to_dict(self) -> dict[str, Any]:
         return {
             "method": self.method,
-            "measure": self.measure,
+            "order_parameter": self.order_parameter,
             "statistic": float(self.statistic),
             "p_value": float(self.p_value),
             "effect": None if self.effect is None else float(self.effect),
@@ -286,7 +286,7 @@ def maximum_mean_discrepancy(
     n_permutations: int = DEFAULT_PERMUTATIONS,
     sample_size: int = DEFAULT_SAMPLE_SIZE,
     random_state=None,
-    measure: str = "",
+    order_parameter: str = "",
     bandwidth: float | None = None,
     standardise: bool = True,
 ) -> EnsembleComparison:
@@ -362,7 +362,7 @@ def maximum_mean_discrepancy(
         null_std=float(null.std(ddof=1)) if null.size > 1 else 0.0,
         n_samples=(m, n),
         effective_samples=n_eff,
-        measure=measure,
+        order_parameter=order_parameter,
         metadata={
             "kernel": "gaussian",
             "bandwidth_squared": sigma_squared,
@@ -386,7 +386,7 @@ def classifier_two_sample(
     folds: int = DEFAULT_FOLDS,
     sample_size: int = DEFAULT_SAMPLE_SIZE,
     random_state=None,
-    measure: str = "",
+    order_parameter: str = "",
     feature_index=None,
 ) -> EnsembleComparison:
     """Train a classifier to tell the two ensembles apart, and score it fairly.
@@ -478,7 +478,7 @@ def classifier_two_sample(
         effective_samples=n_eff,
         feature_importance=importance,
         feature_index=None if feature_index is None else np.asarray(feature_index),
-        measure=measure,
+        order_parameter=order_parameter,
         metadata={
             "classifier": "random forest (200 trees)",
             "folds": usable_folds,

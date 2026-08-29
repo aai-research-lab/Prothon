@@ -20,7 +20,7 @@ not always a residue. ``sasa`` has one column per residue, but ``cbcn`` has one
 per C-beta -- so glycines are absent, and a mutation to or from glycine shifts
 every column after it. ``caba`` and ``cata`` are windows of three and four
 consecutive alpha carbons, so a column exists only where the whole window does.
-Mapping columns directly would be right for one measure and quietly wrong for
+Mapping columns directly would be right for one of them and quietly wrong for
 the rest.
 
 **A weak alignment is refused, not reported.** Below roughly 25% identity an
@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ..core.representation import resolve_measure
+from ..core.representation import resolve_order_parameter
 from ..utils import get_logger
 from .sequence import (
     MINIMUM_COVERAGE,
@@ -69,17 +69,18 @@ class Substitution:
         return f"{self.letter_a}{self.residue_a + 1}{self.letter_b}"
 
 
-def feature_residues(topology, measure: str) -> list[tuple[int, ...]]:
+def feature_residues(topology, order_parameter: str) -> list[tuple[int, ...]]:
     """Residue indices behind each column of a representation.
 
     Returns one tuple per column: a single residue for the per-residue
-    measures, and the window of consecutive alpha carbons for the angular ones.
+    parameters, and the window of consecutive alpha carbons for the angular
+    ones.
 
     This has to stay in step with the ``compute_*`` functions it describes, and
     a test asserts that the count it returns matches the width of the matrix
     they produce.
     """
-    spec = resolve_measure(measure)
+    spec = resolve_order_parameter(order_parameter)
     top = getattr(topology, "topology", topology)
 
     if spec.name in ("cbcn", "cacn"):
@@ -94,7 +95,9 @@ def feature_residues(topology, measure: str) -> list[tuple[int, ...]]:
     if spec.name == "sasa":
         return [(r.index,) for r in top.residues]
 
-    raise ValueError(f"No feature-to-residue map defined for measure {spec.name!r}.")
+    raise ValueError(
+        f"No feature-to-residue map defined for {spec.name!r}."
+    )
 
 
 @dataclass
@@ -142,7 +145,7 @@ class Correspondence:
         return {int(i): int(j) for i, j in self.pairs}
 
     def columns_for(
-        self, measure: str, topology_a, topology_b
+        self, order_parameter: str, topology_a, topology_b
     ) -> tuple[np.ndarray, np.ndarray]:
         """Column indices to take from each representation so they line up.
 
@@ -154,8 +157,8 @@ class Correspondence:
         the same quantity.
         """
         mapping = self.residue_map()
-        features_a = feature_residues(topology_a, measure)
-        features_b = feature_residues(topology_b, measure)
+        features_a = feature_residues(topology_a, order_parameter)
+        features_b = feature_residues(topology_b, order_parameter)
         lookup_b = {window: index for index, window in enumerate(features_b)}
 
         take_a: list[int] = []
@@ -170,7 +173,8 @@ class Correspondence:
                 take_b.append(match)
 
         logger.debug(
-            "%s: %d of %d columns comparable", measure, len(take_a), len(features_a)
+            "%s: %d of %d columns comparable",
+            order_parameter, len(take_a), len(features_a),
         )
         return np.array(take_a, dtype=int), np.array(take_b, dtype=int)
 

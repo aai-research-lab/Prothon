@@ -360,7 +360,7 @@ class TestStudyAcrossMolecules:
         # F5G removes a C-beta, so the two representations have different
         # widths and the file-based route refuses outright.
         study = self._study(tmp_path, "ACDEFHIKLMNPQR", "ACDEGHIKLMNPQR")
-        results = study.compare_ensembles(methods="cbcn", s_num=2)
+        results = study.compare_ensembles(order_parameters="cbcn", s_num=2)
         assert len(results["cbcn"]) == 1
         assert results["cbcn"][0].resolved
 
@@ -372,7 +372,7 @@ class TestStudyAcrossMolecules:
         of another, and the figure would look entirely reasonable.
         """
         study = self._study(tmp_path, "ACDEFHIKLMNPQR", "ACDEGHIKLMNPQR")
-        result = study.compare_ensembles(methods="cbcn", s_num=2)["cbcn"][0]
+        result = study.compare_ensembles(order_parameters="cbcn", s_num=2)["cbcn"][0]
 
         index = result.feature_index
         assert index is not None
@@ -384,13 +384,13 @@ class TestStudyAcrossMolecules:
 
     def test_identical_molecules_need_no_reconciliation(self, tmp_path):
         study = self._study(tmp_path, "ACDEFHIKLMNPQR", "ACDEFHIKLMNPQR")
-        result = study.compare_ensembles(methods="cbcn", s_num=2)["cbcn"][0]
+        result = study.compare_ensembles(order_parameters="cbcn", s_num=2)["cbcn"][0]
         # Nothing was dropped, so the index stays implicit.
         assert result.feature_index is None
 
     def test_manifest_records_the_correspondence(self, tmp_path):
         study = self._study(tmp_path, "ACDEFHIKLMNPQR", "ACDEGHIKLMNPQR")
-        study.compare_ensembles(methods="cbcn", s_num=2)
+        study.compare_ensembles(order_parameters="cbcn", s_num=2)
         manifest = json.loads((tmp_path / "cbcn_output" / "manifest.json").read_text())
 
         assert manifest["ensembles"][0]["label"] == "wild type"
@@ -409,7 +409,7 @@ class TestStudyAcrossMolecules:
                          label="construct")
         study = Prothon.from_ensembles([full, short], output_dir=str(tmp_path),
                                        random_state=0)
-        result = study.compare_ensembles(methods="cacn", s_num=2)["cacn"][0]
+        result = study.compare_ensembles(order_parameters="cacn", s_num=2)["cacn"][0]
         # The construct starts at the full protein's residue 4.
         assert result.feature_index[0] == 4
         assert result.feature_index[-1] == 14
@@ -427,7 +427,7 @@ class TestStudyAcrossMolecules:
         plain = Prothon.from_ensembles(
             [Ensemble(frames, label="a"), Ensemble(other, label="b")],
             output_dir=str(tmp_path / "plain"), random_state=0,
-        ).compare_ensembles(methods="cacn", s_num=2)["cacn"][0]
+        ).compare_ensembles(order_parameters="cacn", s_num=2)["cacn"][0]
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -435,7 +435,7 @@ class TestStudyAcrossMolecules:
                 [Ensemble(frames, label="a"),
                  Ensemble(other, label="b", weights=w)],
                 output_dir=str(tmp_path / "weighted"), random_state=0,
-            ).compare_ensembles(methods="cacn", s_num=2)["cacn"][0]
+            ).compare_ensembles(order_parameters="cacn", s_num=2)["cacn"][0]
 
         assert weighted.global_dissimilarity != plain.global_dissimilarity
 
@@ -448,7 +448,7 @@ class TestStudyAcrossMolecules:
         study = Prothon.from_ensembles([a, b], output_dir=str(tmp_path),
                                        random_state=0)
         with pytest.warns(UserWarning, match="treated as uniform"):
-            study.compare_ensembles(methods="cacn", s_num=2)
+            study.compare_ensembles(order_parameters="cacn", s_num=2)
 
     def test_effective_sample_size_is_recorded(self, tmp_path):
         from prothon import Prothon
@@ -463,7 +463,7 @@ class TestStudyAcrossMolecules:
                                        random_state=0)
         with pytest.warns(UserWarning, match="treated as uniform"):
             with pytest.raises(ValueError, match="independent conformations"):
-                study.compare_ensembles(methods="cacn", s_num=2)
+                study.compare_ensembles(order_parameters="cacn", s_num=2)
 
     def test_fewer_than_two_ensembles_is_refused(self):
         from prothon import Prothon

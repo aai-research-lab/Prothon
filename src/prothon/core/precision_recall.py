@@ -112,7 +112,7 @@ class PrecisionRecall:
     coverage: float = DEFAULT_COVERAGE
     feature_index: np.ndarray | None = None
     effective_samples: tuple[float, float] = (0.0, 0.0)
-    measure: str = ""
+    order_parameter: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -179,7 +179,7 @@ class PrecisionRecall:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "measure": self.measure,
+            "order_parameter": self.order_parameter,
             "coverage": self.coverage,
             "precision": self.precision.tolist(),
             "recall": self.recall.tolist(),
@@ -257,7 +257,7 @@ def precision_recall(
     floor_repeats: int = DEFAULT_FLOOR_REPEATS,
     random_state=None,
     feature_index=None,
-    measure: str = "",
+    order_parameter: str = "",
 ) -> PrecisionRecall:
     """Split a difference into what is missed and what is invented.
 
@@ -350,7 +350,7 @@ def precision_recall(
         coverage=coverage,
         feature_index=None if feature_index is None else np.asarray(feature_index),
         effective_samples=n_eff,
-        measure=measure,
+        order_parameter=order_parameter,
         metadata={"grid_points": x_num, "floor_repeats": floor_repeats},
     )
     logger.info("%s", result.summary().replace("\n", "; "))

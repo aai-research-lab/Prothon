@@ -4,15 +4,15 @@
 > parameters.
 
 Prothon represents each ensemble as a vector of probability distributions over
-**local structural measures** — contact numbers, virtual bond and torsion
-angles, solvent accessibility — and measures the distance between corresponding
+**local order parameters** — contact numbers, virtual bond and torsion angles,
+solvent accessibility — and measures the distance between corresponding
 distributions. Because the representation is local, no structural superposition
 is needed, so the cost is linear in the number of conformations rather than
 quadratic.
 
 ```bash
 pip install prothon-ensembles
-prothon -traj wild_type.dcd,mutant.dcd -top topology.pdb -m cbcn
+prothon -traj wild_type.dcd,mutant.dcd -top topology.pdb -p cbcn
 ```
 
 ```
@@ -43,7 +43,7 @@ differs.
 
 installation
 getting_started
-measures
+order_parameters
 metrics
 statistics
 calibration

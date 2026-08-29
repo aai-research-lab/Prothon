@@ -15,6 +15,8 @@ from glob import glob
 
 import mdtraj as md
 
+from .quiet import quiet_c_output
+
 __all__ = ["configure_logging", "get_logger", "load_trajectories", "split_list_arg"]
 
 _ROOT = "prothon"
@@ -40,6 +42,12 @@ def configure_logging(verbose: bool = False) -> None:
         handler.setFormatter(logging.Formatter("[prothon] %(message)s"))
         logger.addHandler(handler)
     logger.propagate = False
+    # Compiled trajectory readers announce themselves on stdout from C. That
+    # is noise in ordinary use and a diagnostic when something is wrong, so it
+    # is suppressed unless the run is verbose.
+    from .quiet import set_quiet
+
+    set_quiet(not verbose)
 
 
 def split_list_arg(value: str | Sequence[str] | None) -> list[str]:
@@ -88,5 +96,6 @@ def load_trajectories(
     if not files:
         raise ValueError("No trajectory files given.")
 
-    loaded = [md.load(path, top=topology) for path in files]
+    with quiet_c_output():
+        loaded = [md.load(path, top=topology) for path in files]
     return loaded[0] if len(loaded) == 1 else md.join(loaded)

@@ -18,7 +18,7 @@ wt  = Ensemble.from_trajectory("wt.xtc", "wt.pdb", label="wild type")
 mut = Ensemble.from_trajectory("mut.xtc", "mut.pdb", label="F5G")
 
 study = Prothon.from_ensembles([wt, mut], random_state=0)
-study.compare_ensembles(methods="cbcn")
+study.compare_ensembles(order_parameters="cbcn")
 ```
 
 ```

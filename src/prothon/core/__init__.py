@@ -9,11 +9,11 @@
 from .dissimilarity import ComparisonResult, dissimilarity, estimate_pdf, jsd_local
 from .plotting import get_ensemble_colors, get_method_output_dir
 from .prothon_core import Prothon
-from .representation import MEASURES, compute_ensemble_representation
+from .representation import ORDER_PARAMETERS, compute_ensemble_representation
 
 __all__ = [
     "ComparisonResult",
-    "MEASURES",
+    "ORDER_PARAMETERS",
     "Prothon",
     "compute_ensemble_representation",
     "dissimilarity",

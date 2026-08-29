@@ -90,8 +90,9 @@ PARAMETERS: tuple[Parameter, ...] = (
     ),
     # -- what to measure --------------------------------------------------
     _p(
-        "measures", short="-m", default="cbcn", metavar="NAME[,NAME...]",
-        help="Local order parameters: cbcn, cacn, caba, cata, sasa.",
+        "order_parameters", short="-p", default="cbcn", metavar="NAME[,NAME...]",
+        help="Local order parameters: cbcn, cacn, caba, cata, sasa. Several "
+             "are cheap and usually informative.",
         commands=("compare",),
     ),
     _p(
@@ -224,7 +225,10 @@ COMMANDS: tuple[Command, ...] = (
         "Reported beside a floor obtained from the ensemble itself, because a "
         "perfect ensemble does not score a reduced chi-squared of one.",
     ),
-    Command("info", "Show the measures, metrics and detected backends."),
+    Command(
+        "info",
+        "Show the order parameters, metrics, sources and detected backends.",
+    ),
 )
 
 

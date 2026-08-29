@@ -24,7 +24,7 @@
 ---
 
 ```bash
-prothon -traj wild_type.dcd,mutant.dcd -top topology.pdb -m cbcn
+prothon -traj wild_type.dcd,mutant.dcd -top topology.pdb -p cbcn
 ```
 
 ```
@@ -108,14 +108,14 @@ in 2020 by an unrelated project. **The import name and the command are both
 From the command line:
 
 ```bash
-prothon -traj a.dcd,b.dcd,c.dcd -top top.pdb -m cbcn,cata -o results --seed 0
+prothon -traj a.dcd,b.dcd,c.dcd -top top.pdb -p cbcn,cata -o results --seed 0
 ```
 
 | flag | meaning |
 |---|---|
 | `-traj` | Trajectory files, one per ensemble, comma-separated. Never concatenated. |
 | `-top` | Topology (PDB), shared by all of them. |
-| `-m` | Measures: `cbcn`, `cacn`, `caba`, `cata`, `sasa`. |
+| `-m` | Order parameters: `cbcn`, `cacn`, `caba`, `cata`, `sasa`. |
 | `--metric` | Distance: `jsd` (default), `wasserstein`, `ks`. |
 | `--s-num` | Split-half repeats behind the noise floor. |
 | `-r` | Reference ensemble index (default 0). |
@@ -129,7 +129,7 @@ Or from Python:
 from prothon import Prothon
 
 study = Prothon(["wild_type.dcd", "mutant.dcd"], "topology.pdb", random_state=0)
-results = study.compare_ensembles(methods="cbcn")
+results = study.compare_ensembles(order_parameters="cbcn")
 
 comparison = results["cbcn"][0]
 comparison.global_dissimilarity     # 0.2841
@@ -148,7 +148,7 @@ Each measure writes a directory containing the representation matrices as CSV,
 heatmaps, global and per-residue figures, and a `manifest.json` recording the
 inputs, parameters, seed and version that produced them.
 
-## The measures
+## The order parameters
 
 | name | quantity | units | circular |
 |---|---|---|---|

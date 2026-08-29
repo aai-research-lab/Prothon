@@ -47,9 +47,9 @@ from .core.metrics import METRICS, describe_metric, feature_distance
 from .core.precision_recall import PrecisionRecall, precision_recall
 from .core.prothon_core import Prothon
 from .core.representation import (
-    MEASURES,
+    ORDER_PARAMETERS,
     compute_ensemble_representation,
-    describe_measure,
+    describe_order_parameter,
 )
 from .utils import load_trajectories
 from .validate import AgreementResult, score_observable
@@ -65,13 +65,13 @@ __all__ = [
     "score_observable",
     "benchmark",
     "distinguishability",
-    "MEASURES",
+    "ORDER_PARAMETERS",
     "METRICS",
     "describe_metric",
     "effective_sample_size",
     "feature_distance",
     "compute_ensemble_representation",
-    "describe_measure",
+    "describe_order_parameter",
     "dissimilarity",
     "estimate_pdf",
     "jsd_local",

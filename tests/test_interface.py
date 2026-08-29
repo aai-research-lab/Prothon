@@ -69,7 +69,8 @@ class TestSchema:
 
         api = set(inspect.signature(Prothon.__init__).parameters)
         api |= set(inspect.signature(Prothon.compare_ensembles).parameters)
-        for name in ("ensembles", "topology", "random_state", "output_dir"):
+        for name in ("ensembles", "topology", "random_state", "output_dir",
+                     "order_parameters"):
             assert any(p.name == name for p in PARAMETERS)
             assert name in api, f"{name} is a flag but not a keyword argument"
 
@@ -172,7 +173,7 @@ class TestCommandLine:
             "compare",
             "--ensembles", str(files / "a.dcd"), str(files / "b.dcd"),
             "--topology", str(files / "top.pdb"),
-            "--measures", "cbcn", "--random-state", "0", "--s-num", "2",
+            "--order-parameters", "cbcn", "--random-state", "0", "--s-num", "2",
         ])
         assert code == 0
         assert "floor" in capsys.readouterr().out
@@ -180,7 +181,7 @@ class TestCommandLine:
     def test_compare_with_short_flags(self, files, capsys):
         code = main([
             "compare", "-e", f"{files / 'a.dcd'},{files / 'b.dcd'}",
-            "-t", str(files / "top.pdb"), "-m", "cbcn", "-s", "0",
+            "-t", str(files / "top.pdb"), "-p", "cbcn", "-s", "0",
         ])
         assert code == 0
         assert "CBCN" in capsys.readouterr().out
@@ -189,7 +190,7 @@ class TestCommandLine:
         code = main([
             "compare", "-e", str(files / "a.dcd"), str(files / "b.dcd"),
             "-r", str(files / "models"), "-t", str(files / "top.pdb"),
-            "-m", "cacn", "-s", "0", "--s-num", "2",
+            "-p", "cacn", "-s", "0", "--s-num", "2",
         ])
         assert code == 0
         # Three ensembles now: the reference plus the two compared.
@@ -198,7 +199,7 @@ class TestCommandLine:
     def test_a_reference_may_still_be_an_index(self, files, capsys):
         assert main([
             "compare", "-e", str(files / "a.dcd"), str(files / "b.dcd"),
-            "-r", "1", "-t", str(files / "top.pdb"), "-m", "cacn",
+            "-r", "1", "-t", str(files / "top.pdb"), "-p", "cacn",
             "-s", "0", "--s-num", "2",
         ]) == 0
 
@@ -209,7 +210,7 @@ class TestCommandLine:
         code = main([
             "compare", "-e", str(files / "models"), str(files / "b.dcd"),
             "-r", str(files / "a.dcd"), "-t", str(files / "top.pdb"),
-            "-m", "cbcn", "-s", "0", "--report", "table",
+            "-p", "cbcn", "-s", "0", "--report", "table",
         ])
         assert code == 0
         out = capsys.readouterr().out
@@ -222,7 +223,7 @@ class TestCommandLine:
 
         common = [
             "-e", str(files / "b.dcd"), "-r", str(files / "a.dcd"),
-            "-t", str(files / "top.pdb"), "-m", "cbcn", "-s", "0", "--s-num", "2",
+            "-t", str(files / "top.pdb"), "-p", "cbcn", "-s", "0", "--s-num", "2",
         ]
         main(["compare", *common])
         summary = capsys.readouterr().out
@@ -255,6 +256,27 @@ class TestCommandLine:
         assert code == 0
         assert "chi2_red" in capsys.readouterr().out
 
+    def test_a_closed_pipe_is_not_an_error(self, monkeypatch, capsys):
+        """`prothon info | head` closes the pipe mid-write. Every Unix tool has
+        to survive that quietly; a traceback would be the only thing a reader
+        sees of an otherwise successful run."""
+        import builtins
+
+        printed = {"n": 0}
+        real_print = builtins.print
+
+        def failing_print(*args, **kwargs):
+            printed["n"] += 1
+            if printed["n"] > 3:
+                raise BrokenPipeError(32, "Broken pipe")
+            real_print(*args, **kwargs)
+
+        monkeypatch.setattr(builtins, "print", failing_print)
+        # No os.dup2 stub: under pytest's capture, stdout has no real
+        # descriptor, and the handler has to survive that too rather than
+        # raising a second exception while cleaning up after the first.
+        assert main(["info"]) == 0
+
     def test_info(self, capsys):
         assert main(["info"]) == 0
         out = capsys.readouterr().out
@@ -273,6 +295,34 @@ class TestCommandLine:
         code = main(["compare", "-e", str(files / "a.dcd"), str(files / "b.dcd")])
         assert code == 2
         assert "needs a topology" in capsys.readouterr().err
+
+    def test_no_user_visible_name_still_says_measure(self):
+        """The rename has to reach the JSON and the help text, not only the
+        Python names. A `measure` key in a manifest beside an
+        `--order-parameters` flag is the drift this was meant to end."""
+        import dataclasses
+
+        from prothon.batch.benchmark import BenchmarkRow
+        from prothon.config.schema import COMMANDS, PARAMETERS
+        from prothon.core.dissimilarity import ComparisonResult
+        from prothon.core.precision_recall import PrecisionRecall
+
+        for cls in (ComparisonResult, BenchmarkRow, PrecisionRecall):
+            names = {f.name for f in dataclasses.fields(cls)}
+            assert "measure" not in names, f"{cls.__name__} still has a measure field"
+
+        text = " ".join(
+            [p.help for p in PARAMETERS] + [c.help for c in COMMANDS]
+        ).lower()
+        assert "measures" not in text, "help text still says measures"
+
+    def test_the_2x_keyword_warns(self, files):
+        study = Prothon(
+            ensembles=[str(files / "a.dcd"), str(files / "b.dcd")],
+            topology=str(files / "top.pdb"), random_state=0,
+        )
+        with pytest.warns(DeprecationWarning, match="order_parameters"):
+            study.compare_ensembles(measures="cbcn", s_num=2)
 
     def test_there_is_no_benchmark_command(self):
         """It was a second name for `compare --reference`, and two commands
@@ -296,7 +346,7 @@ class TestCommandLine:
 
         main([
             "compare", "-e", str(files / "a.dcd"), str(files / "b.dcd"),
-            "-t", str(files / "top.pdb"), "-m", "cbcn", "-s", "0",
+            "-t", str(files / "top.pdb"), "-p", "cbcn", "-s", "0",
             "--s-num", "2", "--json",
         ])
         payload = json.loads(capsys.readouterr().out)

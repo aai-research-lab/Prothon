@@ -1,5 +1,18 @@
 """Local order parameters, and the ensemble matrices built from them.
 
+Four words, four levels, and they are worth keeping apart:
+
+    order parameter   the local quantity -- a contact number at one residue
+    representation    the (frames x features) matrix built from one of them
+    metric            the distance between two distributions of it
+    observable        something an experiment measures
+
+An earlier version of this package called the first of these a *measure*,
+which collides with *metric* -- a metric is a measure of distance -- and reads
+as a distinction without a difference in ``--measures cbcn --metric jsd``.
+"Local order parameter" is the term of the paper this implements and of the
+original code's own docstrings.
+
 Each measure turns a trajectory into an ``(n_frames, n_features)`` matrix: one
 row per conformation, one column per residue (or per angle). That matrix is the
 ensemble's representation, and everything downstream -- density estimation,
@@ -10,7 +23,7 @@ coordinates.
 degrees and +179 degrees are two degrees apart, not 358. A contact number lives
 on the positive half-line. Estimating a density needs to know which, and the
 call site is the wrong place to remember it -- so each measure carries the fact
-with it in :data:`MEASURES`, and :mod:`prothon.core.dissimilarity` reads it.
+with it in :data:`ORDER_PARAMETERS`, and :mod:`prothon.core.dissimilarity` reads it.
 Version 2.0 estimated torsion densities on a linear grid, which put spurious
 mass at the wraparound and understated the dissimilarity of any residue sampling
 both sides of it.
@@ -32,13 +45,14 @@ from dataclasses import dataclass
 import mdtraj as md
 import numpy as np
 
+from ..quiet import quiet_c_output
 from ..utils import get_logger
 
 logger = get_logger("representation")
 
 __all__ = [
-    "MEASURES",
-    "Measure",
+    "ORDER_PARAMETERS",
+    "OrderParameter",
     "compute_ensemble_representation",
     "compute_representation",
     "compute_caba",
@@ -46,9 +60,9 @@ __all__ = [
     "compute_cata",
     "compute_cbcn",
     "compute_sasa",
-    "describe_measure",
+    "describe_order_parameter",
     "load_ensemble",
-    "resolve_measure",
+    "resolve_order_parameter",
 ]
 
 #: Steepness of the smooth contact cutoff, in nm^-1. From the 2023 paper.
@@ -91,7 +105,7 @@ def _pair_block(n_frames: int) -> int:
 
 
 @dataclass(frozen=True)
-class Measure:
+class OrderParameter:
     """One local order parameter, and the facts needed to use it correctly.
 
     Parameters
@@ -119,38 +133,39 @@ class Measure:
     per_residue: bool
 
 
-#: Every measure Prothon knows. The single source of truth: the CLI choices,
-#: the config validator and the report all read this rather than their own list.
-MEASURES: dict[str, Measure] = {
-    "cbcn": Measure(
+#: Every order parameter Prothon knows. The single source of truth: the CLI
+#: choices, the config validator and the report all read this rather than
+#: keeping lists of their own.
+ORDER_PARAMETERS: dict[str, OrderParameter] = {
+    "cbcn": OrderParameter(
         "cbcn",
         "C-beta contact number, with a smooth cutoff",
         "contacts",
         circular=False,
         per_residue=True,
     ),
-    "cacn": Measure(
+    "cacn": OrderParameter(
         "cacn",
         "C-alpha contact number, with a smooth cutoff",
         "contacts",
         circular=False,
         per_residue=True,
     ),
-    "caba": Measure(
+    "caba": OrderParameter(
         "caba",
         "Virtual C-alpha-C-alpha-C-alpha bond angle",
         "rad",
         circular=False,
         per_residue=False,
     ),
-    "cata": Measure(
+    "cata": OrderParameter(
         "cata",
         "Virtual C-alpha torsion angle",
         "rad",
         circular=True,
         per_residue=False,
     ),
-    "sasa": Measure(
+    "sasa": OrderParameter(
         "sasa",
         "Per-residue solvent accessible surface area",
         "nm^2",
@@ -160,28 +175,29 @@ MEASURES: dict[str, Measure] = {
 }
 
 
-def resolve_measure(measure: str) -> Measure:
-    """Look up a measure by name, suggesting alternatives when it is unknown.
+def resolve_order_parameter(name: str) -> OrderParameter:
+    """Look up an order parameter by name, suggesting alternatives when unknown.
 
     A typo that reaches the density estimator produces a confusing failure
     several frames down the stack, so it is caught here with a message that
     names what was meant.
     """
-    key = measure.strip().lower()
-    if key in MEASURES:
-        return MEASURES[key]
+    key = str(name).strip().lower()
+    if key in ORDER_PARAMETERS:
+        return ORDER_PARAMETERS[key]
     import difflib
 
-    close = difflib.get_close_matches(key, MEASURES, n=2, cutoff=0.5)
+    close = difflib.get_close_matches(key, ORDER_PARAMETERS, n=2, cutoff=0.5)
     hint = f" Did you mean {' or '.join(close)}?" if close else ""
     raise ValueError(
-        f"Unknown measure {measure!r}. Available: {', '.join(sorted(MEASURES))}.{hint}"
+        f"Unknown order parameter {name!r}. Available: "
+        f"{', '.join(sorted(ORDER_PARAMETERS))}.{hint}"
     )
 
 
-def describe_measure(measure: str) -> str:
-    """One-line description of a measure, for help text and reports."""
-    spec = resolve_measure(measure)
+def describe_order_parameter(name: str) -> str:
+    """One-line description, for help text and reports."""
+    spec = resolve_order_parameter(name)
     units = f" ({spec.units})" if spec.units else ""
     return f"{spec.name}: {spec.description}{units}"
 
@@ -193,7 +209,8 @@ def load_ensemble(file: str, topology: str) -> md.Trajectory:
     accepts, including the DCD files the 2023 paper used; the explicit DCD
     branch the original carried is no longer needed.
     """
-    return md.load(file, top=topology)
+    with quiet_c_output():
+        return md.load(file, top=topology)
 
 
 def _selected_atoms(traj: md.Trajectory, selection: str, label: str) -> np.ndarray:
@@ -306,7 +323,7 @@ def compute_cata(traj: md.Trajectory) -> np.ndarray:
     """Virtual torsion angles over consecutive C-alpha quadruples, in radians.
 
     Values wrap at +/- pi. Downstream density estimation must treat them as
-    circular; :data:`MEASURES` records that.
+    circular; :data:`ORDER_PARAMETERS` records that.
     """
     indices = _selected_atoms(traj, "name CA", "C-alpha")
     if len(indices) < 4:
@@ -331,7 +348,7 @@ _COMPUTE = {
 }
 
 
-def compute_representation(traj: md.Trajectory, measure: str) -> np.ndarray:
+def compute_representation(traj: md.Trajectory, order_parameter: str) -> np.ndarray:
     """Measure one already-loaded trajectory.
 
     The file-based path loads and releases each trajectory in turn, so peak
@@ -339,7 +356,7 @@ def compute_representation(traj: md.Trajectory, measure: str) -> np.ndarray:
     :class:`~prothon.ingest.Ensemble` already holds its frames, so it needs a
     way in that does not go back to disk.
     """
-    spec = resolve_measure(measure)
+    spec = resolve_order_parameter(order_parameter)
     matrix = np.asarray(_COMPUTE[spec.name](traj), dtype=np.float64)
     if matrix.ndim != 2:
         raise ValueError(
@@ -352,7 +369,7 @@ def compute_representation(traj: md.Trajectory, measure: str) -> np.ndarray:
 def compute_ensemble_representation(
     traj_files: Sequence[str],
     topology: str,
-    measure: str,
+    order_parameter: str,
     verbose: bool = False,
 ) -> list[np.ndarray]:
     """Build the representation matrix for each trajectory in turn.
@@ -365,8 +382,8 @@ def compute_ensemble_representation(
         rather than by their total.
     topology
         Topology file, shared by all the trajectories.
-    measure
-        One of the keys of :data:`MEASURES`.
+    order_parameter
+        One of the keys of :data:`ORDER_PARAMETERS`.
     verbose
         Retained for backward compatibility; logging is configured centrally
         by :func:`prothon.utils.configure_logging`.
@@ -379,12 +396,12 @@ def compute_ensemble_representation(
     Raises
     ------
     ValueError
-        If the measure is unknown, or if two ensembles produce different
+        If the order parameter is unknown, or if two ensembles produce different
         numbers of features -- which means the topologies disagree and any
         per-feature comparison between them would silently compare different
         residues.
     """
-    spec = resolve_measure(measure)
+    spec = resolve_order_parameter(order_parameter)
     compute = _COMPUTE[spec.name]
 
     representations: list[np.ndarray] = []
@@ -416,3 +433,11 @@ def compute_ensemble_representation(
         )
 
     return representations
+
+
+# The 2.x names. "measure" collided with "metric", which means something else
+# here, so the registry took the term the paper and the original code used.
+Measure = OrderParameter
+MEASURES = ORDER_PARAMETERS
+resolve_measure = resolve_order_parameter
+describe_measure = describe_order_parameter

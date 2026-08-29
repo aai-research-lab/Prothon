@@ -16,7 +16,9 @@ still works and says once where it went.
 from __future__ import annotations
 
 import argparse
+import io
 import json
+import os
 import sys
 from collections.abc import Sequence
 from typing import Any
@@ -24,7 +26,7 @@ from typing import Any
 from . import __version__
 from .config.schema import COMMANDS, parameters_for
 from .core.metrics import METRICS, describe_metric
-from .core.representation import MEASURES, describe_measure
+from .core.representation import ORDER_PARAMETERS, describe_order_parameter
 from .utils import configure_logging, split_list_arg
 
 __all__ = ["build_parser", "main"]
@@ -53,8 +55,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="prothon",
         description="Compare protein conformational ensembles.",
         epilog=(
-            "Measures:\n  "
-            + "\n  ".join(describe_measure(m) for m in sorted(MEASURES))
+            "Order parameters:\n  "
+            + "\n  ".join(describe_order_parameter(m) for m in sorted(ORDER_PARAMETERS))
             + "\n\nMetrics:\n  "
             + "\n  ".join(describe_metric(m) for m in sorted(METRICS))
         ),
@@ -91,6 +93,7 @@ def _legacy_parser() -> argparse.ArgumentParser:
     parser.add_argument("-traj", "--trajectories")
     parser.add_argument("-top", dest="legacy_topology")
     parser.add_argument("-m", "--methods")
+    parser.add_argument("--measures", dest="measures_legacy")
     parser.add_argument("--seed", type=int)
     parser.add_argument("-o", "--output")
     parser.add_argument("--info", action="store_true")
@@ -172,7 +175,7 @@ def run_compare(args) -> int:
     )
     dimred = None if str(args.dimred).lower() in {"none", ""} else args.dimred
     results = study.compare_ensembles(
-        methods=args.measures,
+        order_parameters=args.order_parameters,
         ref=reference,
         x_num=args.x_num,
         s_num=args.s_num,
@@ -202,7 +205,7 @@ def _run_table(args, ensembles, reference) -> int:
 
     result = benchmark(
         ensembles[reference], others,
-        measures=args.measures,
+        order_parameters=args.order_parameters,
         random_state=args.random_state,
         output_dir=args.output_dir,
     )
@@ -210,9 +213,9 @@ def _run_table(args, ensembles, reference) -> int:
         print(json.dumps(result.to_dict(), indent=2, default=float))
     else:
         print(result.summary())
-        for measure in result.measures:
+        for name in result.order_parameters:
             print()
-            print(result.table(measure))
+            print(result.table(name))
     return 0
 
 
@@ -276,9 +279,9 @@ def run_info(args=None) -> int:
     print("Commands:")
     for command in COMMANDS:
         print(f"  {command.name:<12} {command.help}")
-    print("\nMeasures:")
-    for name in sorted(MEASURES):
-        print(f"  {describe_measure(name)}")
+    print("\nOrder parameters:")
+    for name in sorted(ORDER_PARAMETERS):
+        print(f"  {describe_order_parameter(name)}")
     print("\nMetrics:")
     for name in sorted(METRICS):
         print(f"  {describe_metric(name)}")
@@ -337,7 +340,7 @@ def _legacy(argv, parser) -> int:
         ensembles=split_list_arg(args.trajectories),
         topology=args.legacy_topology,
         reference=str(args.ref if args.ref is not None else 0),
-        measures=args.methods or "cbcn",
+        order_parameters=args.methods or getattr(args, "measures_legacy", None) or "cbcn",
         metric=args.metric or "jsd",
         random_state=args.seed,
         n_permutations=100,
@@ -357,6 +360,26 @@ def _legacy(argv, parser) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    try:
+        return _main(argv)
+    except BrokenPipeError:
+        # `prothon info | head` closes the pipe while output is still being
+        # written. Every Unix tool has to survive that quietly; a traceback
+        # here would be the only thing a reader sees of an otherwise
+        # successful run.
+        #
+        # The descriptor is redirected so the interpreter does not report the
+        # same error again while flushing at shutdown. Under a test harness
+        # stdout may have no real descriptor, in which case there is nothing
+        # to redirect and nothing that will be flushed either.
+        try:
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        except (AttributeError, OSError, ValueError, io.UnsupportedOperation):
+            pass
+        return 0
+
+
+def _main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     raw = list(sys.argv[1:] if argv is None else argv)
     commands = {c.name for c in COMMANDS}

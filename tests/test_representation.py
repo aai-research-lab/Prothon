@@ -7,15 +7,15 @@ import numpy as np
 import pytest
 
 from prothon.core.representation import (
-    MEASURES,
+    ORDER_PARAMETERS,
     compute_caba,
     compute_cacn,
     compute_cata,
     compute_cbcn,
     compute_ensemble_representation,
     compute_sasa,
-    describe_measure,
-    resolve_measure,
+    describe_order_parameter,
+    resolve_order_parameter,
 )
 
 
@@ -23,26 +23,43 @@ class TestMeasureRegistry:
     def test_every_measure_is_computable(self):
         from prothon.core.representation import _COMPUTE
 
-        assert set(MEASURES) == set(_COMPUTE)
+        assert set(ORDER_PARAMETERS) == set(_COMPUTE)
 
     def test_only_torsions_are_circular(self):
-        circular = {name for name, spec in MEASURES.items() if spec.circular}
+        circular = {name for name, spec in ORDER_PARAMETERS.items() if spec.circular}
         assert circular == {"cata"}
 
     def test_resolve_is_case_insensitive(self):
-        assert resolve_measure("CBCN").name == "cbcn"
-        assert resolve_measure("  sasa ").name == "sasa"
+        assert resolve_order_parameter("CBCN").name == "cbcn"
+        assert resolve_order_parameter("  sasa ").name == "sasa"
 
-    def test_unknown_measure_suggests_a_neighbour(self):
+    def test_an_unknown_name_suggests_a_neighbour(self):
         with pytest.raises(ValueError, match="Did you mean cbcn"):
-            resolve_measure("cbnc")
+            resolve_order_parameter("cbnc")
 
-    def test_unknown_measure_lists_the_options(self):
+    def test_the_2x_names_still_import(self):
+        """`measure` collided with `metric`, which means something else here,
+        so the registry took the term the paper uses. Published code keeps
+        importing the old names."""
+        from prothon.core.representation import (
+            MEASURES,
+            Measure,
+            OrderParameter,
+            describe_measure,
+            resolve_measure,
+        )
+
+        assert MEASURES is ORDER_PARAMETERS
+        assert Measure is OrderParameter
+        assert resolve_measure("cbcn").name == "cbcn"
+        assert "cbcn" in describe_measure("cbcn")
+
+    def test_unknown_name_lists_the_options(self):
         with pytest.raises(ValueError, match="cacn"):
-            resolve_measure("zzzz")
+            resolve_order_parameter("zzzz")
 
     def test_describe_includes_units(self):
-        assert "nm^2" in describe_measure("sasa")
+        assert "nm^2" in describe_order_parameter("sasa")
 
 
 class TestContactNumbers:
@@ -145,5 +162,5 @@ class TestEnsembleRepresentation:
         assert len({rep.shape[1] for rep in reps}) == 1
 
     def test_unknown_measure_is_refused(self, ensemble_files, topology_file):
-        with pytest.raises(ValueError, match="Unknown measure"):
+        with pytest.raises(ValueError, match="Unknown order parameter"):
             compute_ensemble_representation(ensemble_files, topology_file, "nope")

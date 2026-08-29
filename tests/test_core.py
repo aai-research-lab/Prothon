@@ -51,24 +51,24 @@ class TestConstruction:
 
 class TestCompareEnsembles:
     def test_returns_one_result_per_non_reference_ensemble(self, study):
-        results = study.compare_ensembles(methods="cbcn", s_num=2)
+        results = study.compare_ensembles(order_parameters="cbcn", s_num=2)
         assert set(results) == {"cbcn"}
         assert [r.ensemble_index for r in results["cbcn"]] == [1, 2]
 
     def test_finds_the_difference_it_was_given(self, study):
         # Ensemble 2 is compacted from residue 7; ensemble 1 differs from the
         # reference only by noise.
-        results = study.compare_ensembles(methods="cbcn", s_num=2)
+        results = study.compare_ensembles(order_parameters="cbcn", s_num=2)
         similar, different = results["cbcn"]
         assert different.global_dissimilarity > similar.global_dissimilarity
 
     def test_localises_the_difference_to_the_right_residues(self, study):
-        results = study.compare_ensembles(methods="cbcn", s_num=2)
+        results = study.compare_ensembles(order_parameters="cbcn", s_num=2)
         local = results["cbcn"][1].local_dissimilarity
         assert local[7:].mean() > local[:5].mean()
 
     def test_writes_the_expected_artifacts(self, study, tmp_path):
-        study.compare_ensembles(methods="cbcn", s_num=2)
+        study.compare_ensembles(order_parameters="cbcn", s_num=2)
         out = tmp_path / "cbcn_output"
         for name in (
             "ensemble_0_matrix.csv",
@@ -81,32 +81,32 @@ class TestCompareEnsembles:
             assert (out / name).exists(), name
 
     def test_manifest_records_the_parameters(self, study, tmp_path):
-        study.compare_ensembles(methods="cbcn", s_num=2, alpha=0.01)
+        study.compare_ensembles(order_parameters="cbcn", s_num=2, alpha=0.01)
         manifest = json.loads((tmp_path / "cbcn_output" / "manifest.json").read_text())
         assert manifest["parameters"]["alpha"] == 0.01
         assert manifest["parameters"]["random_state"] == 0
-        assert manifest["measure"] == "cbcn"
+        assert manifest["order_parameter"] == "cbcn"
         assert len(manifest["results"]) == 2
         assert "prothon_version" in manifest
 
     def test_multiple_measures_in_one_run(self, study):
-        results = study.compare_ensembles(methods="cbcn,cacn", s_num=2)
+        results = study.compare_ensembles(order_parameters="cbcn,cacn", s_num=2)
         assert set(results) == {"cbcn", "cacn"}
 
     def test_circular_measure_is_routed_as_circular(self, study):
-        results = study.compare_ensembles(methods="cata", s_num=2)
+        results = study.compare_ensembles(order_parameters="cata", s_num=2)
         assert results["cata"][0].raw_local_dissimilarity.size > 0
 
     def test_out_of_range_reference_is_refused(self, study):
         with pytest.raises(ValueError, match="out of range"):
-            study.compare_ensembles(methods="cbcn", ref=9)
+            study.compare_ensembles(order_parameters="cbcn", ref=9)
 
     def test_unknown_projection_is_refused(self, study):
         with pytest.raises(ValueError, match="Unknown dimensionality"):
-            study.compare_ensembles(methods="cbcn", dimred="umap", s_num=2)
+            study.compare_ensembles(order_parameters="cbcn", dimred="umap", s_num=2)
 
     def test_projection_runs_when_asked(self, study, tmp_path):
-        study.compare_ensembles(methods="cbcn", dimred="pca", s_num=2)
+        study.compare_ensembles(order_parameters="cbcn", dimred="pca", s_num=2)
         assert (tmp_path / "cbcn_output" / "dim_reduction_pca.png").exists()
         assert set(study.get_dimred_results("cbcn")) == {"pca"}
 
@@ -116,7 +116,7 @@ class TestCompareEnsembles:
         import prothon.core.plotting as plotting
 
         monkeypatch.setattr(plotting, "MDS_FRAME_LIMIT", 10)
-        results = study.compare_ensembles(methods="cbcn", dimred="mds", s_num=2)
+        results = study.compare_ensembles(order_parameters="cbcn", dimred="mds", s_num=2)
         assert results["cbcn"]
         assert study.get_dimred_results("cbcn") == {}
 
@@ -127,7 +127,7 @@ class TestAccessorsAndSummary:
         assert study.get_representation_data("cbcn") is None
 
     def test_summary_mentions_the_floor(self, study):
-        study.compare_ensembles(methods="cbcn", s_num=2)
+        study.compare_ensembles(order_parameters="cbcn", s_num=2)
         text = study.summary()
         assert "floor" in text and "CBCN" in text
 
@@ -138,7 +138,7 @@ class TestAccessorsAndSummary:
 class TestReplotting:
     def test_replot_honours_styling(self, study):
         # Version 2.0 accepted these and discarded them.
-        study.compare_ensembles(methods="cbcn", s_num=2)
+        study.compare_ensembles(order_parameters="cbcn", s_num=2)
         figure = study.replot_global_dissimilarity(
             "cbcn", plot_type="bar", xlabel="Q", ylabel="D", title="Custom"
         )
@@ -148,14 +148,14 @@ class TestReplotting:
         assert axes.get_title() == "Custom"
 
     def test_replot_does_not_overwrite_the_saved_figure(self, study, tmp_path):
-        study.compare_ensembles(methods="cbcn", s_num=2)
+        study.compare_ensembles(order_parameters="cbcn", s_num=2)
         saved = tmp_path / "cbcn_output" / "cbcn_global_dissimilarity_bar.png"
         before = saved.stat().st_mtime_ns
         study.replot_global_dissimilarity("cbcn", plot_type="bar", color="k")
         assert saved.stat().st_mtime_ns == before
 
     def test_replot_local_accepts_raw(self, study):
-        study.compare_ensembles(methods="cbcn", s_num=2)
+        study.compare_ensembles(order_parameters="cbcn", s_num=2)
         figure = study.replot_local_dissimilarity("cbcn", 1, raw=True, color="r")
         assert figure.axes[0].get_ylabel() == "Local dissimilarity"
 
@@ -164,7 +164,7 @@ class TestReplotting:
             study.replot_global_dissimilarity("cbcn")
 
     def test_unknown_ensemble_index_lists_the_options(self, study):
-        study.compare_ensembles(methods="cbcn", s_num=2)
+        study.compare_ensembles(order_parameters="cbcn", s_num=2)
         with pytest.raises(ValueError, match="Available: 1, 2"):
             study.replot_local_dissimilarity("cbcn", 7)
 
@@ -224,7 +224,7 @@ class TestCli:
         payload = json.loads(capsys.readouterr().out)
         assert payload["cbcn"][0]["noise_floor"] >= 0
 
-    def test_bad_measure_returns_two_not_a_traceback(
+    def test_a_bad_order_parameter_returns_two_not_a_traceback(
         self, ensemble_files, topology_file, tmp_path, capsys
     ):
         code = main([
@@ -232,7 +232,7 @@ class TestCli:
             "-m", "wrong", "-o", str(tmp_path),
         ])
         assert code == 2
-        assert "Unknown measure" in capsys.readouterr().err
+        assert "Unknown order parameter" in capsys.readouterr().err
 
 
 class TestBackwardCompatibility:

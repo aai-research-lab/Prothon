@@ -31,7 +31,7 @@ from prothon.core.metrics import METRICS
 from prothon.core.precision_recall import precision_recall
 from prothon.core.representation import (
     _PAIR_BLOCK,
-    MEASURES,
+    ORDER_PARAMETERS,
     compute_representation,
 )
 from prothon.ingest import Ensemble, reconcile, sequence_of
@@ -78,7 +78,7 @@ def corpus(tmp_path_factory) -> dict[str, str]:
 class TestRealNmrEnsemble:
     """2EQQ: twenty experimentally determined models of one protein."""
 
-    @pytest.mark.parametrize("measure", sorted(MEASURES))
+    @pytest.mark.parametrize("measure", sorted(ORDER_PARAMETERS))
     def test_every_measure_computes(self, corpus, measure):
         traj = md.load(corpus["2EQQ.pdb"])
         matrix = compute_representation(traj, measure)

@@ -34,9 +34,9 @@ from .plotting import (
     save_matrix_data_and_plot,
 )
 from .representation import (
-    MEASURES,
+    ORDER_PARAMETERS,
     compute_representation,
-    resolve_measure,
+    resolve_order_parameter,
 )
 
 logger = get_logger("core")
@@ -180,9 +180,9 @@ class Prothon:
 
     # -- representation ---------------------------------------------------
 
-    def compute_ensemble_representation(self, measure: str) -> list[np.ndarray]:
-        """Compute and cache the representation matrices for one measure."""
-        spec = resolve_measure(measure)
+    def compute_ensemble_representation(self, order_parameter: str) -> list[np.ndarray]:
+        """Compute and cache the representation matrices for one parameter."""
+        spec = resolve_order_parameter(order_parameter)
         logger.info("Computing %s representation", spec.name.upper())
         reps = [
             compute_representation(e.trajectory, spec.name) for e in self.ensembles
@@ -194,7 +194,7 @@ class Prothon:
 
     def compare_ensembles(
         self,
-        methods: str | Sequence[str] = "cbcn",
+        order_parameters: str | Sequence[str] = "cbcn",
         ref: int = 0,
         x_num: int = 100,
         s_num: int = 5,
@@ -204,13 +204,18 @@ class Prothon:
         metric: str = "jsd",
         n_permutations: int = 100,
         block_permutation: bool | None = None,
+        *,
+        measures=None,
+        methods=None,
     ) -> dict[str, list[ComparisonResult]]:
         """Run the study: represent, compare, plot, and record.
 
         Parameters
         ----------
-        methods
-            Measures to use, as a list or comma-separated string.
+        order_parameters
+            Which local order parameters to use, as a list or comma-separated
+            string. ``measures=`` and ``methods=`` are accepted as the 2.x
+            names and warn.
         ref
             Index of the reference ensemble, into ``traj_files``.
         x_num
@@ -237,10 +242,21 @@ class Prothon:
             Measure name to the list of :class:`ComparisonResult`, one per
             non-reference ensemble.
         """
-        requested = split_list_arg(methods)
+        for old, value in (("measures", measures), ("methods", methods)):
+            if value is not None:
+                warnings.warn(
+                    f"{old}= is now order_parameters=. 'measure' collided with "
+                    f"'metric', which means something else here. The old name "
+                    f"will be removed in 4.0.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                order_parameters = value
+
+        requested = split_list_arg(order_parameters)
         if not requested:
-            raise ValueError("No measures requested.")
-        specs = [resolve_measure(name) for name in requested]
+            raise ValueError("No order parameters requested.")
+        specs = [resolve_order_parameter(name) for name in requested]
 
         if not 0 <= ref < len(self.traj_files):
             raise ValueError(
@@ -299,7 +315,7 @@ class Prothon:
                     legacy=legacy,
                     ensemble_index=index,
                     reference_index=ref,
-                    measure=spec.name,
+                    order_parameter=spec.name,
                 )
                 result.feature_index = feature_index
                 comparisons.append(result)
@@ -410,7 +426,7 @@ class Prothon:
 
     def distinguishability(
         self,
-        measure: str = "cbcn",
+        order_parameter: str = "cbcn",
         method: str = "c2st",
         ref: int = 0,
         random_state: int | None = None,
@@ -441,9 +457,9 @@ class Prothon:
         list of EnsembleComparison
         """
         from .ensemble_metrics import distinguishability as compare
-        from .representation import resolve_measure
+        from .representation import resolve_order_parameter
 
-        spec = resolve_measure(measure)
+        spec = resolve_order_parameter(order_parameter)
         reps = self.get_representation_data(spec.name)
         if reps is None:
             reps = self.compute_ensemble_representation(spec.name)
@@ -466,7 +482,7 @@ class Prothon:
                 weights_b=self.ensembles[index].weights,
                 circular=spec.circular,
                 random_state=self.random_state if random_state is None else random_state,
-                measure=spec.name,
+                order_parameter=spec.name,
                 **extra,
             )
             result.metadata["ensemble_index"] = index
@@ -479,7 +495,7 @@ class Prothon:
 
     def coverage_and_fidelity(
         self,
-        measure: str = "cbcn",
+        order_parameter: str = "cbcn",
         ref: int = 0,
         **kwargs,
     ) -> list[Any]:
@@ -495,9 +511,9 @@ class Prothon:
         against it. The two roles are not interchangeable.
         """
         from .precision_recall import precision_recall
-        from .representation import resolve_measure
+        from .representation import resolve_order_parameter
 
-        spec = resolve_measure(measure)
+        spec = resolve_order_parameter(order_parameter)
         reps = self.get_representation_data(spec.name)
         if reps is None:
             reps = self.compute_ensemble_representation(spec.name)
@@ -518,7 +534,7 @@ class Prothon:
                 circular=spec.circular,
                 feature_index=feature_index,
                 random_state=self.random_state,
-                measure=spec.name,
+                order_parameter=spec.name,
                 **kwargs,
             )
             result.metadata["ensemble_index"] = index
@@ -533,7 +549,7 @@ class Prothon:
 
     def _write_manifest(
         self,
-        measure: str,
+        order_parameter: str,
         comparisons: Sequence[ComparisonResult],
         x_num: int,
         s_num: int,
@@ -545,14 +561,14 @@ class Prothon:
         merely admired."""
         from .. import __version__
 
-        out_dir = get_method_output_dir(self.output_dir, measure)
+        out_dir = get_method_output_dir(self.output_dir, order_parameter)
         path = os.path.join(out_dir, "manifest.json")
         payload = {
             "prothon_version": __version__,
             "written_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "measure": measure,
-            "measure_description": MEASURES[measure].description,
-            "circular": MEASURES[measure].circular,
+            "order_parameter": order_parameter,
+            "description": ORDER_PARAMETERS[order_parameter].description,
+            "circular": ORDER_PARAMETERS[order_parameter].circular,
             # A study over Ensemble objects has no single shared topology --
             # that is the point of it. Provenance for those lives on each
             # ensemble instead, under "ensembles" below.
@@ -588,7 +604,7 @@ class Prothon:
             "distinguishability": {
                 method: [r.to_dict() for r in items]
                 for method, items in self.distinguishability_results.get(
-                    measure, {}
+                    order_parameter, {}
                 ).items()
             }
             or None,
@@ -622,8 +638,8 @@ class Prothon:
             return "No comparisons have been run yet."
 
         lines: list[str] = []
-        for measure, comparisons in self.comparison_results.items():
-            lines.append(f"{measure.upper()} (reference: ensemble {comparisons[0].reference_index})")
+        for name, comparisons in self.comparison_results.items():
+            lines.append(f"{name.upper()} (reference: ensemble {comparisons[0].reference_index})")
             for c in comparisons:
                 if not c.p_values_reported:
                     verdict = (

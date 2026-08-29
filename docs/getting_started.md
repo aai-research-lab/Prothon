@@ -6,7 +6,7 @@ joining two conditions averages away the difference the study exists to
 measure.
 
 ```bash
-prothon -traj wild_type.dcd,mutant.dcd -top topology.pdb -m cbcn --seed 0
+prothon -traj wild_type.dcd,mutant.dcd -top topology.pdb -p cbcn --seed 0
 ```
 
 ```
@@ -81,7 +81,7 @@ study = Prothon(
     output_dir="results",
     random_state=0,
 )
-results = study.compare_ensembles(methods="cbcn,cata", s_num=5)
+results = study.compare_ensembles(order_parameters="cbcn,cata", s_num=5)
 
 for comparison in results["cbcn"]:
     print(comparison.ensemble_index, comparison.global_dissimilarity)
@@ -115,7 +115,7 @@ already subsampled have no correlation to correct for. Blocking them costs
 resolution for nothing:
 
 ```python
-study.compare_ensembles(methods="cbcn", block_permutation=False)
+study.compare_ensembles(order_parameters="cbcn", block_permutation=False)
 ```
 
 Prothon detects the absence of correlation and does this for you, so it is

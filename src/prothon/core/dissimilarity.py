@@ -188,7 +188,7 @@ class ComparisonResult:
     #: things cause it: too few blocks to permute, and a trajectory too short
     #: for its own correlation time to be estimable.
     p_values_withheld: bool = False
-    measure: str = ""
+    order_parameter: str = ""
     #: Position of each feature on the reference ensemble, one-based. Set when
     #: the ensembles were reconciled and the columns are a subset; ``None``
     #: means every column is present and the index is simply 1..n.
@@ -235,7 +235,7 @@ class ComparisonResult:
         return {
             "ensemble_index": self.ensemble_index,
             "reference_index": self.reference_index,
-            "measure": self.measure,
+            "order_parameter": self.order_parameter,
             "global_dissimilarity": float(self.global_dissimilarity),
             "local_dissimilarity": self.local_dissimilarity.tolist(),
             "raw_local_dissimilarity": self.raw_local_dissimilarity.tolist(),
@@ -722,7 +722,7 @@ def dissimilarity(
     legacy: bool = False,
     ensemble_index: int = 0,
     reference_index: int = 0,
-    measure: str = "",
+    order_parameter: str = "",
 ) -> ComparisonResult:
     """Compare two ensemble representations.
 
@@ -951,7 +951,7 @@ def dissimilarity(
 
     logger.debug(
         "%s: global=%.4f floor=%.4f significant=%d/%d",
-        measure or "comparison",
+        order_parameter or "comparison",
         float(np.mean(local)),
         noise_floor,
         int(np.count_nonzero(significant)),
@@ -972,7 +972,7 @@ def dissimilarity(
         correlation_time=float(tau),
         n_blocks=int(n_blocks),
         p_values_withheld=bool(withheld),
-        measure=measure,
+        order_parameter=order_parameter,
         metadata={
             "alpha": alpha,
             "s_num": s_num,
