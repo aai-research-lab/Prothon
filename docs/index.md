@@ -48,6 +48,7 @@ metrics
 statistics
 calibration
 different_molecules
+benchmark
 cli_reference
 performance
 api

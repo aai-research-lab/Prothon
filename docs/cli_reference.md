@@ -22,6 +22,8 @@ prothon -traj a.dcd,b.dcd -top top.pdb -m cbcn
 | `--legacy-statistics` | off | Reproduce the historical statistics, for regenerating a published figure. |
 | `--json` | off | Print full results as JSON instead of a summary. |
 | `-v`, `--verbose` | off | Verbose logging. |
+| `--benchmark` | | Ensembles to compare against `--reference`, on equal terms. Each may be a trajectory or a directory of single-model PDBs. |
+| `--reference` | | The ensemble the others are measured against. |
 | `--info` | | Print measures, metrics and detected backends, then exit. |
 | `--version` | | Print the version and exit. |
 
@@ -50,6 +52,17 @@ code is still 0: an honest refusal is a successful run.
 |---|---|
 | 0 | success |
 | 2 | the study was described wrongly — unknown measure, missing file, reference out of range. The message names what to change; there is no traceback, because a traceback would bury it. |
+
+## Benchmarking
+
+```bash
+prothon --reference md.xtc --benchmark bioemu/ alphaflow/ -top target.pdb \
+        -m cbcn -o results --seed 0
+```
+
+Prints a table ordered by the margin above each model's own noise floor, rather
+than by raw distance — a distance alone flatters a model that sampled thinly.
+See [benchmarking](benchmark.md).
 
 ## Examples
 

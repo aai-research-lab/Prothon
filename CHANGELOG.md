@@ -299,6 +299,26 @@ All notable changes to Prothon are recorded here. This project follows
   are independent. `ComparisonResult` now carries `correlation_time`,
   `n_blocks` and `p_values_withheld`.
 
+### Added — the benchmark harness
+
+- **`prothon --benchmark`** and `prothon.benchmark` compare several ensembles
+  against one reference on equal terms, reporting for each: the distance, the
+  noise floor for *that model's own sample size*, the margin between them,
+  precision and recall per residue, and a verdict.
+- **The table is ordered by margin, not by distance.** Sample size changes the
+  distance: against a 20,000-frame reference, two ensembles from the same
+  distribution give a floor of 0.064 at 5,000 conformations and 0.109 at 50,
+  and a model with a real half-sigma bias scores 0.216 at 5,000 and 0.129 at
+  50. The same model and the same error, a smaller number because it sampled
+  less — so a table of raw dissimilarities ranks the thinly sampled model
+  first.
+- **A model whose sampling cannot support a comparison gets a row saying so**,
+  and the other models in the run are unaffected. Raising would lose them;
+  inventing a number would be worse.
+- Conformations from a generative model are independent draws, so the
+  benchmark disables block permutation — there is no time correlation to
+  correct for, and blocking would cost resolution for nothing.
+
 ### Refusals
 
 - **Coverage, not just identity.** Free end gaps make the aligner behave

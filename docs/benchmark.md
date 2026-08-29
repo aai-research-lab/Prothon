@@ -1,0 +1,123 @@
+# Benchmarking ensembles
+
+A generative model is judged by how closely its conformations resemble a
+reference — molecular dynamics, or an experimentally derived ensemble. Prothon
+runs the same comparison for every model against the same reference and reports
+the same things for each.
+
+```bash
+prothon --reference md.xtc --benchmark bioemu/ alphaflow/ bbflow/ \
+        -top target.pdb -m cbcn -o results --seed 0
+```
+
+```
+3 comparisons against md
+  0 refused for want of sampling
+  1 not resolvable above the noise floor
+
+| target | model | n | d | floor | margin | precision | recall | verdict |
+|---|---|---|---|---|---|---|---|---|
+| target | bbflow | 250 | 0.658 | 0.150 | +0.508 | 0.33 | 0.33 | misses states at 8 residues |
+| target | bioemu | 250 | 0.067 | 0.162 | -0.094 | 0.96 | 0.97 | indistinguishable from the reference at this sampling |
+```
+
+Each model may be a trajectory file or a directory of single-model PDBs, which
+is how most generative models emit their output.
+
+## Read the margin, not the distance
+
+**Sample size changes the distance.** Measured against a 20,000-frame
+reference, two ensembles drawn from the *same* distribution give a noise floor
+of 0.064 at 5,000 conformations and 0.109 at 50. A model with a real half-sigma
+bias scores 0.216 at 5,000 conformations and 0.129 at 50 — the same model, the
+same error, a smaller number because it sampled less.
+
+So a table of raw dissimilarities ranks the thinly sampled model first. Every
+row here carries its own floor, and the **margin** is the distance above it.
+The table is ordered by margin, and that is the column to compare across
+models.
+
+This is not a subtlety that can be waved away by sampling everything equally:
+models emit what they emit, and a benchmark that asks each to produce the same
+number of conformations is measuring something other than the models.
+
+## Read precision and recall, not just the margin
+
+A single distance says a model is wrong. It does not say how, and the two ways
+of being wrong call for opposite work:
+
+- **Low recall** — the model never reaches states the reference visits. A
+  cryptic pocket that never opens, a loop that never unfolds.
+- **Low precision** — the model puts conformations where the reference has
+  none. States no physics produced.
+
+Both are reported per residue, so the answer names positions rather than
+scoring a whole ensemble: *misses states at 8 residues* is something a model
+developer can act on.
+
+Each carries its own floor, measured by splitting the reference in half, and
+that floor is per residue — a rigid residue and a mobile one are not equally
+easy to cover.
+
+## Refusals are results
+
+An ensemble worth too few independent conformations to support a comparison
+produces a row saying so, rather than a number:
+
+```
+| target | tiny-model | 6 | — | — | — | — | — | refused |
+```
+
+The other models in the run are unaffected. A benchmark that raises on one
+model loses the rest; a benchmark that invents a number for it is worse.
+
+## Conformations from a model are not a trajectory
+
+Samples from a generative model are independent draws, so there is no time
+correlation to block against and blocking would cost resolution for nothing.
+The benchmark passes `block_permutation=False` for this reason.
+
+If a "model" being compared is itself a molecular dynamics trajectory — one
+force field against another, say — pass `block_permutation=None` to let the
+correlation time be estimated. See [the statistics](statistics.md).
+
+## From Python
+
+```python
+from prothon import benchmark
+from prothon.ingest import Ensemble
+
+reference = Ensemble.from_trajectory("md.xtc", "target.pdb", label="MD")
+models = [
+    Ensemble.from_pdb_models("bioemu/*.pdb", label="BioEmu"),
+    Ensemble.from_pdb_models("alphaflow/*.pdb", label="AlphaFlow"),
+]
+
+result = benchmark(reference, models, measures="cbcn,cata", random_state=0)
+print(result.table("cbcn"))
+result.write("results/")
+```
+
+`benchmark.json` carries every number, including the per-residue lists of
+missed and invented states.
+
+## Across many targets
+
+`benchmark` handles one target. For a set of them, call it per target and
+concatenate the rows:
+
+```python
+from prothon.batch import BenchmarkResult
+
+rows = []
+for name in targets:
+    rows += benchmark(
+        references[name], models[name], measures="cbcn",
+        target=name, random_state=0,
+    ).rows
+
+BenchmarkResult(rows, measures=("cbcn",)).write("results/")
+```
+
+The comparisons are independent, so this parallelises across targets without
+any coordination.

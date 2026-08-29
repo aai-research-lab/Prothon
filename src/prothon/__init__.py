@@ -34,6 +34,7 @@ try:  # pragma: no cover - depends on install method
 except ImportError:  # pragma: no cover - source checkout without setuptools-scm
     __version__ = "2.1.0.dev0"
 
+from .batch.benchmark import BenchmarkResult, benchmark
 from .core.dissimilarity import (
     ComparisonResult,
     dissimilarity,
@@ -54,10 +55,12 @@ from .utils import load_trajectories
 
 __all__ = [
     "Prothon",
+    "BenchmarkResult",
     "ComparisonResult",
     "EnsembleComparison",
     "PrecisionRecall",
     "precision_recall",
+    "benchmark",
     "distinguishability",
     "MEASURES",
     "METRICS",

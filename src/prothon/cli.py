@@ -58,6 +58,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the available measures and installed backends, then exit.",
     )
     parser.add_argument(
+        "--benchmark", metavar="DIR", nargs="+",
+        help="Compare each of these against the reference on equal terms. Each "
+             "is a trajectory file, or a directory of single-model PDBs as a "
+             "generative model emits them. Requires --reference.",
+    )
+    parser.add_argument(
+        "--reference", metavar="PATH",
+        help="The ensemble the others are measured against, for --benchmark.",
+    )
+    parser.add_argument(
         "-traj", "--trajectories",
         help="Comma-separated trajectory files, one per ensemble.",
     )
@@ -132,6 +142,48 @@ def _print_info() -> None:
             print(f"  {module:<12} {'not installed':<10} {purpose}  -> pip install {module}")
 
 
+def _load(path: str, topology: str | None):
+    """A trajectory file, or a directory of single-model structures."""
+    import os
+
+    from .ingest import Ensemble
+
+    label = os.path.basename(str(path).rstrip("/")) or str(path)
+    if os.path.isdir(path) or any(c in str(path) for c in "*?"):
+        return Ensemble.from_pdb_models(path, label=label)
+    if topology is None:
+        return Ensemble.from_pdb_models(path, label=label)
+    return Ensemble.from_trajectory(path, topology, label=label)
+
+
+def _run_benchmark(args) -> int:
+    """Compare several ensembles against one reference."""
+    from .batch import benchmark
+
+    try:
+        reference = _load(args.reference, args.topology)
+        models = [_load(p, args.topology) for p in args.benchmark]
+        result = benchmark(
+            reference, models,
+            measures=args.methods,
+            random_state=args.seed,
+            output_dir=args.output,
+        )
+    except (ValueError, FileNotFoundError) as error:
+        print(f"prothon: {error}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(json.dumps(result.to_dict(), indent=2, default=float))
+    else:
+        print(result.summary())
+        print()
+        for measure in result.measures:
+            print(result.table(measure))
+            print()
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -139,6 +191,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.info:
         _print_info()
         return 0
+
+    if args.benchmark:
+        if not args.reference:
+            parser.error("--benchmark requires --reference")
+        return _run_benchmark(args)
 
     missing = [
         flag for flag, value in (("-traj", args.trajectories), ("-top", args.topology))

@@ -71,6 +71,13 @@
    :members: PrecisionRecall, precision_recall
 ```
 
+## Benchmarking
+
+```{eval-rst}
+.. automodule:: prothon.batch.benchmark
+   :members: benchmark, BenchmarkResult, BenchmarkRow
+```
+
 ## Plotting
 
 ```{eval-rst}

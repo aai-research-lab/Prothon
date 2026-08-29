@@ -190,6 +190,20 @@ nothing about it.
   misses a state from one that invents one — two failures that any symmetric
   distance scores alike and that need opposite work.
 
+## Benchmarking several ensembles
+
+```bash
+prothon --reference md.xtc --benchmark bioemu/ alphaflow/ bbflow/ -top target.pdb
+```
+
+One table, one reference, the same treatment for each model — with each row
+carrying the noise floor for *its own* sample size, because a smaller sample
+has a higher floor and a depressed distance, and a table of raw distances
+therefore ranks a thinly sampled model first. Rows report whether a model
+*misses* states or *invents* them, per residue, and a model whose sampling
+cannot support a comparison gets a row saying so rather than a number. See the
+[benchmarking page](https://prothon.readthedocs.io/en/latest/benchmark.html).
+
 ## What it costs
 
 Linear in the number of conformations and quadratic in chain length, both
