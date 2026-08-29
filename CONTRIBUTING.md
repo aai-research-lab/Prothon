@@ -47,6 +47,23 @@ one in `tests/test_dissimilarity.py` to copy. This is not optional — the bug
 that motivated the 2.1 release passed every unit test in 2.0 and failed exactly
 this check.
 
+## Before a release
+
+Two things in `scripts/` are measurements rather than tests, and both have
+found defects that the test suite could not:
+
+```bash
+python scripts/scale_envelope.py --full     # time and memory across sizes
+python scripts/calibration.py --replicates 1000
+```
+
+The scale envelope found a memory bug that needed 8,000 frames to appear; the
+calibration harness found a metric that was never reaching the estimator, which
+showed up only as three metrics agreeing to five decimal places over eight
+thousand features. Neither is reachable from a suite that runs on fourteen
+residues and a few hundred frames, and neither is expensive enough to justify
+skipping.
+
 ## Style
 
 `ruff check src tests`. Line length 100.

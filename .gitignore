@@ -17,6 +17,9 @@ htmlcov/
 # Prothon output
 *_output/
 
+# Built documentation
+docs/_build/
+
 # Environments
 .venv/
 venv/

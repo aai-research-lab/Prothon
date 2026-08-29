@@ -2,7 +2,11 @@ name: tests
 
 on:
   push:
-    branches: [main]
+    # Feature branches as well as main. Without the wildcard a push to a branch
+    # triggers nothing, so the tests only ever ran after a merge -- which is
+    # the wrong end of the operation to find out at, and which quietly looked
+    # like a scheduling race for several weeks.
+    branches: [main, "v*", "fix/*", "feat/*"]
   pull_request:
   workflow_dispatch:
 
