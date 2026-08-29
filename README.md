@@ -114,10 +114,10 @@ prothon compare -e a.dcd b.dcd c.dcd -t top.pdb -p cbcn,cata -o results -s 0
 | flag | short | meaning |
 |---|---|---|
 | `--ensembles` | `-e` | Sources to compare, one ensemble each. Never concatenated. |
-| `--topology` | `-t` | For sources that need one. |
+| `--topology` | `-t` | One shared path, or one per ensemble. |
 | `--reference` | `-r` | An index into `--ensembles`, or a source of its own. |
 | `--order-parameters` | `-p` | `cbcn`, `cacn`, `caba`, `cata`, `sasa`. |
-| `--metric` | | `jsd` (default), `wasserstein`, `ks`. |
+| `--metric` | `-m` | `jsd` (default), `wasserstein`, `ks`. |
 | `--random-state` | `-s` | Set it, and the run is reproducible. |
 | `--report` | | `summary`, or `table` to rank several against a reference. |
 | `--config` | `-c` | A study in a file. Flags override it. |
@@ -181,24 +181,31 @@ prothon compare -e md.xtc PED00024 bioemu/ -t target.pdb
 prothon compare --config study.yml
 ```
 
+One import, and everything is reachable from it:
+
 ```python
 from prothon import Prothon
-from prothon.ingest import Ensemble
 
-# ensembles that are not the same molecule
-wt  = Ensemble.from_trajectory("wt.xtc",  "wt.pdb",  label="wild type")
-mut = Ensemble.from_trajectory("mut.xtc", "mut.pdb", label="F5G")
-study = Prothon(ensembles=[wt, mut], random_state=0)
+study = Prothon(ensembles=["wt.xtc", "mut.xtc"], topology="top.pdb", random_state=0)
 
-study.compare_ensembles(order_parameters="cbcn")   # where do they differ
-study.distinguishability(order_parameter="cbcn")   # differences between residues
-study.coverage_and_fidelity(order_parameter="cbcn")  # missed or invented states
+study.compare("cbcn")                    # where do they differ
+study.distinguishability()               # differences between residues
+study.coverage_and_fidelity()            # missed states or invented ones
+study.rank()                             # several against a reference, ranked
+study.validate("rg", [2.71], [0.08])     # against experiment
+study.save_config("study.yml")           # write the study down
+
+Prothon.order_parameters()               # what can be measured
+Prothon.metrics()                        # what distances are available
+Prothon.load("PED00024")                 # one ensemble, from anywhere
+Prothon.from_config("study.yml")         # start from a file
 ```
 
+Ensembles that are not the same molecule work the same way — give a topology
+each, and a residue correspondence is built from a sequence alignment:
+
 ```python
-# against experiment, rather than against another ensemble
-from prothon.validate import radius_of_gyration, score_observable
-score_observable(radius_of_gyration(traj)[:, None], [2.71], [0.08])
+Prothon(ensembles=["wt.xtc", "mut.xtc"], topology=["wt.pdb", "mut.pdb"])
 ```
 
 More, with real output, on the

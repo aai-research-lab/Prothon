@@ -391,7 +391,7 @@ class TestStudyAcrossMolecules:
     def test_manifest_records_the_correspondence(self, tmp_path):
         study = self._study(tmp_path, "ACDEFHIKLMNPQR", "ACDEGHIKLMNPQR")
         study.compare_ensembles(order_parameters="cbcn", s_num=2)
-        manifest = json.loads((tmp_path / "cbcn_output" / "manifest.json").read_text())
+        manifest = json.loads((tmp_path / "cbcn_output" / "manifest.json").read_text(encoding="utf-8"))
 
         assert manifest["ensembles"][0]["label"] == "wild type"
         corr = manifest["correspondences"][0]

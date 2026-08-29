@@ -30,6 +30,14 @@ inspection rather than by a flag:
 They mix freely: `--ensembles md.xtc PED00024 bioemu_out/` is a valid
 comparison of a simulation, a deposited ensemble and a generative model.
 
+`--topology` takes one path shared by every source, or one per source in the
+same order — which is what comparing different molecules needs, since a mutant
+has its own:
+
+```bash
+prothon compare -e wt.xtc mut.xtc -t wt.pdb mut.pdb
+```
+
 **Each source is one ensemble.** They are never concatenated — joining two
 conditions averages away the difference being measured.
 
@@ -39,10 +47,10 @@ conditions averages away the difference being measured.
 |---|---|---|---|
 | `--config` | `-c` | | A study in a YAML file. Flags override it. |
 | `--ensembles` | `-e` | required | Sources to compare, unless `--config` names them. |
-| `--topology` | `-t` | | For sources that need one. |
+| `--topology` | `-t` | | One shared path, or one per ensemble in the same order. |
 | `--reference` | `-r` | `0` | An index into `--ensembles`, or a source of its own. |
 | `--order-parameters` | `-p` | `cbcn` | `cbcn`, `cacn`, `caba`, `cata`, `sasa`. |
-| `--metric` | | `jsd` | `jsd`, `wasserstein`, `ks`. |
+| `--metric` | `-m` | `jsd` | `jsd`, `wasserstein`, `ks`. |
 | `--random-state` | `-s` | | Seed. Set it and the run is reproducible. |
 | `--n-permutations` | | `100` | Relabellings behind the null. |
 | `--s-num` | | `5` | Split-half repeats behind the noise floor. |

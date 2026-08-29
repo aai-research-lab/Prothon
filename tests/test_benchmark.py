@@ -68,7 +68,7 @@ class TestTheTable:
             random_state=0, output_dir=str(tmp_path),
         )
         assert (tmp_path / "benchmark.md").exists()
-        payload = json.loads((tmp_path / "benchmark.json").read_text())
+        payload = json.loads((tmp_path / "benchmark.json").read_text(encoding="utf-8"))
         assert payload["reference"] == "MD"
         assert payload["rows"][0]["model"] == "m"
         assert "margin" in payload["rows"][0]

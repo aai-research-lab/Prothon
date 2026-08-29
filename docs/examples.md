@@ -38,7 +38,7 @@ from prothon import Prothon
 study = Prothon(
     ensembles=["wt.dcd", "mutant.dcd"], topology="top.pdb", random_state=0
 )
-result = study.compare_ensembles(order_parameters="cbcn")["cbcn"][0]
+result = study.compare("cbcn")["cbcn"][0]
 
 result.global_dissimilarity     # 0.5625
 result.noise_floor              # 0.1209

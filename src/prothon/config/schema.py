@@ -83,9 +83,11 @@ PARAMETERS: tuple[Parameter, ...] = (
         commands=("compare", "validate"),
     ),
     _p(
-        "topology", short="-t", metavar="PATH",
-        help="Topology file, for sources that need one. Not required for PED "
-             "accessions or multi-model PDBs.",
+        "topology", short="-t", nargs="+", metavar="PATH",
+        help="Topology for sources that need one: a single path shared by "
+             "every ensemble, or one per ensemble in the same order. Not "
+             "required for PED accessions or multi-model PDBs, which carry "
+             "their own.",
         commands=("compare", "validate"),
     ),
     _p(
@@ -102,7 +104,7 @@ PARAMETERS: tuple[Parameter, ...] = (
         commands=("compare",),
     ),
     _p(
-        "metric", default="jsd", choices=("jsd", "wasserstein", "ks"),
+        "metric", short="-m", default="jsd", choices=("jsd", "wasserstein", "ks"),
         help="Per-residue distance. 'wasserstein' reports in the feature's "
              "own units; 'jsd' and 'ks' are bounded in [0, 1].",
         commands=("compare",),

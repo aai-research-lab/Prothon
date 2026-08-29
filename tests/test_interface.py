@@ -7,6 +7,8 @@ this project's did, with `--seed` on one side and `random_state` on the other.
 
 from __future__ import annotations
 
+import pathlib
+
 import numpy as np
 import pytest
 from test_ingest import as_residues, build
@@ -88,7 +90,7 @@ class TestTheReadmeDescribesThisVersion:
         for parent in pathlib.Path(__file__).resolve().parents:
             candidate = parent / "README.md"
             if candidate.exists():
-                return candidate.read_text()
+                return candidate.read_text(encoding="utf-8")
         pytest.skip("README.md not found beside the tests")
 
     def test_no_command_uses_the_superseded_flags(self):
@@ -117,6 +119,65 @@ class TestTheReadmeDescribesThisVersion:
             assert probe in text, f"the README does not mention {probe}"
 
 
+class TestTextIsReadAsUtf8:
+    """Text I/O without an explicit encoding uses the platform default, which
+    is UTF-8 on Linux and macOS and cp1252 on Windows.
+
+    A test of my own hit this: it read the documentation without naming an
+    encoding, passed on two platforms, and failed on the third with a
+    UnicodeDecodeError on the first em-dash. Everything this package reads and
+    writes is UTF-8, so it should say so.
+    """
+
+    @staticmethod
+    def _offenders():
+        import ast
+        import pathlib
+
+        for parent in pathlib.Path(__file__).resolve().parents:
+            if (parent / "src").is_dir():
+                root = parent
+                break
+        else:
+            pytest.skip("src/ not found beside the tests")
+
+        found = []
+        files = (
+            list((root / "src").rglob("*.py"))
+            + list((root / "tests").glob("*.py"))
+            + list((root / "scripts").glob("*.py"))
+        )
+        for path in files:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                # `os.open` takes flags rather than an encoding, and
+                # `tarfile.open` and `gzip.open` deal in bytes.
+                owner = getattr(getattr(node.func, "value", None), "id", "")
+                if owner in {"os", "tarfile", "gzip", "io"}:
+                    continue
+                name = getattr(node.func, "attr", getattr(node.func, "id", ""))
+                if name not in {"open", "read_text", "write_text"}:
+                    continue
+                mode = next(
+                    (a.value for a in node.args[1:2] if isinstance(a, ast.Constant)),
+                    "",
+                )
+                if "b" in str(mode):
+                    continue
+                if not any(k.arg == "encoding" for k in node.keywords):
+                    found.append(f"{path.name}:{node.lineno} {name}()")
+        return found
+
+    def test_nothing_relies_on_the_platform_default(self):
+        offenders = self._offenders()
+        assert not offenders, (
+            "these read or write text without naming an encoding, which means "
+            f"cp1252 on Windows: {offenders}"
+        )
+
+
 class TestDocumentedCodeBlocks:
     """A fenced block labelled `json` is lexed as JSON when the docs are built,
     and a block that does not parse fails the build -- after the tests pass, on
@@ -143,7 +204,7 @@ class TestDocumentedCodeBlocks:
         for path in files:
             if not path.exists():
                 continue
-            text = path.read_text()
+            text = path.read_text(encoding="utf-8")
             for match in re.finditer(r"```(\w+)\n(.*?)```", text, re.S):
                 yield (
                     path.name,
@@ -173,6 +234,91 @@ class TestDocumentedCodeBlocks:
                 yaml.safe_load(body)
             except yaml.YAMLError as error:
                 pytest.fail(f"{name}:{line} is labelled yaml and is not: {error}")
+
+
+class TestOneImport:
+    """`from prothon import Prothon` should be the whole of what a user
+    imports. Five imports for one workflow is five chances to look something
+    up, and a capability behind an import nobody guesses is a capability
+    nobody finds."""
+
+    def test_a_whole_workflow_needs_one_import(self, files):
+        from prothon import Prothon
+
+        study = Prothon(
+            ensembles=[str(files / "a.dcd"), str(files / "b.dcd")],
+            topology=str(files / "top.pdb"),
+            random_state=0,
+        )
+        study.compare("cbcn", s_num=2)
+        assert "CBCN" in study.summary()
+        assert study.distinguishability(order_parameter="cbcn")[0].summary()
+        assert study.coverage_and_fidelity(order_parameter="cbcn")[0].summary()
+        assert "margin" in study.rank("cbcn").table()
+
+    def test_the_registries_are_reachable(self):
+        from prothon import Prothon
+
+        assert set(Prothon.order_parameters()) >= {"cbcn", "cata", "sasa"}
+        assert set(Prothon.metrics()) == {"jsd", "wasserstein", "ks"}
+        assert "rg" in Prothon.observables()
+
+    def test_one_ensemble_can_be_loaded_without_a_study(self, files):
+        from prothon import Prothon
+
+        assert Prothon.load(str(files / "a.dcd"), str(files / "top.pdb")).n_frames == 300
+        assert Prothon.load(str(files / "models")).n_frames == 30
+
+    def test_validation_is_a_method(self, files):
+        import numpy as np
+
+        from prothon import Prothon
+        from prothon.validate import radius_of_gyration
+
+        study = Prothon(
+            ensembles=[str(files / "a.dcd"), str(files / "b.dcd")],
+            topology=str(files / "top.pdb"), random_state=0,
+        )
+        rg = radius_of_gyration(study.ensembles[0].trajectory)
+        result = study.validate("rg", [float(np.mean(rg))], [0.05])
+        assert result.within_floor
+
+    def test_an_unknown_observable_names_the_alternative(self, files):
+        from prothon import Prothon
+
+        study = Prothon(
+            ensembles=[str(files / "a.dcd"), str(files / "b.dcd")],
+            topology=str(files / "top.pdb"),
+        )
+        with pytest.raises(ValueError, match="score_observable"):
+            study.validate("chemical_shift", [1.0], [0.1])
+
+    def test_a_study_file_is_reachable_from_the_class(self, files, tmp_path):
+        from prothon import Prothon
+        from prothon.config import Study
+
+        path = Study(
+            ensembles=[
+                {"ensemble": str(files / "a.dcd"),
+                 "topology": str(files / "top.pdb")},
+                {"ensemble": str(files / "b.dcd"),
+                 "topology": str(files / "top.pdb")},
+            ],
+            settings={"order_parameters": "cbcn", "random_state": 0, "s_num": 2},
+        ).save(tmp_path / "s.yml")
+
+        study = Prothon.from_config(path)
+        assert "CBCN" in study.summary()
+
+    def test_a_study_can_be_written_from_the_object(self, files, tmp_path):
+        from prothon import Prothon
+
+        study = Prothon(
+            ensembles=[str(files / "a.dcd"), str(files / "b.dcd")],
+            topology=str(files / "top.pdb"), random_state=0,
+        )
+        out = study.save_config(tmp_path / "written.yml")
+        assert pathlib.Path(out).exists()
 
 
 class TestSources:
@@ -205,6 +351,36 @@ class TestSources:
     def test_sources_are_recognised_by_inspection(self, source, expected):
         assert describe_source(source) == expected
 
+    def test_one_topology_may_be_given_per_ensemble(self, files):
+        """What comparison across different molecules needs: a mutant has its
+        own topology, and so does an ortholog. A single `--topology` is right
+        for conditions of one system and wrong for everything else."""
+        loaded = resolve_all(
+            [str(files / "a.dcd"), str(files / "b.dcd")],
+            [str(files / "top.pdb"), str(files / "top.pdb")],
+        )
+        assert [e.n_frames for e in loaded] == [300, 300]
+
+    def test_none_in_the_list_means_the_source_carries_its_own(self, files):
+        loaded = resolve_all(
+            [str(files / "a.dcd"), str(files / "models")],
+            [str(files / "top.pdb"), None],
+        )
+        assert [e.n_frames for e in loaded] == [300, 30]
+
+    def test_one_topology_still_covers_every_ensemble(self, files):
+        loaded = resolve_all(
+            [str(files / "a.dcd"), str(files / "b.dcd")], str(files / "top.pdb")
+        )
+        assert len(loaded) == 2
+
+    def test_a_mismatched_count_is_refused(self, files):
+        with pytest.raises(ValueError, match="topologies for"):
+            resolve_all(
+                [str(files / "a.dcd"), str(files / "b.dcd")],
+                [str(files / "top.pdb")] * 3,
+            )
+
     def test_a_missing_source_says_what_was_expected(self):
         with pytest.raises(FileNotFoundError, match="PED00024"):
             resolve("nowhere.xtc")
@@ -231,6 +407,23 @@ class TestConstructor:
         )
         assert len(study.ensembles) == 2
         assert study.shares_topology
+
+    def test_a_topology_each_reaches_the_constructor(self, files):
+        study = Prothon(
+            ensembles=[str(files / "a.dcd"), str(files / "b.dcd")],
+            topology=[str(files / "top.pdb"), str(files / "top.pdb")],
+            random_state=0,
+        )
+        assert len(study.ensembles) == 2
+
+    def test_a_topology_each_reaches_the_command_line(self, files, capsys):
+        code = main([
+            "compare", "-e", str(files / "a.dcd"), str(files / "b.dcd"),
+            "-t", str(files / "top.pdb"), str(files / "top.pdb"),
+            "-p", "cbcn", "-s", "0", "--s-num", "2",
+        ])
+        assert code == 0
+        assert "CBCN" in capsys.readouterr().out
 
     def test_it_also_takes_loaded_ensembles(self, files):
         a = Ensemble.from_trajectory(str(files / "a.dcd"), str(files / "top.pdb"))

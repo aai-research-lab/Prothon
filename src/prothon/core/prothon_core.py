@@ -96,7 +96,7 @@ class Prothon:
     def __init__(
         self,
         ensembles=None,
-        topology: str | None = None,
+        topology=None,
         output_dir: str | None = None,
         verbose: bool = False,
         random_state: int | None = None,
@@ -116,9 +116,13 @@ class Prothon:
             PDB, or a PED accession -- see
             :func:`~prothon.ingest.sources.resolve`.
         topology
-            Used by the sources that need one. Not required for PED
-            accessions or multi-model PDBs, and not required at all when
-            every ensemble is already loaded.
+            One topology shared by every source, or a list with one per
+            source in the same order. A list is what comparison across
+            different molecules needs, since a mutant has its own topology;
+            ``None`` in a list means that source carries its own, which a PED
+            accession and a multi-model PDB both do.
+
+            Not required at all when every ensemble is already loaded.
         random_state
             Seed for the resampling behind the noise floor and the p-values.
             Set it and a rerun gives the same numbers.
@@ -159,7 +163,9 @@ class Prothon:
 
         self.ensembles = loaded
         self.traj_files = [e.label for e in loaded]
-        self.topology = topology
+        # A list of topologies belongs to the ensembles rather than to the
+        # study, and each one records its own in its provenance.
+        self.topology = topology if isinstance(topology, (str, type(None))) else None
         self.output_dir = output_dir
         self.verbose = verbose
         self.random_state = random_state
@@ -173,6 +179,162 @@ class Prothon:
         self.coverage_results: dict[str, list] = {}
 
         configure_logging(verbose)
+
+    # -- one import -------------------------------------------------------
+    #
+    # `from prothon import Prothon` should be the whole of what a user needs
+    # to import. Everything else is reachable from the class or from an
+    # instance: the registries as attributes, the other ways of starting a
+    # study as classmethods, and the analyses as methods. Anybody who wants
+    # the underlying functions can still import them; nobody has to.
+
+    @classmethod
+    def from_config(cls, path, **overrides) -> Prothon:
+        """Start from a study written in a file.
+
+        >>> Prothon.from_config("study.yml")          # doctest: +SKIP
+        """
+        from ..config.study import Study
+
+        study = Study.from_file(path)
+        study.settings.update(overrides)
+        return study.run()
+
+    @staticmethod
+    def load(source, topology=None, label=None, **kwargs):
+        """Load one ensemble from any source, without starting a study.
+
+        A trajectory, a directory of structures, a glob, a multi-model PDB, or
+        a PED accession. Rarely needed -- the constructor takes sources
+        directly -- but useful when an ensemble needs adjusting before it is
+        compared.
+
+        >>> Prothon.load("PED00024")                  # doctest: +SKIP
+        """
+        from ..ingest.sources import resolve
+
+        return resolve(source, topology=topology, label=label, **kwargs)
+
+    @staticmethod
+    def order_parameters() -> dict:
+        """Every local order parameter, by name."""
+        from .representation import ORDER_PARAMETERS
+
+        return dict(ORDER_PARAMETERS)
+
+    @staticmethod
+    def metrics() -> dict:
+        """Every per-residue distance, by name."""
+        from .metrics import METRICS
+
+        return dict(METRICS)
+
+    @staticmethod
+    def observables() -> dict:
+        """Every observable that can be computed and scored against
+        measurements."""
+        from ..validate.observables import OBSERVABLES
+
+        return dict(OBSERVABLES)
+
+    # -- analyses ---------------------------------------------------------
+
+    def compare(self, order_parameters: str = "cbcn", **kwargs):
+        """Compare the ensembles. A shorter name for
+        :meth:`compare_ensembles`, which is what published scripts call."""
+        return self.compare_ensembles(order_parameters, **kwargs)
+
+    def rank(self, order_parameters: str = "cbcn", ref: int = 0, **kwargs):
+        """Rank every other ensemble against the reference.
+
+        The benchmark view: ordered by the margin above each ensemble's own
+        noise floor rather than by raw distance, with coverage and fidelity
+        beside each row.
+        """
+        from ..batch.benchmark import benchmark
+
+        others = [e for i, e in enumerate(self.ensembles) if i != ref]
+        if not others:
+            raise ValueError("Nothing to compare against the reference.")
+        return benchmark(
+            self.ensembles[ref], others,
+            order_parameters=order_parameters,
+            random_state=self.random_state,
+            output_dir=self.output_dir,
+            **kwargs,
+        )
+
+    def validate(
+        self,
+        observable: str,
+        experimental,
+        uncertainty,
+        index: int = 0,
+        **kwargs,
+    ):
+        """Score one ensemble against experimental measurements.
+
+        Reported beside a floor obtained from the ensemble itself, because a
+        perfect ensemble does not score a reduced chi-squared of one.
+
+        Parameters
+        ----------
+        observable
+            ``rg``, ``end_to_end`` or ``j_hn_ha``. Predictions from an
+            external tool are scored with
+            :func:`~prothon.validate.score.score_observable` directly.
+        index
+            Which ensemble to score.
+        """
+        import numpy as np
+
+        from ..validate.observables import (
+            end_to_end,
+            j_coupling_hn_ha,
+            radius_of_gyration,
+        )
+        from ..validate.score import score_observable
+
+        compute = {
+            "rg": lambda t: radius_of_gyration(t)[:, None],
+            "end_to_end": lambda t: end_to_end(t)[:, None],
+            "j_hn_ha": lambda t: j_coupling_hn_ha(t)[0],
+        }
+        if observable not in compute:
+            raise ValueError(
+                f"Unknown observable {observable!r}. Available: "
+                f"{', '.join(sorted(compute))}. Predictions from an external "
+                f"tool go to prothon.validate.score_observable directly."
+            )
+
+        ensemble = self.ensembles[index]
+        return score_observable(
+            compute[observable](ensemble.trajectory),
+            np.atleast_1d(experimental),
+            np.atleast_1d(uncertainty),
+            observable=f"{observable} [{ensemble.label}]",
+            weights=ensemble.weights,
+            random_state=self.random_state,
+            **kwargs,
+        )
+
+    def save_config(self, path) -> str:
+        """Write this study to a file, so it can be re-run and committed."""
+        from ..config.study import WHERE, Study
+
+        study = self.study or Study(
+            ensembles=[
+                {WHERE: e.provenance.get("path", e.label), "label": e.label}
+                for e in self.ensembles
+            ],
+            output_dir=self.output_dir,
+            settings=(
+                {"random_state": self.random_state}
+                if self.random_state is not None
+                else {}
+            ),
+        )
+        return study.save(path)
 
     @property
     def shares_topology(self) -> bool:

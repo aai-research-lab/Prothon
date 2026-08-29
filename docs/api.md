@@ -1,5 +1,13 @@
 # Python API
 
+## One import
+
+`from prothon import Prothon` is the whole of what a user needs. Everything
+below is reachable from the class or from an instance — the registries as
+functions on the class, the other ways of starting a study as constructors,
+and the analyses as methods. The underlying functions remain importable for
+anyone who wants them.
+
 ## The study object
 
 ```{eval-rst}

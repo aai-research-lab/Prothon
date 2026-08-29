@@ -82,7 +82,7 @@ class TestCompareEnsembles:
 
     def test_manifest_records_the_parameters(self, study, tmp_path):
         study.compare_ensembles(order_parameters="cbcn", s_num=2, alpha=0.01)
-        manifest = json.loads((tmp_path / "cbcn_output" / "manifest.json").read_text())
+        manifest = json.loads((tmp_path / "cbcn_output" / "manifest.json").read_text(encoding="utf-8"))
         assert manifest["parameters"]["alpha"] == 0.01
         assert manifest["parameters"]["random_state"] == 0
         assert manifest["order_parameter"] == "cbcn"

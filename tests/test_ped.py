@@ -93,7 +93,7 @@ class TestLoading:
     def test_a_cached_entry_is_not_downloaded(self, tmp_path, monkeypatch):
         """Entries run to tens of megabytes and a benchmark may want the same
         one repeatedly."""
-        (tmp_path / "PED99999e001.pdb").write_text(tiny_pdb(4))
+        (tmp_path / "PED99999e001.pdb").write_text(tiny_pdb(4), encoding="utf-8")
 
         def refuse(*args, **kwargs):
             raise AssertionError("the network was used despite a cache hit")

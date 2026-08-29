@@ -128,9 +128,25 @@ class Study:
             )
 
         ensembles = [{WHERE: item} for item in flattened]
-        if getattr(args, "topology", None):
-            for entry in ensembles:
-                entry["topology"] = args.topology
+        topology = getattr(args, "topology", None)
+        if topology:
+            # One topology for every ensemble, or one each in the same order.
+            # The list form is what a mutant against a wild type needs.
+            if isinstance(topology, str):
+                paths = [topology] * len(ensembles)
+            elif len(topology) == 1:
+                paths = list(topology) * len(ensembles)
+            elif len(topology) == len(ensembles):
+                paths = list(topology)
+            else:
+                raise ValueError(
+                    f"{len(topology)} topologies for {len(ensembles)} "
+                    f"ensembles. Give one, or one per ensemble in the same "
+                    f"order, or none for sources that carry their own."
+                )
+            for entry, path in zip(ensembles, paths):
+                if path is not None:
+                    entry["topology"] = path
 
         # A flag not given is a flag not written down. argparse reports an
         # unset `store_true` as False while the schema declares its default as
@@ -158,8 +174,11 @@ class Study:
         labels = [str(e[WHERE]) for e in ensembles]
         if not str(reference).isdigit() and str(reference) not in labels:
             entry = {WHERE: reference}
-            if getattr(args, "topology", None):
-                entry["topology"] = args.topology
+            topology = getattr(args, "topology", None)
+            if topology:
+                entry["topology"] = (
+                    topology if isinstance(topology, str) else topology[0]
+                )
             ensembles = [entry, *ensembles]
             reference = 0
 

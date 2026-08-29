@@ -12,13 +12,26 @@ provides one.
 
 ```python
 from prothon import Prothon
-from prothon.ingest import Ensemble
 
-wt  = Ensemble.from_trajectory("wt.xtc", "wt.pdb", label="wild type")
-mut = Ensemble.from_trajectory("mut.xtc", "mut.pdb", label="F5G")
+study = Prothon(
+    ensembles=["wt.xtc", "mut.xtc"],
+    topology=["wt.pdb", "mut.pdb"],     # one each: they are different molecules
+    random_state=0,
+)
+study.compare("cbcn")
+```
 
-study = Prothon.from_ensembles([wt, mut], random_state=0)
-study.compare_ensembles(order_parameters="cbcn")
+or from the command line:
+
+```bash
+prothon compare -e wt.xtc mut.xtc -t wt.pdb mut.pdb -p cbcn
+```
+
+`None` in the list means that source carries its own topology, which a PED
+accession and a multi-model PDB both do:
+
+```python
+Prothon(ensembles=["md.xtc", "PED00024"], topology=["top.pdb", None])
 ```
 
 ```

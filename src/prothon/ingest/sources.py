@@ -135,7 +135,7 @@ def resolve(
 
 def resolve_all(
     sources,
-    topology: str | None = None,
+    topology=None,
     cache_dir: str | os.PathLike | None = None,
     stride: int | None = None,
 ) -> list[Ensemble]:
@@ -145,6 +145,22 @@ def resolve_all(
     would average away the difference a comparison exists to measure. Use
     :meth:`Ensemble.from_files` to join replicates of a single condition.
 
+    Parameters
+    ----------
+    topology
+        One topology shared by every source, or one per source. A list is what
+        comparison across different molecules needs -- a mutant has its own
+        topology, and so does an ortholog -- and a single path is right when
+        comparing conditions of one system.
+
+        ``None`` in a list means that source carries its own, which a PED
+        accession and a multi-model PDB both do::
+
+            resolve_all(["wt.xtc", "mut.xtc"], ["wt.pdb", "mut.pdb"])
+            resolve_all(["md.xtc", "PED00024"], ["top.pdb", None])
+
+    Notes
+    -----
     A comma-separated string is accepted for the command line's benefit, so
     ``--ensembles wt.xtc,mut.xtc`` and ``--ensembles wt.xtc mut.xtc`` are the
     same request.
@@ -162,11 +178,24 @@ def resolve_all(
     if not flattened:
         raise ValueError("No ensembles given.")
 
+    if isinstance(topology, str) or topology is None:
+        topologies = [topology] * len(flattened)
+    else:
+        topologies = list(topology)
+        if len(topologies) == 1:
+            topologies *= len(flattened)
+        elif len(topologies) != len(flattened):
+            raise ValueError(
+                f"{len(topologies)} topologies for {len(flattened)} ensembles. "
+                f"Give one topology, or one per ensemble in the same order, or "
+                f"none at all for sources that carry their own."
+            )
+
     resolved = []
-    for item in flattened:
+    for item, top in zip(flattened, topologies):
         if not isinstance(item, Ensemble):
             logger.info("Loading %s (%s)", item, describe_source(item))
-        resolved.append(resolve(item, topology, cache_dir=cache_dir, stride=stride))
+        resolved.append(resolve(item, top, cache_dir=cache_dir, stride=stride))
     return resolved
 
 

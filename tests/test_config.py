@@ -36,7 +36,7 @@ def files(tmp_path_factory):
 
 
 def write(path, text):
-    path.write_text(text)
+    path.write_text(text, encoding="utf-8")
     return str(path)
 
 
@@ -260,7 +260,7 @@ output_dir: {tmp_path / 'out'}
 """)
         main(["compare", "--config", path])
         manifest = json.loads(
-            (tmp_path / "out" / "cbcn_output" / "manifest.json").read_text()
+            (tmp_path / "out" / "cbcn_output" / "manifest.json").read_text(encoding="utf-8")
         )
         study = manifest["study"]
         assert study["description"] == "recorded"
@@ -357,7 +357,7 @@ ensembles:
   - {files / 'models'}
 """)
         out = Study.from_file(path).save(tmp_path / "out.yml")
-        text = (tmp_path / "out.yml").read_text()
+        text = (tmp_path / "out.yml").read_text(encoding="utf-8")
         assert "path:" not in text
         assert "config:" not in text
         assert Study.from_file(out).labels

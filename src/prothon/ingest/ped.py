@@ -185,7 +185,8 @@ def ped_ensemble(
 
     if path and os.path.exists(path):
         logger.info("%s/%s: from cache", identifier, ensemble_id)
-        text = open(path, encoding="utf-8", errors="replace").read()
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            text = handle.read()
     else:
         url = f"{PED_API}/entries/{identifier}/ensembles/{ensemble_id}/ensemble-pdb"
         logger.info("%s/%s: downloading", identifier, ensemble_id)

@@ -455,6 +455,33 @@ All notable changes to Prothon are recorded here. This project follows
   incremental Sphinx build does not re-read an unchanged page, so it can pass
   on a file it never looked at.
 
+### Changed — one import
+
+- **`from prothon import Prothon` is the whole of what a user imports.**
+  A workflow needed five: the class, `Ensemble`, the validation functions,
+  `Study`, and `benchmark`. A capability behind an import nobody guesses is a
+  capability nobody finds.
+- Reachable from the class: `Prothon.from_config`, `Prothon.load`,
+  `Prothon.order_parameters()`, `Prothon.metrics()`, `Prothon.observables()`.
+  Reachable from a study: `compare`, `rank`, `validate`, `save_config`,
+  alongside `distinguishability` and `coverage_and_fidelity`. The underlying
+  functions remain importable; nothing requires it.
+- `--metric` gains the short form `-m`.
+- **`topology` takes one path or one per ensemble.** A single topology is right
+  when comparing conditions of one system and wrong for everything else — a
+  mutant has its own, and so does an ortholog — which made the flag unable to
+  express the capability this package was rebuilt around. `None` in the list
+  means that source carries its own, as a PED accession and a multi-model PDB
+  both do.
+
+### Fixed — text is read as UTF-8
+
+- A test of the documentation read files without naming an encoding, so it
+  used the platform default — UTF-8 on Linux and macOS, cp1252 on Windows —
+  and failed on the first em-dash. A scan found seven more places with the same
+  latent bug, and a test now walks the source tree and fails on any text read
+  or write that does not name its encoding.
+
 ### Refusals
 
 - **Coverage, not just identity.** Free end gaps make the aligner behave
