@@ -408,12 +408,19 @@ All notable changes to Prothon are recorded here. This project follows
 - Every flag, method and keyword shown is checked against the code rather than
   written from memory.
 
-### Added — the study as a file
+### Added — the study
 
 - **`prothon compare --config study.yml`**. A command line asks a question
   once; a file records one, and can be committed beside the manuscript, diffed
   when it changes, and handed to somebody who has the data but not the terminal
   session.
+- **A `Study` is the object every interface builds.** Flags are parsed into
+  one, a file is read into one, Python constructs one, and all of them then run
+  the same object. A setting reachable from one interface and not another is a
+  bug that cannot happen when there is only one place for settings to live.
+- **`--save-config` writes the study a command line describes**, so a command
+  typed once can be committed rather than reconstructed. Only what was actually
+  given is written: a flag left at its default is a flag nobody chose.
 - **It expresses three things a flag cannot**: a topology per ensemble —
   `--topology` is one path for every source, which is right for conditions of
   one system and wrong for a mutant or an ortholog — a label per ensemble, and
@@ -425,6 +432,8 @@ All notable changes to Prothon are recorded here. This project follows
   offered, at the top level, inside `compare`, and inside an ensemble.
 - Flags override the file, so a study re-runs with a different seed or output
   directory without being edited.
+- Each ensemble names where its conformations are with `ensemble:`. `source:`
+  was the first name for it and still works.
 - **The manifest records the study**, so a result found later carries the
   question it answered rather than only the answer.
 - `pyyaml` is now a declared dependency.

@@ -253,10 +253,10 @@ prothon compare --config study.yml
 description: wild type against the F5G mutant
 
 ensembles:
-  - source: wt.xtc
+  - ensemble: wt.xtc
     topology: wt.pdb        # each ensemble may have its own
     label: wild type
-  - source: mut.xtc
+  - ensemble: mut.xtc
     topology: mut.pdb
     label: F5G
 
@@ -269,9 +269,17 @@ compare:
 ```
 
 Something to commit beside the manuscript rather than reconstruct from a shell
-history. A flag given on the command line overrides the file, so the same study
-re-runs with a different seed without being edited. See
-[the study as a file](config.md).
+history. A flag on the command line overrides the file, so the same study
+re-runs with a different seed without being edited.
+
+It works the other way too — a command line typed once becomes a study:
+
+```bash
+prothon compare -e wt.xtc mut.xtc -t top.pdb -p cbcn -s 0 --save-config study.yml
+```
+
+Flags, a file and the Python API all build the same object, so none of them can
+offer a setting the others do not. See [the study](config.md).
 
 ## Things worth knowing
 

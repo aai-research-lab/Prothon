@@ -51,6 +51,7 @@ conditions averages away the difference being measured.
 | `--no-block-permutation` | | | Treat frames as independent. |
 | `--legacy-statistics` | | | Reproduce the historical statistics. |
 | `--report` | | `summary` | `summary`, or `table` for the ranked view. |
+| `--save-config` | | | Write the study this command describes to a file. |
 | `--output-dir` | `-o` | | Where to write results. |
 | `--dimred` | `-d` | `none` | `pca`, `mds`, `tsne`. |
 | `--json` | | | Results as JSON. |
@@ -81,11 +82,14 @@ operation is how they come to disagree. See [benchmarking](benchmark.md).
 
 ```bash
 prothon compare --config study.yml
+prothon compare -e wt.xtc mut.xtc -t top.pdb --save-config study.yml
 ```
 
-A configuration expresses what flags cannot: a topology, a label and a weight
-vector per ensemble. Every key is checked against the schema, so a misspelled
-setting is refused rather than ignored. See [the study as a file](config.md).
+Flags, a file and the Python API all build the same `Study` object and run
+that, so none of them can offer a setting the others do not. A study expresses
+what flags cannot — a topology, a label and a weight vector per ensemble — and
+every key is checked against the schema, so a misspelled setting is refused
+rather than ignored. See [the study](config.md).
 
 ## `prothon validate`
 

@@ -1,4 +1,4 @@
-"""A study, written down.
+"""A study, and the one object every interface builds.
 
 A command line is a good way to ask a question once and a poor way to record
 one. The flags that produced a figure live in a shell history that nobody
@@ -9,10 +9,26 @@ A configuration file is the study: a thing that can be committed beside the
 manuscript, diffed when it changes, and handed to somebody who has the data but
 not the terminal session.
 
-    prothon compare --config study.yml
+**A study is the thing, and each interface is a way of writing one down.** The
+command line parses flags into a study; a file is read into one; Python
+constructs one directly; a form would fill one in. All of them then run the
+same object, which is what keeps them from drifting -- a setting reachable from
+one interface and not another is a bug that cannot happen when there is only
+one place for settings to live.
 
-**It is not merely the flags in a file.** Three things a config expresses that
-a command line cannot:
+    prothon compare -e wt.xtc mut.xtc -t top.pdb    # flags become a study
+    prothon compare --config study.yml              # a file becomes one
+    Study.from_file("study.yml").run()              # Python runs one
+
+It also runs the other way. A command line typed once can be written down::
+
+    prothon compare -e wt.xtc mut.xtc -t top.pdb --save-config study.yml
+
+so the study behind a figure can be committed beside the manuscript rather
+than reconstructed from memory.
+
+**It is not merely the flags in a file.** Three things a study expresses that a
+command line cannot:
 
 *A topology per ensemble.* ``--topology`` is one path for every source, which
 is right when comparing conditions of one system and wrong for everything else.
@@ -46,8 +62,18 @@ __all__ = ["Study", "load_study"]
 #: Keys allowed at the top level of a configuration file.
 TOP_LEVEL = {"ensembles", "reference", "compare", "output_dir", "description"}
 
-#: Keys allowed for one ensemble.
-ENSEMBLE_KEYS = {"source", "topology", "label", "weights", "stride"}
+#: Keys allowed for one ensemble. ``source`` is the older name for
+#: ``ensemble`` and still works.
+ENSEMBLE_KEYS = {"ensemble", "source", "topology", "label", "weights", "stride"}
+
+#: Where an ensemble's conformations come from, and the name it used to have.
+WHERE = "ensemble"
+WHERE_LEGACY = "source"
+
+
+def _where(entry: dict):
+    """The source of one ensemble, under either name."""
+    return entry.get(WHERE, entry.get(WHERE_LEGACY))
 
 
 def _suggest(name: str, known) -> str:
@@ -78,10 +104,182 @@ class Study:
     description: str | None = None
     path: str | None = None
 
+    @classmethod
+    def from_file(cls, path) -> Study:
+        """Read a study from a YAML file."""
+        return load_study(path)
+
+    @classmethod
+    def from_arguments(cls, args) -> Study:
+        """Build a study from parsed command-line arguments.
+
+        This is what makes the command line a way of *writing* a study rather
+        than a second way of running one: every flag lands in the same object a
+        file would produce, so the two cannot come to offer different settings.
+        """
+        sources = args.ensembles or []
+        if isinstance(sources, str):
+            sources = [sources]
+        flattened: list = []
+        for item in sources:
+            text = str(item)
+            flattened += (
+                [p for p in text.split(",") if p.strip()] if "," in text else [item]
+            )
+
+        ensembles = [{WHERE: item} for item in flattened]
+        if getattr(args, "topology", None):
+            for entry in ensembles:
+                entry["topology"] = args.topology
+
+        # A flag not given is a flag not written down. argparse reports an
+        # unset `store_true` as False while the schema declares its default as
+        # None, so comparing against the schema alone would record every
+        # boolean flag as an explicit false and produce a file full of
+        # settings nobody chose.
+        specs = {p.name: p for p in parameters_for("compare")}
+        skip = {"ensembles", "topology", "reference", "output_dir", "config",
+                "json", "verbose", "save_config"}
+        settings = {}
+        for name, spec in specs.items():
+            if name in skip:
+                continue
+            value = getattr(args, name, None)
+            if value is None:
+                continue
+            unset = False if spec.action == "store_true" else spec.default
+            if value != unset:
+                settings[name] = value
+        # A reference may name a source of its own rather than one of the
+        # ensembles being compared -- "everything against this one thing"
+        # should not require putting that thing in the list and counting. It
+        # is prepended, and becomes ensemble 0.
+        reference = getattr(args, "reference", 0) or 0
+        labels = [str(e[WHERE]) for e in ensembles]
+        if not str(reference).isdigit() and str(reference) not in labels:
+            entry = {WHERE: reference}
+            if getattr(args, "topology", None):
+                entry["topology"] = args.topology
+            ensembles = [entry, *ensembles]
+            reference = 0
+
+        return cls(
+            ensembles=ensembles,
+            reference=reference,
+            settings=settings,
+            output_dir=getattr(args, "output_dir", None),
+        )
+
+    def merged_with(self, args) -> Study:
+        """This study, with anything given explicitly on the command line.
+
+        A flag wins over the file, so a study re-runs with a different seed or
+        output directory without being edited. Whether a flag was *given* is
+        decided by comparing it with the schema default, since argparse cannot
+        say otherwise.
+        """
+        specs = {p.name: p for p in parameters_for("compare")}
+        # How a study was reached is not part of what it says. Recording
+        # `config` or `save_config` as settings would make a rewritten file
+        # point at the file it came from.
+        # `output_dir` is a property of the study rather than of the
+        # comparison, and the ones below say how a study was reached rather
+        # than what it says.
+        skip = {"config", "save_config", "json", "verbose", "output_dir",
+                "ensembles", "topology", "reference"}
+        settings = {k: v for k, v in self.settings.items() if k not in skip}
+        for name, spec in specs.items():
+            if name in skip:
+                continue
+            value = getattr(args, name, None)
+            if value is None:
+                continue
+            unset = False if spec.action == "store_true" else spec.default
+            if value != unset:
+                settings[name] = value
+        return Study(
+            ensembles=list(self.ensembles),
+            reference=self.reference,
+            settings=settings,
+            output_dir=getattr(args, "output_dir", None) or self.output_dir,
+            description=self.description,
+            path=self.path,
+        )
+
+    def resolve(self, cache_dir: str | None = None) -> list:
+        """Load every ensemble this study names."""
+        return resolve_ensembles(self, cache_dir)
+
+    def run(self, cache_dir: str | None = None):
+        """Load the ensembles and run the comparison.
+
+        Returns the :class:`~prothon.Prothon` object, so results, summaries and
+        further analyses are all reachable from it.
+        """
+        from ..core.prothon_core import Prothon
+
+        settings = dict(self.settings)
+        for key in ("report", "json", "verbose", "config", "save_config",
+                    "output_dir", "ensembles", "topology", "reference"):
+            settings.pop(key, None)
+
+        block = None
+        if settings.pop("no_block_permutation", False):
+            block = False
+        elif settings.pop("block_permutation", False):
+            block = True
+
+        dimred = settings.pop("dimred", None)
+        if dimred is not None and str(dimred).lower() in {"none", ""}:
+            dimred = None
+
+        order_parameters = settings.pop("order_parameters", "cbcn")
+        if isinstance(order_parameters, (list, tuple)):
+            order_parameters = ",".join(order_parameters)
+
+        comparison = Prothon(
+            ensembles=self.resolve(cache_dir),
+            output_dir=self.output_dir,
+            random_state=settings.pop("random_state", None),
+            study=self,
+        )
+        comparison.compare_ensembles(
+            order_parameters=order_parameters,
+            ref=self.reference_index(),
+            dimred=dimred,
+            block_permutation=block,
+            legacy=settings.pop("legacy_statistics", False),
+            **settings,
+        )
+        return comparison
+
+    def save(self, path) -> str:
+        """Write this study to a YAML file.
+
+        The other direction of the same idea: a command line typed once becomes
+        a study that can be committed beside the manuscript.
+        """
+        import yaml
+
+        path = os.fspath(path)
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(
+                "# Written by Prothon. Run with: prothon compare --config "
+                f"{os.path.basename(path)}\n"
+            )
+            yaml.safe_dump(
+                self.to_dict(for_file=True), handle, sort_keys=False, indent=2
+            )
+        logger.info("Wrote %s", path)
+        return path
+
     @property
     def labels(self) -> list[str]:
         return [
-            e.get("label") or os.path.basename(str(e["source"]).rstrip("/"))
+            e.get("label") or os.path.basename(str(_where(e)).rstrip("/"))
             for e in self.ensembles
         ]
 
@@ -98,12 +296,17 @@ class Study:
             index = int(self.reference)
         else:
             labels = self.labels
-            if self.reference not in labels:
-                raise ValueError(
-                    f"The reference {self.reference!r} is not one of the "
-                    f"ensembles ({', '.join(labels)}), and is not an index."
-                )
-            index = labels.index(self.reference)
+            if self.reference in labels:
+                index = labels.index(self.reference)
+            else:
+                # It may name a source rather than a label.
+                sources = [str(_where(e)) for e in self.ensembles]
+                if self.reference not in sources:
+                    raise ValueError(
+                        f"The reference {self.reference!r} is not one of the "
+                        f"ensembles ({', '.join(labels)}), and is not an index."
+                    )
+                index = sources.index(self.reference)
 
         if not 0 <= index < len(self.ensembles):
             raise ValueError(
@@ -112,20 +315,27 @@ class Study:
             )
         return index
 
-    def to_dict(self) -> dict[str, Any]:
-        """The study as it was read, for the manifest.
+    def to_dict(self, for_file: bool = False) -> dict[str, Any]:
+        """The study as a mapping, in the shape a file has.
 
-        A run records the study that produced it, so a result found later
-        carries the question it answered.
+        What :meth:`save` writes and what the manifest records, so a result
+        found later carries the question it answered and can be re-run from it.
         """
-        return {
-            "path": None if self.path is None else os.path.abspath(self.path),
-            "description": self.description,
-            "ensembles": self.ensembles,
-            "reference": self.reference,
-            "settings": self.settings,
-            "output_dir": self.output_dir,
-        }
+        payload: dict[str, Any] = {}
+        if self.description:
+            payload["description"] = self.description
+        payload["ensembles"] = self.ensembles
+        if self.reference not in (0, "0"):
+            payload["reference"] = self.reference
+        if self.settings:
+            payload["compare"] = self.settings
+        if self.output_dir:
+            payload["output_dir"] = self.output_dir
+        # Where a study was read from belongs in the record of a run, not in a
+        # file that would then point at a different file.
+        if self.path and not for_file:
+            payload["path"] = os.path.abspath(self.path)
+        return payload
 
 
 def _validate(raw: dict[str, Any], path: str) -> None:
@@ -161,20 +371,20 @@ def _validate(raw: dict[str, Any], path: str) -> None:
             continue  # a bare source is allowed
         if not isinstance(entry, dict):
             raise ValueError(
-                f"{path}: ensemble {i} should be a source or a mapping with a "
-                f"'source' key, not {type(entry).__name__}."
+                f"{path}: ensemble {i} should be a path or a mapping with an "
+                f"'ensemble' key, not {type(entry).__name__}."
             )
-        if "source" not in entry:
+        if WHERE not in entry and WHERE_LEGACY not in entry:
             raise ValueError(
-                f"{path}: ensemble {i} has no 'source'. That is the trajectory, "
-                f"directory, glob, multi-model PDB or PED accession that holds "
-                f"the conformations."
+                f"{path}: ensemble {i} has no 'ensemble' key. That is the "
+                f"trajectory, directory, glob, multi-model PDB or PED "
+                f"accession that holds the conformations."
             )
         for key in entry:
             if key not in ENSEMBLE_KEYS:
                 raise ValueError(
                     f"{path}: ensemble {i} has unknown key {key!r}. Expected "
-                    f"one of {', '.join(sorted(ENSEMBLE_KEYS))}."
+                    f"one of {', '.join(sorted(ENSEMBLE_KEYS - {WHERE_LEGACY}))}."
                     f"{_suggest(key, ENSEMBLE_KEYS)}"
                 )
 
@@ -216,7 +426,7 @@ def load_study(path: str | os.PathLike) -> Study:
     _validate(raw, path)
 
     ensembles = [
-        {"source": entry} if isinstance(entry, str) else dict(entry)
+        {WHERE: entry} if isinstance(entry, str) else dict(entry)
         for entry in raw["ensembles"]
     ]
     study = Study(
@@ -251,7 +461,7 @@ def resolve_ensembles(study: Study, cache_dir: str | None = None):
         if isinstance(weights, str):
             weights = np.loadtxt(weights).ravel()
         ensemble = resolve(
-            entry["source"],
+            _where(entry),
             topology=entry.get("topology"),
             label=entry.get("label"),
             cache_dir=cache_dir,

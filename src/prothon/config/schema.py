@@ -154,6 +154,12 @@ PARAMETERS: tuple[Parameter, ...] = (
     ),
     # -- what to produce --------------------------------------------------
     _p(
+        "save_config", metavar="PATH",
+        help="Write the study this command describes to a file, so a command "
+             "line typed once can be committed beside the manuscript.",
+        commands=("compare",),
+    ),
+    _p(
         "report", default="summary", choices=("summary", "table"),
         help="How to present the results. 'table' ranks the ensembles by the "
              "margin above each one's own noise floor and adds coverage and "

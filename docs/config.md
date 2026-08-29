@@ -1,9 +1,23 @@
-# The study as a file
+# The study
 
 A command line is a good way to ask a question once and a poor way to record
 one. The flags that produced a figure live in a shell history nobody reads, on
 one machine, and the study cannot be re-run by somebody who has the data but
 not the terminal session.
+
+**So a study is the thing, and each interface is a way of writing one down.**
+The command line parses flags into a study; a file is read into one; Python
+constructs one directly. All of them then run the same object — which is what
+keeps them from drifting, because a setting reachable from one interface and
+not another is a bug that cannot happen when there is only one place for
+settings to live.
+
+| how you ask | what happens |
+|---|---|
+| `prothon compare -e a b -t top.pdb` | flags → a study → run |
+| `prothon compare --config s.yml` | a file → a study → run |
+| `prothon compare --config s.yml -s 7` | a file, with the flag applied → run |
+| `Study.from_file("s.yml").run()` | the same object |
 
 ```bash
 prothon compare --config study.yml
@@ -13,10 +27,10 @@ prothon compare --config study.yml
 description: wild type against the F5G mutant, three replicates each
 
 ensembles:
-  - source: wt.xtc
+  - ensemble: wt.xtc
     topology: wt.pdb
     label: wild type
-  - source: mut.xtc
+  - ensemble: mut.xtc
     topology: mut.pdb
     label: F5G
 
@@ -35,7 +49,35 @@ output_dir: results
 The file is the study: something to commit beside the manuscript, diff when it
 changes, and hand to a collaborator.
 
-## What a file expresses that a flag cannot
+## Writing one down
+
+It runs the other way too. A command line typed once becomes a study that can
+be committed:
+
+```bash
+prothon compare -e wt.xtc mut.xtc -t top.pdb -p cbcn -s 0 --save-config study.yml
+```
+
+```yaml
+# Written by Prothon. Run with: prothon compare --config study.yml
+ensembles:
+- ensemble: wt.xtc
+  topology: top.pdb
+- ensemble: mut.xtc
+  topology: top.pdb
+compare:
+  order_parameters: cbcn
+  random_state: 0
+```
+
+Only what was actually given is written. A flag left at its default is a flag
+nobody chose, and recording it would produce a file full of settings that look
+deliberate and are not.
+
+The file does not record where it came from, either: a rewritten study that
+carried its own `config:` path would point at a different file.
+
+## What a study expresses that a flag cannot
 
 **A topology per ensemble.** `--topology` is one path for every source, which
 is right when comparing conditions of one system and wrong for everything else.
@@ -49,15 +91,15 @@ a separate file, and there is no sensible flag for that.
 
 ```yaml
 ensembles:
-  - source: md.xtc
+  - ensemble: md.xtc
     topology: system.pdb
     label: unbiased
-  - source: metad.xtc
+  - ensemble: metad.xtc
     topology: system.pdb
     label: reweighted
     weights: weights.txt      # one per frame
     stride: 10
-  - source: PED00024
+  - ensemble: PED00024
     label: deposited          # carries its own topology
 ```
 
@@ -98,7 +140,7 @@ Within one ensemble:
 
 | key | meaning |
 |---|---|
-| `source` | Required. A trajectory, directory, glob, multi-model PDB, or PED accession. |
+| `ensemble` | Required. A trajectory, directory, glob, multi-model PDB, or PED accession. |
 | `topology` | For sources that need one. |
 | `label` | Used in figures, tables and messages. |
 | `weights` | A file of per-frame weights. |
@@ -146,17 +188,33 @@ found later carries the question it answered rather than only the answer:
 
 ## From Python
 
+The same object, constructed directly or read from a file:
+
 ```python
-from prothon import Prothon
-from prothon.config import load_study, resolve_ensembles
+from prothon.config import Study
 
-study = load_study("study.yml")
-ensembles = resolve_ensembles(study)
-
-Prothon(
-    ensembles=ensembles,
-    random_state=study.settings.get("random_state"),
-    output_dir=study.output_dir,
-    study=study,
-).compare_ensembles(**study.settings)
+study = Study.from_file("study.yml")
+comparison = study.run()
+print(comparison.summary())
 ```
+
+```python
+study = Study(
+    ensembles=[
+        {"ensemble": "wt.xtc", "topology": "wt.pdb", "label": "wild type"},
+        {"ensemble": "mut.xtc", "topology": "mut.pdb", "label": "F5G"},
+    ],
+    reference="wild type",
+    settings={"order_parameters": "cbcn", "random_state": 0},
+)
+study.run()
+study.save("study.yml")       # and write it down
+```
+
+`study.resolve()` returns the loaded ensembles without running anything, for
+when you want to do something else with them.
+
+## The older key name
+
+`source:` was the first name for `ensemble:`. Files written against it keep
+working.

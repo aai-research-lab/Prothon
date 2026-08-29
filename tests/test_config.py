@@ -44,9 +44,9 @@ class TestReading:
     def test_a_minimal_study(self, files, tmp_path):
         path = write(tmp_path / "s.yml", f"""
 ensembles:
-  - source: {files / 'a.dcd'}
+  - ensemble: {files / 'a.dcd'}
     topology: {files / 'top.pdb'}
-  - source: {files / 'b.dcd'}
+  - ensemble: {files / 'b.dcd'}
     topology: {files / 'top.pdb'}
 """)
         study = load_study(path)
@@ -66,10 +66,10 @@ ensembles:
         reason to write a study down rather than type it."""
         path = write(tmp_path / "s.yml", f"""
 ensembles:
-  - source: {files / 'a.dcd'}
+  - ensemble: {files / 'a.dcd'}
     topology: {files / 'top.pdb'}
     label: simulation
-  - source: {files / 'models'}
+  - ensemble: {files / 'models'}
     label: generated
 """)
         loaded = resolve_ensembles(load_study(path))
@@ -82,10 +82,10 @@ ensembles:
         np.savetxt(weights, np.linspace(1, 2, 300))
         path = write(tmp_path / "s.yml", f"""
 ensembles:
-  - source: {files / 'a.dcd'}
+  - ensemble: {files / 'a.dcd'}
     topology: {files / 'top.pdb'}
     weights: {weights}
-  - source: {files / 'b.dcd'}
+  - ensemble: {files / 'b.dcd'}
     topology: {files / 'top.pdb'}
 """)
         loaded = resolve_ensembles(load_study(path))
@@ -96,10 +96,10 @@ ensembles:
     def test_a_stride_is_honoured(self, files, tmp_path):
         path = write(tmp_path / "s.yml", f"""
 ensembles:
-  - source: {files / 'a.dcd'}
+  - ensemble: {files / 'a.dcd'}
     topology: {files / 'top.pdb'}
     stride: 10
-  - source: {files / 'b.dcd'}
+  - ensemble: {files / 'b.dcd'}
     topology: {files / 'top.pdb'}
 """)
         loaded = resolve_ensembles(load_study(path))
@@ -108,10 +108,10 @@ ensembles:
     def test_the_reference_may_be_a_label(self, files, tmp_path):
         path = write(tmp_path / "s.yml", f"""
 ensembles:
-  - source: {files / 'a.dcd'}
+  - ensemble: {files / 'a.dcd'}
     topology: {files / 'top.pdb'}
     label: wild type
-  - source: {files / 'b.dcd'}
+  - ensemble: {files / 'b.dcd'}
     topology: {files / 'top.pdb'}
     label: mutant
 reference: mutant
@@ -144,20 +144,30 @@ compare:
     def test_an_unknown_ensemble_key(self, files, tmp_path):
         path = write(tmp_path / "s.yml", f"""
 ensembles:
-  - source: {files / 'a.dcd'}
+  - ensemble: {files / 'a.dcd'}
     topolgy: {files / 'top.pdb'}
   - {files / 'models'}
 """)
         with pytest.raises(ValueError, match="Did you mean topology"):
             load_study(path)
 
-    def test_a_missing_source(self, tmp_path):
-        path = write(tmp_path / "s.yml", "ensembles:\n  - source: a\n  - topology: b\n")
-        with pytest.raises(ValueError, match="has no 'source'"):
+    def test_a_missing_ensemble_key(self, tmp_path):
+        path = write(tmp_path / "s.yml", "ensembles:\n  - ensemble: a\n  - topology: b\n")
+        with pytest.raises(ValueError, match="has no 'ensemble' key"):
             load_study(path)
 
+    def test_the_older_key_still_works(self, files, tmp_path):
+        """`source` was the first name for it. Files written against that
+        keep working."""
+        path = write(tmp_path / "s.yml", f"""
+ensembles:
+  - source: {files / 'models'}
+  - source: {files / 'models'}
+""")
+        assert len(load_study(path).resolve()) == 2
+
     def test_fewer_than_two_ensembles(self, tmp_path):
-        path = write(tmp_path / "s.yml", "ensembles:\n  - source: a\n")
+        path = write(tmp_path / "s.yml", "ensembles:\n  - ensemble: a\n")
         with pytest.raises(ValueError, match="at least two"):
             load_study(path)
 
@@ -191,10 +201,10 @@ class TestThroughTheCommandLine:
         path = write(tmp_path / "s.yml", f"""
 description: a test study
 ensembles:
-  - source: {files / 'a.dcd'}
+  - ensemble: {files / 'a.dcd'}
     topology: {files / 'top.pdb'}
     label: wild type
-  - source: {files / 'b.dcd'}
+  - ensemble: {files / 'b.dcd'}
     topology: {files / 'top.pdb'}
     label: mutant
 reference: wild type
@@ -212,9 +222,9 @@ output_dir: {tmp_path / 'out'}
         a different output directory — without editing it."""
         path = write(tmp_path / "s.yml", f"""
 ensembles:
-  - source: {files / 'a.dcd'}
+  - ensemble: {files / 'a.dcd'}
     topology: {files / 'top.pdb'}
-  - source: {files / 'b.dcd'}
+  - ensemble: {files / 'b.dcd'}
     topology: {files / 'top.pdb'}
 compare:
   order_parameters: cbcn
@@ -236,10 +246,10 @@ output_dir: {tmp_path / 'from_file'}
         path = write(tmp_path / "s.yml", f"""
 description: recorded
 ensembles:
-  - source: {files / 'a.dcd'}
+  - ensemble: {files / 'a.dcd'}
     topology: {files / 'top.pdb'}
     label: wild type
-  - source: {files / 'b.dcd'}
+  - ensemble: {files / 'b.dcd'}
     topology: {files / 'top.pdb'}
     label: mutant
 compare:
@@ -255,7 +265,10 @@ output_dir: {tmp_path / 'out'}
         study = manifest["study"]
         assert study["description"] == "recorded"
         assert [e["label"] for e in study["ensembles"]] == ["wild type", "mutant"]
-        assert study["settings"]["random_state"] == 0
+        assert study["compare"]["random_state"] == 0
+        # The manifest records where the study came from; a written file does
+        # not, because that would point at a different file.
+        assert study["path"].endswith("s.yml")
 
     def test_neither_ensembles_nor_config_is_refused(self, capsys):
         assert main(["compare", "-p", "cbcn"]) == 2
@@ -267,21 +280,136 @@ output_dir: {tmp_path / 'out'}
         assert "Did you mean ensembles" in capsys.readouterr().err
 
 
+class TestOneObjectForEveryInterface:
+    """The point of the redesign: flags, a file and Python all build the same
+    object, so a setting reachable from one cannot be missing from another."""
+
+    def test_flags_become_a_study(self, files):
+        import argparse
+
+        from prothon.config.schema import parameters_for
+
+        args = argparse.Namespace(
+            ensembles=[str(files / "a.dcd"), str(files / "b.dcd")],
+            topology=str(files / "top.pdb"),
+            reference=0, output_dir=None, config=None, save_config=None,
+            **{p.name: p.default for p in parameters_for("compare")
+               if p.name not in {"ensembles", "topology", "reference",
+                                 "output_dir", "config", "save_config"}},
+        )
+        args.random_state = 0
+        args.s_num = 2
+        study = Study.from_arguments(args)
+
+        assert len(study.ensembles) == 2
+        assert study.ensembles[0]["topology"] == str(files / "top.pdb")
+        assert study.settings["random_state"] == 0
+
+    def test_a_flag_not_given_is_not_written_down(self, files):
+        """argparse reports an unset `store_true` as False while the schema
+        declares None, so comparing against the schema alone would record
+        every boolean flag as an explicit false and produce a file full of
+        settings nobody chose."""
+        import argparse
+
+        from prothon.config.schema import parameters_for
+
+        args = argparse.Namespace(
+            ensembles=[str(files / "a.dcd")], topology=None, reference=0,
+            output_dir=None, config=None, save_config=None,
+            **{p.name: (False if p.action else p.default)
+               for p in parameters_for("compare")
+               if p.name not in {"ensembles", "topology", "reference",
+                                 "output_dir", "config", "save_config"}},
+        )
+        settings = Study.from_arguments(args).settings
+        for name in ("block_permutation", "no_block_permutation",
+                     "legacy_statistics"):
+            assert name not in settings
+
+    def test_a_study_round_trips_through_a_file(self, files, tmp_path):
+        original = Study(
+            ensembles=[
+                {"ensemble": str(files / "a.dcd"),
+                 "topology": str(files / "top.pdb"), "label": "wild type"},
+                {"ensemble": str(files / "b.dcd"),
+                 "topology": str(files / "top.pdb"), "label": "mutant"},
+            ],
+            reference="mutant",
+            settings={"order_parameters": "cbcn", "random_state": 0, "s_num": 2},
+            description="round trip",
+        )
+        path = original.save(tmp_path / "written.yml")
+        again = Study.from_file(path)
+
+        assert again.labels == original.labels
+        assert again.reference_index() == original.reference_index()
+        assert again.settings == original.settings
+        assert again.description == original.description
+
+    def test_a_written_file_does_not_point_at_its_source(self, files, tmp_path):
+        """How a study was reached is not part of what it says. A rewritten
+        file that recorded `path` or `config` would point at a different
+        file."""
+        path = write(tmp_path / "in.yml", f"""
+ensembles:
+  - {files / 'models'}
+  - {files / 'models'}
+""")
+        out = Study.from_file(path).save(tmp_path / "out.yml")
+        text = (tmp_path / "out.yml").read_text()
+        assert "path:" not in text
+        assert "config:" not in text
+        assert Study.from_file(out).labels
+
+    def test_the_three_paths_agree(self, files, tmp_path):
+        """A file and a directly built study give the same answer, because
+        they are the same object by the time anything runs."""
+        common = dict(
+            ensembles=[
+                {"ensemble": str(files / "a.dcd"),
+                 "topology": str(files / "top.pdb")},
+                {"ensemble": str(files / "b.dcd"),
+                 "topology": str(files / "top.pdb")},
+            ],
+            settings={"order_parameters": "cbcn", "random_state": 0, "s_num": 2},
+        )
+        from_python = Study(**common).run().summary()
+        path = Study(**common).save(tmp_path / "s.yml")
+        from_file = Study.from_file(path).run().summary()
+        assert from_python == from_file
+
+    def test_saving_from_the_command_line(self, files, tmp_path, capsys):
+        """A command line typed once becomes a study that can be committed."""
+        out = tmp_path / "typed.yml"
+        assert main([
+            "compare", "-e", str(files / "a.dcd"), str(files / "b.dcd"),
+            "-t", str(files / "top.pdb"), "-p", "cbcn", "-s", "0",
+            "--s-num", "2", "--save-config", str(out),
+        ]) == 0
+        assert out.exists()
+
+        written = Study.from_file(out)
+        assert len(written.ensembles) == 2
+        assert written.settings["random_state"] == 0
+        assert "block_permutation" not in written.settings
+
+
 class TestStudyObject:
     def test_labels_fall_back_to_the_source(self):
-        study = Study(ensembles=[{"source": "a/b/wt.dcd"}, {"source": "mut.dcd"}])
+        study = Study(ensembles=[{"ensemble": "a/b/wt.dcd"}, {"ensemble": "mut.dcd"}])
         assert study.labels == ["wt.dcd", "mut.dcd"]
 
     def test_an_index_reference_works(self):
-        study = Study(ensembles=[{"source": "a"}, {"source": "b"}], reference=1)
+        study = Study(ensembles=[{"ensemble": "a"}, {"ensemble": "b"}], reference=1)
         assert study.reference_index() == 1
 
     def test_an_out_of_range_index_is_refused(self):
-        study = Study(ensembles=[{"source": "a"}, {"source": "b"}], reference=5)
+        study = Study(ensembles=[{"ensemble": "a"}, {"ensemble": "b"}], reference=5)
         with pytest.raises(ValueError, match="out of range"):
             study.reference_index()
 
     def test_it_serialises(self):
-        study = Study(ensembles=[{"source": "a"}, {"source": "b"}], description="x")
+        study = Study(ensembles=[{"ensemble": "a"}, {"ensemble": "b"}], description="x")
         payload = json.loads(json.dumps(study.to_dict()))
         assert payload["description"] == "x"

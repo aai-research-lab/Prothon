@@ -26,7 +26,6 @@ from typing import Any
 
 from . import __version__
 from .config.schema import COMMANDS, parameters_for
-from .config.study import resolve_ensembles
 from .core.metrics import METRICS, describe_metric
 from .core.representation import ORDER_PARAMETERS, describe_order_parameter
 from .utils import configure_logging, split_list_arg
@@ -124,32 +123,6 @@ def _serialisable(value):
     return value
 
 
-def _apply_config(args):
-    """Fold a study file into the parsed arguments.
-
-    A flag given explicitly wins over the file, so a study can be re-run with
-    one thing changed -- a different seed, a different output directory --
-    without editing it. Whether a flag was *given* is decided by comparing it
-    with the schema default, since argparse cannot say otherwise.
-    """
-    from .config.schema import parameters_for
-    from .config.study import load_study
-
-    study = load_study(args.config)
-    defaults = {p.name: p.default for p in parameters_for("compare")}
-
-    for name, value in study.settings.items():
-        given = getattr(args, name, None)
-        if given == defaults.get(name) or given is None:
-            setattr(args, name, value)
-
-    if study.output_dir and (args.output_dir is None):
-        args.output_dir = study.output_dir
-    if isinstance(getattr(args, "order_parameters", None), list):
-        args.order_parameters = ",".join(args.order_parameters)
-    return args, study
-
-
 def _reference_index(reference, ensembles, topology, cache_dir=None):
     """A reference given as an index, or as a source of its own.
 
@@ -176,65 +149,43 @@ def _reference_index(reference, ensembles, topology, cache_dir=None):
 # Subcommands
 # ---------------------------------------------------------------------------
 def run_compare(args) -> int:
-    from .core.prothon_core import Prothon
-    from .ingest.sources import resolve_all
+    """Every path here builds a Study and runs that.
 
-    study = None
+    Flags become a study; a file is read into one; a file plus flags is the
+    file with the flags applied. There is one object to run, so the command
+    line cannot come to offer a setting the file does not.
+    """
+    from .config.study import Study
+
     if getattr(args, "config", None):
-        args, study = _apply_config(args)
-        ensembles = resolve_ensembles(study)
-        reference = study.reference_index()
+        study = Study.from_file(args.config).merged_with(args)
     else:
         if not args.ensembles:
             raise ValueError(
                 "compare needs --ensembles, or --config naming a file that "
                 "lists them."
             )
-        ensembles = resolve_all(args.ensembles, args.topology)
-        ensembles, reference = _reference_index(
-            args.reference, ensembles, args.topology
-        )
+        study = Study.from_arguments(args)
 
-    if getattr(args, "report", "summary") == "table":
+    if getattr(args, "save_config", None):
+        study.save(args.save_config)
+        print(f"Wrote {args.save_config}", file=sys.stderr)
+
+    if study.settings.get("report", getattr(args, "report", "summary")) == "table":
         # The same comparison, ranked, with coverage and fidelity beside each
         # row. Not a separate command: a benchmark is this view.
-        return _run_table(args, ensembles, reference)
+        return _run_table(args, study)
 
-    block = None
-    if getattr(args, "no_block_permutation", False):
-        block = False
-    elif getattr(args, "block_permutation", False):
-        block = True
-
-    prothon = Prothon(
-        ensembles=ensembles,
-        output_dir=args.output_dir,
-        verbose=args.verbose,
-        random_state=args.random_state,
-        study=study,
-    )
-    dimred = None if str(args.dimred).lower() in {"none", ""} else args.dimred
-    results = prothon.compare_ensembles(
-        order_parameters=args.order_parameters,
-        ref=reference,
-        x_num=args.x_num,
-        s_num=args.s_num,
-        dimred=dimred,
-        alpha=args.alpha,
-        metric=args.metric,
-        legacy=args.legacy_statistics,
-        n_permutations=args.n_permutations,
-        block_permutation=block,
-    )
+    comparison = study.run()
     print(
-        json.dumps(_serialisable(results), indent=2)
+        json.dumps(_serialisable(comparison.comparison_results), indent=2)
         if args.json
-        else prothon.summary()
+        else comparison.summary()
     )
     return 0
 
 
-def _run_table(args, ensembles, reference) -> int:
+def _run_table(args, study) -> int:
     """Every other ensemble against the reference, ranked.
 
     Ranked by the margin above each ensemble's own noise floor rather than by
@@ -243,15 +194,17 @@ def _run_table(args, ensembles, reference) -> int:
     """
     from .batch import benchmark
 
+    ensembles = study.resolve()
+    reference = study.reference_index()
     others = [e for i, e in enumerate(ensembles) if i != reference]
     if not others:
         raise ValueError("Nothing to compare against the reference.")
 
     result = benchmark(
         ensembles[reference], others,
-        order_parameters=args.order_parameters,
-        random_state=args.random_state,
-        output_dir=args.output_dir,
+        order_parameters=study.settings.get("order_parameters", "cbcn"),
+        random_state=study.settings.get("random_state"),
+        output_dir=study.output_dir,
     )
     if args.json:
         print(json.dumps(result.to_dict(), indent=2, default=float))
