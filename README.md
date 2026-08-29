@@ -172,6 +172,11 @@ nothing about it.
   reference. Columns are derived from the residue map rather than assumed — a
   mutation to glycine removes a C-beta and renumbers every `cbcn` column after
   it.
+- **Ensembles from the Protein Ensemble Database**, by accession:
+  `Ensemble.from_ped("PED00024")`. Comparing a model against an
+  experimentally determined ensemble asks whether it reproduces what the
+  measurements support, rather than whether it reproduces someone else's force
+  field.
 - **Weighted ensembles.** Conformer probabilities from a deposited ensemble, or
   frame weights from a reweighted simulation, reach the density estimate. The
   effective sample size (Kish 1965) sizes the noise floor: a thousand frames in

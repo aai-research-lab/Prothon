@@ -319,6 +319,22 @@ All notable changes to Prothon are recorded here. This project follows
   benchmark disables block permutation — there is no time correlation to
   correct for, and blocking would cost resolution for nothing.
 
+### Added — the Protein Ensemble Database
+
+- **`Ensemble.from_ped("PED00024")`**, with `ped_entry`, `ped_ensemble` and
+  `ped_ensembles` for looking at an entry before downloading it. Optional
+  caching, since entries run to tens of megabytes.
+- Three details of the API decide the shape of this, and each would give a
+  wrong answer if assumed: the `ensemble-pdb` endpoint returns a gzipped
+  **tar**, not a gzipped PDB; the model count in the metadata is not reliable
+  for parsing, since the first `MODEL` record shares a line with a tar header
+  and a naive count of PED00024 finds 575 where the entry says 576; and an
+  entry may hold several separate determinations, which are returned
+  separately rather than merged.
+- PED publishes no conformer populations, so ensembles loaded from it are
+  uniformly weighted. Recorded as a fact about the database rather than left
+  as an unexamined default.
+
 ### Refusals
 
 - **Coverage, not just identity.** Free end gaps make the aligner behave

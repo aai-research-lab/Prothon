@@ -55,6 +55,11 @@
 ```
 
 ```{eval-rst}
+.. automodule:: prothon.ingest.ped
+   :members: ped_entry, ped_ensemble, ped_ensembles
+```
+
+```{eval-rst}
 .. automodule:: prothon.ingest.sequence
    :members: Alignment, align, sequence_of, chain_sequences, residue_letter
 ```

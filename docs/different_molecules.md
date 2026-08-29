@@ -82,11 +82,45 @@ Ensemble.from_trajectory("md.xtc", "top.pdb", label="MD", stride=10)
 Ensemble.from_files(["rep1.xtc", "rep2.xtc"], "top.pdb", label="MD")  # one ensemble
 Ensemble.from_pdb_models("bioemu_out/*.pdb", label="BioEmu")
 Ensemble.from_pdb_models("nmr_entry.pdb", label="NMR")
+Ensemble.from_ped("PED00024")                                        # by accession
 ```
 
 `from_files` joins replicates of one condition into a single ensemble. Two
 different conditions are two ensembles, and joining those would average away
 the difference being measured — so it is never done implicitly.
+
+## From the Protein Ensemble Database
+
+PED holds ensembles determined from experiment — NMR, SAXS, paramagnetic
+relaxation enhancement, often with restrained molecular dynamics. Comparing a
+model against one asks a different question from comparing it against a
+simulation: not whether it reproduces someone else's force field, but whether
+it reproduces what the measurements support.
+
+```python
+from prothon.ingest import ped_entry, ped_ensemble, ped_ensembles
+
+alpha_synuclein = ped_ensemble("PED00024")     # 576 conformations, 140 residues
+```
+
+**An entry may hold several ensembles.** PED00001 holds `e001`, `e002` and
+`e003` — separate determinations of the same protein, not parts of one.
+`ped_ensemble` takes one; `ped_ensembles` returns them all, separately, because
+merging them would average over exactly the differences the deposition
+distinguished. Look before downloading:
+
+```python
+entry = ped_entry("PED00001")
+[(e["ensemble_id"], e["models"]) for e in entry["ensembles"]]
+# [('e001', 11), ('e002', 10), ('e003', 11)]
+```
+
+Entries run to tens of megabytes, so pass `cache_dir=` when a benchmark will
+load the same one repeatedly.
+
+**Conformers from PED are uniformly weighted.** The database publishes no
+populations, so an ensemble loaded from it has uniform weights. That is a fact
+about PED rather than an assumption made here.
 
 ## Weighted ensembles
 

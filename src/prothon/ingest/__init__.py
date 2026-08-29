@@ -2,6 +2,7 @@
 
   - :mod:`ensemble`  -- the :class:`Ensemble` type: sources, weights,
     provenance, quality
+  - :mod:`ped`       -- loading ensembles from the Protein Ensemble Database
   - :mod:`sequence`  -- sequences from topologies, and affine-gap alignment
   - :mod:`reconcile` -- the residue correspondence between two ensembles, and
     the representation columns that follow from it
@@ -13,6 +14,7 @@ cannot ask those questions, because there is no common frame to superpose into.
 """
 
 from .ensemble import Ensemble, EnsembleQuality
+from .ped import ped_ensemble, ped_ensembles, ped_entry
 from .reconcile import Correspondence, Substitution, feature_residues, reconcile
 from .sequence import Alignment, align, chain_sequences, sequence_of
 
@@ -22,6 +24,9 @@ __all__ = [
     "Ensemble",
     "EnsembleQuality",
     "Substitution",
+    "ped_ensemble",
+    "ped_ensembles",
+    "ped_entry",
     "align",
     "chain_sequences",
     "feature_residues",

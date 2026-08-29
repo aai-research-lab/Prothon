@@ -264,6 +264,26 @@ class Ensemble:
             },
         )
 
+    @classmethod
+    def from_ped(
+        cls,
+        accession: str,
+        ensemble_id: str = "e001",
+        label: str | None = None,
+        cache_dir=None,
+    ) -> Ensemble:
+        """Load an ensemble from the Protein Ensemble Database.
+
+        An entry may hold several separate determinations; this takes one.
+        :func:`~prothon.ingest.ped.ped_ensembles` returns them all.
+
+        >>> Ensemble.from_ped("PED00024")            # doctest: +SKIP
+        <Ensemble 'PED00024/e001': 576 frames, 140 residues>
+        """
+        from .ped import ped_ensemble
+
+        return ped_ensemble(accession, ensemble_id, label=label, cache_dir=cache_dir)
+
     # -- properties -------------------------------------------------------
 
     @property
