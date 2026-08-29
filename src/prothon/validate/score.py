@@ -7,7 +7,7 @@ that runs through the rest of this package -- the prediction is itself an
 estimate, made from a finite sample.
 
 Measured on a synthetic ensemble whose true average *is* the experimental
-value, so the only error is sampling:
+value, so the only error is sampling::
 
     conformations    chi2_red of a perfect ensemble
                20                              0.77
