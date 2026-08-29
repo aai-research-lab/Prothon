@@ -209,6 +209,14 @@ therefore ranks a thinly sampled model first. Rows report whether a model
 cannot support a comparison gets a row saying so rather than a number. See the
 [benchmarking page](https://prothon.readthedocs.io/en/latest/benchmark.html).
 
+- **Scoring against experiment.** Radius of gyration, end-to-end distance,
+  PRE distances, FRET efficiencies and ³J couplings computed from the
+  coordinates, and scored against measurements beside a floor — because a
+  perfect ensemble of twenty conformations scores χ²_red = 0.77 and a perfect
+  ensemble of five thousand scores 0.00, so fitting either to 1.0 is fitting
+  to noise. See the
+  [validation page](https://prothon.readthedocs.io/en/latest/validate.html).
+
 ## What it costs
 
 Linear in the number of conformations and quadratic in chain length, both

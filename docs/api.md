@@ -83,6 +83,18 @@
    :members: benchmark, BenchmarkResult, BenchmarkRow
 ```
 
+## Scoring against experiment
+
+```{eval-rst}
+.. automodule:: prothon.validate.observables
+   :members: radius_of_gyration, end_to_end, pairwise_distance, pre_distance, fret_efficiency, j_coupling_hn_ha, average_observable, Observable
+```
+
+```{eval-rst}
+.. automodule:: prothon.validate.score
+   :members: score_observable, AgreementResult
+```
+
 ## Plotting
 
 ```{eval-rst}

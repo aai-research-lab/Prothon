@@ -335,6 +335,32 @@ All notable changes to Prothon are recorded here. This project follows
   uniformly weighted. Recorded as a fact about the database rather than left
   as an unexamined default.
 
+### Added — scoring against experiment
+
+- **`prothon.validate`** predicts what an experiment would have measured and
+  checks against what it did: radius of gyration, end-to-end distance,
+  pairwise and PRE distances, FRET efficiencies, and ³J(HN,HA) couplings by
+  the Karplus relation.
+- **Every score carries a floor.** A perfect ensemble does not score
+  χ²_red = 1: measured on ensembles whose true average *is* the experimental
+  value, a perfect ensemble of 20 conformations scores 0.77 and one of 5000
+  scores 0.00. The floor comes from scoring one half of the ensemble against
+  the other, and `within_floor` says whether the agreement is already inside
+  what the sampling permits.
+- **Sixth-power averaging where the physics requires it.** A PRE reports
+  ⟨r⁻⁶⟩^(−1/6), not ⟨r⟩. On a distribution with a rare compact state — 90% at
+  5.0 nm, 10% at 1.5 nm — those are 2.19 nm and 4.64 nm, and the linear average
+  misses precisely the state PRE exists to detect. A rigid test case cannot
+  catch this: on a narrow distribution the two agree to a hundredth of a
+  nanometre.
+- **Chemical shifts, SAXS profiles and RDCs are deliberately not computed.**
+  Each needs something absent from the coordinates — an empirical predictor
+  trained on a database, an explicit solvent layer, or an alignment tensor
+  fitted to the data being compared against. `score_observable` accepts
+  predictions from any external tool and scores them with the same floor.
+- Experimental uncertainties are required rather than optional: a chi-squared
+  without them is a sum of squares in arbitrary units.
+
 ### Refusals
 
 - **Coverage, not just identity.** Free end gaps make the aligner behave

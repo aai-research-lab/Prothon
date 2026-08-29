@@ -49,6 +49,7 @@ statistics
 calibration
 different_molecules
 benchmark
+validate
 cli_reference
 performance
 api

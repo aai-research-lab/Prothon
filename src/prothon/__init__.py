@@ -52,14 +52,17 @@ from .core.representation import (
     describe_measure,
 )
 from .utils import load_trajectories
+from .validate import AgreementResult, score_observable
 
 __all__ = [
     "Prothon",
     "BenchmarkResult",
     "ComparisonResult",
     "EnsembleComparison",
+    "AgreementResult",
     "PrecisionRecall",
     "precision_recall",
+    "score_observable",
     "benchmark",
     "distinguishability",
     "MEASURES",
