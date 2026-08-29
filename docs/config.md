@@ -178,11 +178,15 @@ Every run writes the study that produced it into `manifest.json`, so a result
 found later carries the question it answered rather than only the answer:
 
 ```json
-"study": {
-  "path": "/work/study.yml",
-  "description": "wild type against the F5G mutant",
-  "ensembles": [{"source": "wt.xtc", "label": "wild type", ...}],
-  "settings": {"order_parameters": "cbcn", "random_state": 0}
+{
+  "study": {
+    "path": "/work/study.yml",
+    "description": "wild type against the F5G mutant",
+    "ensembles": [
+      {"ensemble": "wt.xtc", "topology": "wt.pdb", "label": "wild type"}
+    ],
+    "compare": {"order_parameters": "cbcn", "random_state": 0}
+  }
 }
 ```
 

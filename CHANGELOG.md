@@ -438,6 +438,23 @@ All notable changes to Prothon are recorded here. This project follows
   question it answered rather than only the answer.
 - `pyyaml` is now a declared dependency.
 
+### Fixed — the README described a superseded interface
+
+- Both headline commands still used `-traj`, `-top` and `--seed` three
+  releases after those became `--ensembles`, `--topology` and
+  `--random-state`, and the flag table listed none of `--config`,
+  `--save-config`, `--order-parameters` or `--report`. An earlier edit had
+  targeted text that had already moved and silently did nothing.
+- A test now reads the README and fails on a flag that does not exist in the
+  parser, on any of the superseded names, and on the absence of a capability
+  worth finding. A README is the first thing a reader sees and the last thing
+  anybody edits.
+- A fenced block labelled `json` or `yaml` is now checked to be that. One in
+  `config.md` contained an elision and failed the documentation build on a
+  clean checkout while a local incremental build reported success — an
+  incremental Sphinx build does not re-read an unchanged page, so it can pass
+  on a file it never looked at.
+
 ### Refusals
 
 - **Coverage, not just identity.** Free end gaps make the aligner behave

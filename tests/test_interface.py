@@ -75,6 +75,106 @@ class TestSchema:
             assert name in api, f"{name} is a flag but not a keyword argument"
 
 
+class TestTheReadmeDescribesThisVersion:
+    """A README is the first thing a reader sees and the last thing anybody
+    edits. Both headline commands in this one were still the 2.x form three
+    releases after it changed, because an edit had targeted text that had
+    already moved and silently did nothing."""
+
+    @staticmethod
+    def _readme():
+        import pathlib
+
+        for parent in pathlib.Path(__file__).resolve().parents:
+            candidate = parent / "README.md"
+            if candidate.exists():
+                return candidate.read_text()
+        pytest.skip("README.md not found beside the tests")
+
+    def test_no_command_uses_the_superseded_flags(self):
+        text = self._readme()
+        for flag in ("-traj", "-top ", "--seed", "--measures"):
+            assert flag not in text, f"the README still uses {flag}"
+
+    def test_every_flag_shown_exists(self):
+        import re
+
+        from prothon.cli import build_parser
+
+        known = {"--help", "--version"}
+        for parser in build_parser()._subparsers._group_actions[0].choices.values():
+            known |= {o for a in parser._actions for o in a.option_strings}
+
+        shown = set(re.findall(r"(?<![\w-])(--[a-z][a-z-]+)", self._readme()))
+        unknown = sorted(f for f in shown if f not in known)
+        assert not unknown, f"the README shows flags that do not exist: {unknown}"
+
+    def test_it_mentions_what_the_tool_can_do(self):
+        """Not a style rule: a capability absent from the README is one nobody
+        finds."""
+        text = self._readme()
+        for probe in ("--config", "--order-parameters", "--report", "PED000"):
+            assert probe in text, f"the README does not mention {probe}"
+
+
+class TestDocumentedCodeBlocks:
+    """A fenced block labelled `json` is lexed as JSON when the docs are built,
+    and a block that does not parse fails the build -- after the tests pass, on
+    a clean checkout, which is the worst place to find out.
+
+    An incremental Sphinx build does not re-read an unchanged page, so a local
+    build can report success on a file it never looked at. This checks the
+    content directly, on the machine where it was written.
+    """
+
+    @staticmethod
+    def _blocks():
+        import pathlib
+        import re
+
+        for parent in pathlib.Path(__file__).resolve().parents:
+            if (parent / "docs").is_dir():
+                root = parent
+                break
+        else:
+            pytest.skip("docs/ not found beside the tests")
+
+        files = sorted((root / "docs").glob("*.md")) + [root / "README.md"]
+        for path in files:
+            if not path.exists():
+                continue
+            text = path.read_text()
+            for match in re.finditer(r"```(\w+)\n(.*?)```", text, re.S):
+                yield (
+                    path.name,
+                    text[: match.start()].count("\n") + 1,
+                    match.group(1),
+                    match.group(2),
+                )
+
+    def test_every_json_block_is_json(self):
+        import json
+
+        for name, line, lang, body in self._blocks():
+            if lang != "json":
+                continue
+            try:
+                json.loads(body)
+            except ValueError as error:
+                pytest.fail(f"{name}:{line} is labelled json and is not: {error}")
+
+    def test_every_yaml_block_is_yaml(self):
+        yaml = pytest.importorskip("yaml")
+
+        for name, line, lang, body in self._blocks():
+            if lang not in {"yaml", "yml"}:
+                continue
+            try:
+                yaml.safe_load(body)
+            except yaml.YAMLError as error:
+                pytest.fail(f"{name}:{line} is labelled yaml and is not: {error}")
+
+
 class TestSources:
     def test_a_trajectory_needs_a_topology(self, files):
         with pytest.raises(ValueError, match="needs a topology"):

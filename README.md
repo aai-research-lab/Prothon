@@ -24,7 +24,7 @@
 ---
 
 ```bash
-prothon -traj wild_type.dcd,mutant.dcd -top topology.pdb -p cbcn
+prothon compare --ensembles wild_type.dcd mutant.dcd --topology topology.pdb
 ```
 
 ```
@@ -96,7 +96,7 @@ sets out what is and is not corrected for.
 
 ```bash
 pip install prothon-ensembles
-prothon --info
+prothon info
 ```
 
 The distribution is `prothon-ensembles` because PyPI's `prothon` was registered
@@ -108,20 +108,31 @@ in 2020 by an unrelated project. **The import name and the command are both
 From the command line:
 
 ```bash
-prothon -traj a.dcd,b.dcd,c.dcd -top top.pdb -p cbcn,cata -o results --seed 0
+prothon compare -e a.dcd b.dcd c.dcd -t top.pdb -p cbcn,cata -o results -s 0
 ```
 
-| flag | meaning |
-|---|---|
-| `-traj` | Trajectory files, one per ensemble, comma-separated. Never concatenated. |
-| `-top` | Topology (PDB), shared by all of them. |
-| `-m` | Order parameters: `cbcn`, `cacn`, `caba`, `cata`, `sasa`. |
-| `--metric` | Distance: `jsd` (default), `wasserstein`, `ks`. |
-| `--s-num` | Split-half repeats behind the noise floor. |
-| `-r` | Reference ensemble index (default 0). |
-| `-o` | Output root. Each measure writes `<measure>_output/`. |
-| `-d` | Projections: `pca`, `mds`, `tsne`. Off by default. |
-| `--seed` | Set it, and the run is reproducible. |
+| flag | short | meaning |
+|---|---|---|
+| `--ensembles` | `-e` | Sources to compare, one ensemble each. Never concatenated. |
+| `--topology` | `-t` | For sources that need one. |
+| `--reference` | `-r` | An index into `--ensembles`, or a source of its own. |
+| `--order-parameters` | `-p` | `cbcn`, `cacn`, `caba`, `cata`, `sasa`. |
+| `--metric` | | `jsd` (default), `wasserstein`, `ks`. |
+| `--random-state` | `-s` | Set it, and the run is reproducible. |
+| `--report` | | `summary`, or `table` to rank several against a reference. |
+| `--config` | `-c` | A study in a file. Flags override it. |
+| `--save-config` | | Write the study this command describes to a file. |
+| `--output-dir` | `-o` | Where to write results. |
+
+`--ensembles` takes a trajectory, a directory of structures, a glob, a
+multi-model PDB, or a PED accession — and they mix:
+
+```bash
+prothon compare -e md.xtc PED00024 bioemu_out/ -t target.pdb
+```
+
+Every flag has the same name as its keyword argument, because both are
+generated from one schema.
 
 Or from Python:
 
@@ -144,9 +155,51 @@ comparison.p_values_withheld        # False: the sampling supported a test
 print(study.summary())
 ```
 
-Each measure writes a directory containing the representation matrices as CSV,
+Each order parameter writes a directory containing the representation matrices as CSV,
 heatmaps, global and per-residue figures, and a `manifest.json` recording the
 inputs, parameters, seed and version that produced them.
+
+More, with real output, on the
+[examples page](https://prothon.readthedocs.io/en/latest/examples.html).
+
+## A few things you can ask
+
+```bash
+# two conditions, one protein
+prothon compare -e wt.dcd mutant.dcd -t top.pdb -p cbcn -s 0
+
+# several order parameters, and a distance in the feature's own units
+prothon compare -e a.dcd b.dcd -t top.pdb -p cbcn,cata,sasa --metric wasserstein
+
+# several models against one reference, ranked
+prothon compare -e bioemu/ alphaflow/ -r md.xtc -t target.pdb --report table
+
+# a simulation, a deposited ensemble and a model, on equal terms
+prothon compare -e md.xtc PED00024 bioemu/ -t target.pdb
+
+# or write the study down, and commit it beside the manuscript
+prothon compare --config study.yml
+```
+
+```python
+from prothon import Prothon
+from prothon.ingest import Ensemble
+
+# ensembles that are not the same molecule
+wt  = Ensemble.from_trajectory("wt.xtc",  "wt.pdb",  label="wild type")
+mut = Ensemble.from_trajectory("mut.xtc", "mut.pdb", label="F5G")
+study = Prothon(ensembles=[wt, mut], random_state=0)
+
+study.compare_ensembles(order_parameters="cbcn")   # where do they differ
+study.distinguishability(order_parameter="cbcn")   # differences between residues
+study.coverage_and_fidelity(order_parameter="cbcn")  # missed or invented states
+```
+
+```python
+# against experiment, rather than against another ensemble
+from prothon.validate import radius_of_gyration, score_observable
+score_observable(radius_of_gyration(traj)[:, None], [2.71], [0.08])
+```
 
 More, with real output, on the
 [examples page](https://prothon.readthedocs.io/en/latest/examples.html).
@@ -219,6 +272,37 @@ cannot support a comparison gets a row saying so rather than a number. See the
   ensemble of five thousand scores 0.00, so fitting either to 1.0 is fitting
   to noise. See the
   [validation page](https://prothon.readthedocs.io/en/latest/validate.html).
+
+## The study, written down
+
+A command line asks a question once; a file records one.
+
+```bash
+prothon compare --config study.yml
+```
+
+```yaml
+ensembles:
+  - ensemble: wt.xtc
+    topology: wt.pdb        # each ensemble may have its own
+    label: wild type
+  - ensemble: mut.xtc
+    topology: mut.pdb
+    label: F5G
+
+reference: wild type
+
+compare:
+  order_parameters: [cbcn, cata]
+  random_state: 0
+```
+
+Flags, a file and the Python API all build the same object and run that, so
+none of them can offer a setting the others do not — and a command line typed
+once can be written down with `--save-config`. Every key is checked against the
+schema, so a misspelled `random_seed` is refused rather than silently leaving
+the study unseeded. See the
+[study page](https://prothon.readthedocs.io/en/latest/config.html).
 
 ## What it costs
 
