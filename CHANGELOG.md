@@ -396,6 +396,18 @@ All notable changes to Prothon are recorded here. This project follows
   mid-write raised `BrokenPipeError` out of `main`, so the only thing a reader
   saw of an otherwise successful run was a stack trace.
 
+### Documentation
+
+- **An examples page** working through nine things people actually want to do,
+  with real output from a run of the code: two conditions on one protein,
+  several order parameters at once, a difference that lives between residues,
+  missed states against invented ones, molecules that are not the same
+  molecule, several models ranked against one reference, scoring against
+  experiment, loading from the Protein Ensemble Database, and mixing sources of
+  different kinds in one run.
+- Every flag, method and keyword shown is checked against the code rather than
+  written from memory.
+
 ### Refusals
 
 - **Coverage, not just identity.** Free end gaps make the aligner behave

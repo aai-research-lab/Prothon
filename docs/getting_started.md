@@ -92,6 +92,14 @@ for comparison in results["cbcn"]:
 print(study.summary())
 ```
 
+## Other things to ask
+
+This page covers one comparison. [Examples](examples.md) works through nine
+more: several order parameters at once, differences that live between residues,
+telling a missed state from an invented one, comparing molecules that are not
+the same molecule, ranking several models against one reference, scoring
+against experiment, and mixing sources of different kinds in one run.
+
 ## Reproducibility
 
 Set `random_state` (or `--seed`). The noise floor and the p-values come from

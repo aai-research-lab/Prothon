@@ -43,6 +43,7 @@ differs.
 
 installation
 getting_started
+examples
 order_parameters
 metrics
 statistics

@@ -148,6 +148,9 @@ Each measure writes a directory containing the representation matrices as CSV,
 heatmaps, global and per-residue figures, and a `manifest.json` recording the
 inputs, parameters, seed and version that produced them.
 
+More, with real output, on the
+[examples page](https://prothon.readthedocs.io/en/latest/examples.html).
+
 ## The order parameters
 
 | name | quantity | units | circular |
