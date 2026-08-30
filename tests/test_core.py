@@ -271,3 +271,53 @@ class TestPathCasing:
 
         collisions = {k: v for k, v in seen.items() if len(v) > 1}
         assert not collisions, f"paths differing only by case: {collisions}"
+
+
+class TestGlobalDissimilarityIsNotFiltered:
+    """The magnitude of a difference must not depend on the significance filter.
+
+    Through 2.1 ``global_dissimilarity`` was a mean over the *masked*
+    per-feature values, so it read as exactly zero whenever nothing survived --
+    including when the sampling was too poor to run a test at all and every
+    p-value was withheld. ``resolved`` then compared that zero against a noise
+    floor which is itself an unmasked mean over every feature, so the three
+    ubiquitin ensembles furthest from the reference reported as unresolvable.
+    """
+
+    def _result(self, *, withheld, raw=0.40, floor=0.035, n=70):
+        import numpy as np
+
+        from prothon.core.dissimilarity import ComparisonResult
+
+        return ComparisonResult(
+            ensemble_index=1,
+            reference_index=0,
+            global_dissimilarity=float(raw),
+            masked_global_dissimilarity=0.0,
+            local_dissimilarity=np.zeros(n),
+            raw_local_dissimilarity=np.full(n, raw),
+            p_values=np.ones(n),
+            significant=np.zeros(n, dtype=bool),
+            noise_floor=float(floor),
+            n_frames=(5000, 5000),
+            p_values_withheld=withheld,
+        )
+
+    def test_a_withheld_p_value_does_not_make_a_large_difference_unresolvable(self):
+        result = self._result(withheld=True)
+        assert result.resolved
+
+    def test_nothing_significant_does_not_make_a_large_difference_unresolvable(self):
+        result = self._result(withheld=False)
+        assert result.resolved
+
+    def test_the_two_means_are_compared_against_the_same_thing(self):
+        """The floor is an unmasked mean, so `resolved` must use one too."""
+        result = self._result(withheld=True)
+        assert result.masked_global_dissimilarity == 0.0
+        assert result.global_dissimilarity > result.masked_global_dissimilarity
+        assert result.resolved is (result.global_dissimilarity > result.noise_floor)
+
+    def test_a_difference_below_the_floor_is_still_unresolved(self):
+        result = self._result(withheld=False, raw=0.02, floor=0.035)
+        assert not result.resolved

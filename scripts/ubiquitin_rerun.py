@@ -147,9 +147,9 @@ def main() -> int:
         for a, b in zip(old, new):
             label = ensembles[b.ensemble_index].label
             # The *unmasked* per-residue values are the quantity that should
-            # not have moved. `global_dissimilarity` is a mean over the masked
-            # ones, so it necessarily changes when the significance filter
-            # does -- comparing that would be comparing the filter to itself.
+            # not have moved. The masked mean necessarily changes when the
+            # significance filter does, so comparing that would be comparing
+            # the filter to itself.
             delta = float(
                 np.abs(
                     a.raw_local_dissimilarity - b.raw_local_dissimilarity
@@ -158,13 +158,10 @@ def main() -> int:
             calls_old = int(a.n_significant)
             calls_new = int(b.n_significant)
             withheld = not b.p_values_reported
-            # The *raw* mean, not `global_dissimilarity`: that is a mean over
-            # masked values and reads as zero whenever nothing survives the
-            # filter, which is the opposite of what it looks like.
-            raw_mean = float(np.mean(b.raw_local_dissimilarity))
+            raw_mean = float(b.global_dissimilarity)
             lines.append(
                 f"| {label} | {raw_mean:.4f} | {b.noise_floor:.4f} | "
-                f"{'yes' if raw_mean > b.noise_floor else 'no'} | "
+                f"{'yes' if b.resolved else 'no'} | "
                 f"{calls_old}/{n_features} | "
                 + ("withheld" if withheld else f"{calls_new}/{n_features}")
                 + f" | {b.correlation_time:.0f} | {b.n_blocks} | "
@@ -177,6 +174,8 @@ def main() -> int:
                 "n_blocks": int(b.n_blocks),
                 "dissimilarity_published": float(a.global_dissimilarity),
                 "dissimilarity_current": float(b.global_dissimilarity),
+                "masked_published": float(a.masked_global_dissimilarity),
+                "masked_current": float(b.masked_global_dissimilarity),
                 "noise_floor": float(b.noise_floor),
                 "resolved": bool(b.resolved),
                 "significant_published": calls_old,

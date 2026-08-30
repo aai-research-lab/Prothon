@@ -141,8 +141,22 @@ class ComparisonResult:
     Attributes
     ----------
     global_dissimilarity
-        Mean local dissimilarity over features, after non-significant features
-        have been set to zero.
+        Mean local dissimilarity over *every* feature, before any significance
+        filter. This is the magnitude of the difference between the two
+        ensembles, and it is the quantity the noise floor is comparable to:
+        the floor is itself an unmasked mean over every feature, so comparing
+        a filtered value against it compares two different quantities.
+
+        It was a mean over the *masked* values through 2.1, which made a large
+        difference read as zero whenever nothing survived the filter -- and
+        whenever the sampling was too poor to run the filter at all, which is
+        exactly when a magnitude beside a floor is the only thing left to say.
+    masked_global_dissimilarity
+        Mean over the features called significant, and zero elsewhere. What
+        2.1 called ``global_dissimilarity``. Reported alongside rather than
+        instead, because it answers a different question: not how far apart
+        the ensembles are, but how much of that distance the sampling supports.
+        Undefined in any useful sense when nothing survives.
     local_dissimilarity
         Per-feature dissimilarity, masked.
     raw_local_dissimilarity
@@ -169,6 +183,7 @@ class ComparisonResult:
     ensemble_index: int
     reference_index: int
     global_dissimilarity: float
+    masked_global_dissimilarity: float
     local_dissimilarity: np.ndarray
     raw_local_dissimilarity: np.ndarray
     p_values: np.ndarray
@@ -202,6 +217,14 @@ class ComparisonResult:
 
     @property
     def resolved(self) -> bool:
+        """Whether the difference exceeds what this much sampling could produce.
+
+        Compares the unmasked mean against the floor, because the floor is an
+        unmasked mean. It is deliberately independent of the significance
+        filter: a comparison whose p-values were withheld for want of
+        independent blocks still has a magnitude, and that magnitude is the
+        whole of what can be said about it.
+        """
         return bool(self.global_dissimilarity > self.noise_floor)
 
     @property
@@ -237,6 +260,7 @@ class ComparisonResult:
             "reference_index": self.reference_index,
             "order_parameter": self.order_parameter,
             "global_dissimilarity": float(self.global_dissimilarity),
+            "masked_global_dissimilarity": float(self.masked_global_dissimilarity),
             "local_dissimilarity": self.local_dissimilarity.tolist(),
             "raw_local_dissimilarity": self.raw_local_dissimilarity.tolist(),
             "p_values": self.p_values.tolist(),
@@ -1095,7 +1119,7 @@ def dissimilarity(
     logger.debug(
         "%s: global=%.4f floor=%.4f significant=%d/%d",
         order_parameter or "comparison",
-        float(np.mean(local)),
+        float(np.mean(raw_local)),
         noise_floor,
         int(np.count_nonzero(significant)),
         raw_local.size,
@@ -1104,7 +1128,8 @@ def dissimilarity(
     return ComparisonResult(
         ensemble_index=ensemble_index,
         reference_index=reference_index,
-        global_dissimilarity=float(np.mean(local)),
+        global_dissimilarity=float(np.mean(raw_local)),
+        masked_global_dissimilarity=float(np.mean(local)),
         local_dissimilarity=local,
         raw_local_dissimilarity=raw_local,
         p_values=p_values,
