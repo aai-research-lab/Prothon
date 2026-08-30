@@ -101,7 +101,7 @@ def main() -> int:
         "of the 2023 paper; `current` is the default now.",
         "",
     ]
-    raw: dict = {}
+    collected: dict = {}
 
     for name in names:
         print(f"\n{name}:", file=sys.stderr)
@@ -116,8 +116,8 @@ def main() -> int:
         lines += [
             f"## {name.upper()}",
             "",
-            "| against Q99 | d | Δd | floor | published | current | τ |",
-            "|---|---|---|---|---|---|---|",
+            "| against Q99 | raw d | floor | resolved | published | current | τ | blocks | n_eff |",
+            "|---|---|---|---|---|---|---|---|---|",
         ]
         rows = []
         for a, b in zip(old, new):
@@ -137,10 +137,10 @@ def main() -> int:
             # The *raw* mean, not `global_dissimilarity`: that is a mean over
             # masked values and reads as zero whenever nothing survives the
             # filter, which is the opposite of what it looks like.
-            raw = float(np.mean(b.raw_local_dissimilarity))
+            raw_mean = float(np.mean(b.raw_local_dissimilarity))
             lines.append(
-                f"| {label} | {raw:.4f} | {b.noise_floor:.4f} | "
-                f"{'yes' if raw > b.noise_floor else 'no'} | "
+                f"| {label} | {raw_mean:.4f} | {b.noise_floor:.4f} | "
+                f"{'yes' if raw_mean > b.noise_floor else 'no'} | "
                 f"{calls_old}/{n_features} | "
                 + ("withheld" if withheld else f"{calls_new}/{n_features}")
                 + f" | {b.correlation_time:.0f} | {b.n_blocks} | "
@@ -148,7 +148,7 @@ def main() -> int:
             )
             rows.append({
                 "ensemble": label,
-                "raw_mean_distance": raw,
+                "raw_mean_distance": raw_mean,
                 "raw_max_difference": delta,
                 "n_blocks": int(b.n_blocks),
                 "dissimilarity_published": float(a.global_dissimilarity),
@@ -161,7 +161,7 @@ def main() -> int:
                 "correlation_time": float(b.correlation_time),
                 "n_features": n_features,
             })
-        raw[name] = rows
+        collected[name] = rows
 
         magnitudes = max(
             float(np.abs(a.raw_local_dissimilarity - b.raw_local_dissimilarity).max())
@@ -212,7 +212,7 @@ def main() -> int:
             handle.write(document)
     if args.json:
         with open(args.json, "w", encoding="utf-8") as handle:
-            json.dump(raw, handle, indent=2, default=float)
+            json.dump(collected, handle, indent=2, default=float)
     return 0
 
 
