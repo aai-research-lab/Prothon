@@ -1,18 +1,38 @@
 cff-version: 1.2.0
 message: "If you use Prothon, please cite the method paper below."
-title: "Prothon: efficient comparison of protein conformational ensembles"
+title: "Prothon: statistically calibrated comparison of protein conformational ensembles"
 abstract: >-
   Prothon represents a protein conformational ensemble as a vector of
   probability distributions over local order parameters and quantifies the
   dissimilarity between ensembles by the Jensen-Shannon distance between
   corresponding distributions. The local representation requires no structural
   superposition, so the cost is linear rather than quadratic in ensemble size.
+  Every comparison is reported alongside a noise floor measured from disjoint
+  halves of each ensemble, which is the smallest difference the available
+  sampling can resolve; per-residue significance is assessed against a null
+  built by permuting contiguous blocks of conformations, calibrated against
+  synthetic systems with known ground truth; and no p-value is reported where
+  the data cannot support one.
 type: software
 license: MIT
+version: 2.2.0
 repository-code: "https://github.com/aai-research-lab/Prothon"
+url: "https://prothon.readthedocs.io"
+keywords:
+  - conformational ensembles
+  - molecular dynamics
+  - intrinsically disordered proteins
+  - ensemble comparison
+  - statistical calibration
 authors:
+  # The software is written by AA; the method it implements is joint work, and
+  # this list reflects the method. Revisit if that stops being the right
+  # balance.
   - family-names: Aina
     given-names: Adekunle
+    email: aaina@csudh.edu
+    orcid: "https://orcid.org/0000-0002-8215-7452"
+    affiliation: "California State University Dominguez Hills"
   - family-names: Hsueh
     given-names: Shawn C. C.
   - family-names: Plotkin

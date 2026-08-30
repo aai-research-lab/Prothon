@@ -5,15 +5,15 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "prothon-ensembles"
 dynamic = ["version"]
-description = "Efficient comparison of protein conformational ensembles using local order parameters"
+description = "Statistically calibrated comparison of protein conformational ensembles using local order parameters"
 readme = "README.md"
 requires-python = ">=3.9, <3.14"
 license = { text = "MIT" }
 authors = [
-    { name = "Adekunle Aina", email = "kunleaina@gmail.com" },
+    { name = "Adekunle Aina", email = "aaina@csudh.edu" },
 ]
 maintainers = [
-    { name = "Adekunle Aina", email = "kunleaina@gmail.com" },
+    { name = "Adekunle Aina", email = "aaina@csudh.edu" },
 ]
 keywords = [
     "protein-ensembles",
