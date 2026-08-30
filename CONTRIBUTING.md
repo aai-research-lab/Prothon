@@ -55,6 +55,7 @@ found defects that the test suite could not:
 ```bash
 python scripts/scale_envelope.py --full     # time and memory across sizes
 python scripts/calibration.py --replicates 1000
+python scripts/floor_scaling.py             # how the floor depends on n
 ```
 
 The scale envelope found a memory bug that needed 8,000 frames to appear; the

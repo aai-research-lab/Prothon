@@ -30,6 +30,58 @@ Reporting a difference without the resolution limit beside it invites a reader
 to interpret a number the sampling cannot support. The floor is cheap to
 measure and there is no good reason to omit it.
 
+### The floor is conservative, by a quarter to a half
+
+Halves have half the frames, so the floor measures the resolution limit at
+*n*/2 while the study has *n*. Measured on samples from one distribution with
+the Jensen–Shannon distance:
+
+| frames in each sample | distance between two of them |
+|---|---|
+| 250 | 0.079 |
+| 500 | 0.063 |
+| 1000 | 0.050 |
+
+A 1000-frame ensemble reports a floor of about 0.063 where the limit at 1000
+frames is 0.050 — roughly **1.25× too high**.
+
+The error is in the safe direction: a difference called resolvable is
+resolvable, and some real differences near the limit are called unresolvable
+instead. Read a result within about a quarter of its floor as borderline
+rather than settled.
+
+#### Why the factor is not corrected for
+
+The obvious fix is to divide by √2, on the grounds that the distance between
+two samples of one distribution goes as *n*^(−1/2). It was measured, and it
+does not.
+
+| metric | Gaussian | bimodal | skewed | uniform |
+|---|---|---|---|---|
+| `jsd` | −0.351 | −0.390 | −0.465 | −0.428 |
+| `wasserstein` | −0.495 | −0.563 | −0.597 | −0.592 |
+| `ks` | −0.492 | −0.530 | −0.560 | −0.546 |
+
+Wasserstein and Kolmogorov–Smirnov sit near −0.5. **Jensen–Shannon, the
+default, does not** — it decays more slowly, because it is estimated from a
+kernel density whose bandwidth also depends on the sample size, so its floor
+carries a smoothing bias that fades more slowly than the sampling error. The
+exponent moves with the shape of the distribution as well.
+
+A single √2 would therefore be about right for two of the three metrics and too
+large for the third, pushing its floor *below* the true limit. A floor that
+understates the resolution limit is exactly the failure this measurement exists
+to prevent.
+
+Measuring the slope rather than assuming it does not rescue it either.
+Extrapolating from splits at *n*/4 and *n*/2 gives a two-point slope that is
+itself noisy, and on a skewed distribution the extrapolated Jensen–Shannon
+floor came out 29% below the truth — again in the unsafe direction.
+
+So the floor stays as the split-half value: conservative, in the direction that
+costs sensitivity rather than credibility, and documented rather than adjusted.
+Reproduce with `python scripts/floor_scaling.py`.
+
 ## The null distribution
 
 For each feature, Prothon asks whether the two ensembles' distributions differ

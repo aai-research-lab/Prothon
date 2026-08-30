@@ -519,9 +519,15 @@ All notable changes to Prothon are recorded here. This project follows
   1000-frame ensemble reports about 0.063 where the limit at 1000 frames is
   0.050. The error is in the safe direction, and correcting it would mean
   assuming the distance scales as *n*^(−1/2) for every metric, which has been
-  measured only for the Jensen–Shannon distance on Gaussians. Documented
-  rather than corrected, with the advice to read a result within 25% of its
-  floor as borderline.
+  measured only for the Jensen–Shannon distance on Gaussians. **Now measured
+  for all three metrics on four distribution shapes, and the correction is
+  refused**: Wasserstein and Kolmogorov–Smirnov scale near *n*^(−0.5), but
+  Jensen–Shannon — the default — decays as *n*^(−0.35) to *n*^(−0.47), because
+  it is estimated from a kernel density whose bandwidth also depends on sample
+  size. A single √2 would push its floor *below* the true limit, which is the
+  failure the floor exists to prevent. Extrapolating a measured slope from two
+  split sizes fails the same way, landing 29% low on a skewed distribution.
+  `scripts/floor_scaling.py` reproduces the measurement.
 
 ### Refusals
 
