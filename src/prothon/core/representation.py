@@ -124,6 +124,11 @@ class OrderParameter:
         Whether column ``i`` corresponds to residue ``i``. Angles and torsions
         are defined on windows of consecutive residues, so their columns are
         offset from the residue index and are labelled accordingly.
+    scope
+        ``local`` for a quantity with one column per residue or per window,
+        ``global`` for one describing the whole molecule -- a radius of
+        gyration is one number per conformation, so its representation has a
+        single column and there is nothing to plot per residue.
     """
 
     name: str
@@ -131,6 +136,11 @@ class OrderParameter:
     units: str
     circular: bool
     per_residue: bool
+    scope: str = "local"
+
+    @property
+    def is_global(self) -> bool:
+        return self.scope == "global"
 
 
 #: Every order parameter Prothon knows. The single source of truth: the CLI
@@ -164,6 +174,38 @@ ORDER_PARAMETERS: dict[str, OrderParameter] = {
         "rad",
         circular=True,
         per_residue=False,
+    ),
+    "rg": OrderParameter(
+        "rg",
+        "Radius of gyration",
+        "nm",
+        circular=False,
+        per_residue=False,
+        scope="global",
+    ),
+    "ree": OrderParameter(
+        "ree",
+        "End-to-end distance",
+        "nm",
+        circular=False,
+        per_residue=False,
+        scope="global",
+    ),
+    "asph": OrderParameter(
+        "asph",
+        "Asphericity: 0 for a sphere, 1 for a rod",
+        "",
+        circular=False,
+        per_residue=False,
+        scope="global",
+    ),
+    "nu": OrderParameter(
+        "nu",
+        "Flory scaling exponent: 0.33 compact, 0.5 ideal, 0.588 expanded",
+        "",
+        circular=False,
+        per_residue=False,
+        scope="global",
     ),
     "sasa": OrderParameter(
         "sasa",
@@ -334,6 +376,106 @@ def compute_cata(traj: md.Trajectory) -> np.ndarray:
     return md.compute_dihedrals(traj, quads, periodic=False)
 
 
+def _gyration_eigenvalues(traj: md.Trajectory, selection: str = "name CA"):
+    """Eigenvalues of the gyration tensor per frame, ascending.
+
+    Everything about a conformation's overall shape follows from these: the
+    radius of gyration is the square root of their sum, and the asphericity is
+    a ratio of their symmetric functions.
+    """
+    indices = traj.topology.select(selection)
+    if indices.size < 3:
+        raise ValueError(
+            f"Shape needs at least three atoms; {selection!r} matched "
+            f"{indices.size}."
+        )
+    coords = traj.xyz[:, indices, :]
+    centred = coords - coords.mean(axis=1, keepdims=True)
+    tensor = np.einsum("fia,fib->fab", centred, centred) / centred.shape[1]
+    return np.sort(np.linalg.eigvalsh(tensor), axis=1)
+
+
+def compute_rg(traj: md.Trajectory) -> np.ndarray:
+    """Radius of gyration per frame, in nm. One column.
+
+    Mass weighted, which is what a SAXS-derived radius of gyration
+    corresponds to.
+    """
+    return md.compute_rg(traj).astype(np.float64)[:, None]
+
+
+def compute_ree(traj: md.Trajectory) -> np.ndarray:
+    """End-to-end distance per frame, in nm. One column."""
+    indices = traj.topology.select("name CA")
+    if indices.size < 2:
+        raise ValueError("An end-to-end distance needs at least two alpha carbons.")
+    pair = np.array([[indices[0], indices[-1]]])
+    return md.compute_distances(traj, pair, periodic=False).astype(np.float64)
+
+
+def compute_asph(traj: md.Trajectory) -> np.ndarray:
+    """Asphericity per frame, dimensionless. One column.
+
+    Zero for a sphere, one for a rod, a quarter for a flat disc. Built from
+    the gyration tensor eigenvalues, so it says how the mass is distributed
+    rather than how much of it there is -- two conformations with the same
+    radius of gyration can have very different asphericity.
+    """
+    values = _gyration_eigenvalues(traj)
+    trace = values.sum(axis=1)
+    pairs = (
+        values[:, 0] * values[:, 1]
+        + values[:, 1] * values[:, 2]
+        + values[:, 0] * values[:, 2]
+    )
+    with np.errstate(invalid="ignore", divide="ignore"):
+        result = 1.0 - 3.0 * pairs / trace**2
+    return np.clip(np.nan_to_num(result), 0.0, 1.0)[:, None]
+
+
+def compute_nu(traj: md.Trajectory, min_separation: int = 3) -> np.ndarray:
+    """Flory scaling exponent per frame, dimensionless. One column.
+
+    Fitted from the internal scaling profile of each conformation: the
+    root-mean-square distance between alpha carbons separated by ``s`` in
+    sequence goes as ``s**nu``, and the exponent is the slope of that on log
+    axes.
+
+    About 0.33 for a compact globule, 0.5 for an ideal chain and 0.588 for a
+    self-avoiding walk in good solvent -- the numbers a paper on a disordered
+    protein reports.
+
+    Fitted per conformation rather than once over the ensemble, because a
+    comparison needs a distribution rather than a point. The per-frame value
+    is noisy on a short chain, which is a property of the quantity rather than
+    of the fit: the spread is roughly 0.15 at thirty residues and 0.10 at a
+    hundred and twenty, and it is that spread two ensembles are compared on.
+    """
+    indices = traj.topology.select("name CA")
+    n = indices.size
+    if n < 2 * min_separation + 4:
+        raise ValueError(
+            f"A scaling exponent needs a chain of at least "
+            f"{2 * min_separation + 4} residues; this has {n}. Use rg or ree "
+            f"on something this short."
+        )
+    coords = traj.xyz[:, indices, :].astype(np.float64)
+    separations = np.arange(min_separation, max(min_separation + 2, n // 2))
+
+    profile = np.empty((traj.n_frames, separations.size))
+    for k, s in enumerate(separations):
+        delta = coords[:, s:, :] - coords[:, :-s, :]
+        profile[:, k] = np.sqrt((delta**2).sum(-1).mean(axis=1))
+
+    logs = np.log(separations)
+    centred = logs - logs.mean()
+    log_profile = np.log(np.maximum(profile, 1e-12))
+    slope = (
+        centred @ (log_profile - log_profile.mean(axis=1, keepdims=True)).T
+    ) / (centred @ centred)
+    return slope.astype(np.float64)[:, None]
+
+
 def compute_sasa(traj: md.Trajectory) -> np.ndarray:
     """Solvent accessible surface area per residue, in nm^2 (Shrake-Rupley)."""
     return md.shrake_rupley(traj, mode="residue")
@@ -344,6 +486,10 @@ _COMPUTE = {
     "cacn": compute_cacn,
     "caba": compute_caba,
     "cata": compute_cata,
+    "rg": compute_rg,
+    "ree": compute_ree,
+    "asph": compute_asph,
+    "nu": compute_nu,
     "sasa": compute_sasa,
 }
 

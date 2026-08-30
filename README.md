@@ -213,6 +213,8 @@ More, with real output, on the
 
 ## The order parameters
 
+Local, one column per residue — these say *where* two ensembles differ:
+
 | name | quantity | units | circular |
 |---|---|---|---|
 | `cbcn` | C-beta contact number, smooth cutoff | contacts | |
@@ -220,6 +222,16 @@ More, with real output, on the
 | `caba` | Virtual Cα–Cα–Cα bond angle | rad | |
 | `cata` | Virtual Cα torsion angle | rad | yes |
 | `sasa` | Per-residue solvent accessible surface area | nm² | |
+
+Global, one column for the whole molecule — these say *whether* they differ in
+size or shape:
+
+| name | quantity | typical values |
+|---|---|---|
+| `rg` | Radius of gyration | nm |
+| `ree` | End-to-end distance | nm |
+| `asph` | Asphericity | 0 sphere, 1 rod |
+| `nu` | Flory scaling exponent | 0.33 compact, 0.5 ideal, 0.588 expanded |
 
 Torsions live on a circle, so they are estimated with a von Mises kernel on a
 grid spanning a full turn. Each measure declares this and every estimator reads

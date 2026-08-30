@@ -482,6 +482,25 @@ All notable changes to Prothon are recorded here. This project follows
   latent bug, and a test now walks the source tree and fails on any text read
   or write that does not name its encoding.
 
+### Added — global order parameters
+
+- **`rg`, `ree`, `asph` and `nu`** join the five local ones. A radius of
+  gyration could be scored against experiment but not compared on, which was
+  an asymmetry with no reason behind it.
+- These give one column rather than one per residue, so they say *whether* two
+  ensembles differ in size or shape rather than *where*. The summary reports
+  `differs` instead of counting residues.
+- **`asph`** is built from the gyration tensor eigenvalues: 0 for a sphere,
+  0.25 for a disc, 1 for a rod, verified against all three.
+- **`nu`** is fitted on each conformation rather than once over the ensemble,
+  because a comparison needs a distribution. Recovers 0.5 on an ideal random
+  walk. The per-frame spread is real — roughly 0.15 at thirty residues — and
+  is part of what two ensembles are compared on. A chain too short to fit is
+  refused.
+- `OrderParameter` gains `scope`, since `per_residue` was answering two
+  questions: whether column *i* is residue *i*, and whether there are many
+  columns at all. A windowed torsion is the first without being the second.
+
 ### Refusals
 
 - **Coverage, not just identity.** Free end gaps make the aligner behave

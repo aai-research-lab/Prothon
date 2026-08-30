@@ -16,8 +16,11 @@ Four words appear throughout, and they mean different things:
 | metric | the distance between two distributions of it |
 | observable | something an experiment measures |
 
-The five below are those introduced with the method (Aina, Hsueh and Plotkin
-2023).
+## Local
+
+One column per residue, or per window of consecutive residues. These say
+*where* two ensembles differ. The five below are those introduced with the
+method (Aina, Hsueh and Plotkin 2023).
 
 | name | quantity | units | per residue | circular |
 |---|---|---|---|---|
@@ -26,6 +29,42 @@ The five below are those introduced with the method (Aina, Hsueh and Plotkin
 | `caba` | Virtual Cα–Cα–Cα bond angle | rad | window of 3 | |
 | `cata` | Virtual Cα torsion angle | rad | window of 4 | yes |
 | `sasa` | Solvent accessible surface area | nm² | yes | |
+
+## Global
+
+One column: a single number per conformation, describing the whole molecule.
+These say *whether* two ensembles differ in overall size or shape, which is
+what a paper on a disordered protein usually reports.
+
+| name | quantity | units | typical values |
+|---|---|---|---|
+| `rg` | Radius of gyration | nm | |
+| `ree` | End-to-end distance | nm | |
+| `asph` | Asphericity | | 0 sphere, 0.25 disc, 1 rod |
+| `nu` | Flory scaling exponent | | 0.33 compact, 0.5 ideal, 0.588 expanded |
+
+```bash
+prothon compare -e md.xtc PED00024 -t top.pdb -p rg,nu
+```
+
+A global parameter compares the distribution, not the mean. Two ensembles with
+the same average radius of gyration and different breadth are different
+ensembles, and this reports them as such.
+
+The summary says `differs` rather than counting residues, since there is only
+one column and nothing to plot per position.
+
+**`asph`** comes from the gyration tensor eigenvalues, so it describes how the
+mass is arranged rather than how much there is: two conformations can share a
+radius of gyration and differ completely in shape.
+
+**`nu`** is fitted on each conformation separately — the root-mean-square
+distance between residues separated by *s* in sequence goes as *s*<sup>ν</sup>,
+and ν is the slope on log axes. Fitting per conformation rather than once over
+the ensemble is what makes it comparable: a comparison needs a distribution.
+The per-frame value is noisy on a short chain, with a spread of roughly 0.15 at
+thirty residues and 0.10 at a hundred and twenty, and that spread is part of
+what is being compared. A chain shorter than about ten residues is refused.
 
 ## Contact numbers
 

@@ -808,6 +808,7 @@ class Prothon:
 
         lines: list[str] = []
         for name, comparisons in self.comparison_results.items():
+            spec = resolve_order_parameter(name)
             lines.append(f"{name.upper()} (reference: ensemble {comparisons[0].reference_index})")
             for c in comparisons:
                 if not c.p_values_reported:
@@ -815,6 +816,10 @@ class Prothon:
                         f"no p-value: correlation time {c.correlation_time:.0f} "
                         f"frames leaves {c.n_blocks} independent blocks"
                     )
+                elif spec.is_global:
+                    # One column describing the whole molecule. "1/1 residues
+                    # differ" would be true and useless.
+                    verdict = "differs" if c.n_significant else "no significant difference"
                 elif c.resolved:
                     verdict = (
                         f"{c.n_significant}/{c.local_dissimilarity.size} residues differ"
