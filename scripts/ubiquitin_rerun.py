@@ -134,15 +134,23 @@ def main() -> int:
             calls_old = int(a.n_significant)
             calls_new = int(b.n_significant)
             withheld = not b.p_values_reported
+            # The *raw* mean, not `global_dissimilarity`: that is a mean over
+            # masked values and reads as zero whenever nothing survives the
+            # filter, which is the opposite of what it looks like.
+            raw = float(np.mean(b.raw_local_dissimilarity))
             lines.append(
-                f"| {label} | {b.global_dissimilarity:.4f} | {delta:.2e} | "
-                f"{b.noise_floor:.4f} | {calls_old}/{n_features} | "
+                f"| {label} | {raw:.4f} | {b.noise_floor:.4f} | "
+                f"{'yes' if raw > b.noise_floor else 'no'} | "
+                f"{calls_old}/{n_features} | "
                 + ("withheld" if withheld else f"{calls_new}/{n_features}")
-                + f" | {b.correlation_time:.0f} |"
+                + f" | {b.correlation_time:.0f} | {b.n_blocks} | "
+                + f"{min(b.effective_samples):.0f} |"
             )
             rows.append({
                 "ensemble": label,
+                "raw_mean_distance": raw,
                 "raw_max_difference": delta,
+                "n_blocks": int(b.n_blocks),
                 "dissimilarity_published": float(a.global_dissimilarity),
                 "dissimilarity_current": float(b.global_dissimilarity),
                 "noise_floor": float(b.noise_floor),
@@ -162,7 +170,11 @@ def main() -> int:
         flagged_old = sum(int(a.n_significant) for a in old)
         flagged_new = sum(int(b.n_significant) for b in new)
         total = n_features * len(old)
-        unresolved = sum(1 for b in new if not b.resolved)
+        unresolved = sum(
+            1 for b in new
+            if float(np.mean(b.raw_local_dissimilarity)) <= b.noise_floor
+        )
+        withheld_count = sum(1 for b in new if not b.p_values_reported)
         lines += [
             "",
             f"Largest change in any per-residue distance: **{magnitudes:.2e}**"
@@ -183,6 +195,13 @@ def main() -> int:
             lines.append(
                 f"{unresolved} of {len(new)} comparisons fall below their own "
                 f"noise floor and are not resolvable at this sampling.\n"
+            )
+        if withheld_count:
+            lines.append(
+                f"{withheld_count} of {len(new)} report no p-value at all: the "
+                f"correlation time leaves too few independent blocks to build "
+                f"a permutation null from. That is a statement about the "
+                f"sampling, not about the ensembles.\n"
             )
 
     document = "\n".join(lines)
