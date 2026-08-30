@@ -65,7 +65,7 @@ def load(directory: str, stride: int):
 
 
 def compare(ensembles, order_parameter, legacy, seed, s_num, permutations,
-            sample_size):
+            sample_size, n_jobs):
     """Every ensemble against Q99, under one statistical treatment.
 
     ``sample_size`` must exceed the frame count for the two treatments to be
@@ -83,6 +83,7 @@ def compare(ensembles, order_parameter, legacy, seed, s_num, permutations,
         s_num=s_num,
         n_permutations=permutations,
         sample_size=sample_size,
+        n_jobs=n_jobs,
         legacy=legacy,
     )[order_parameter]
 
@@ -98,6 +99,11 @@ def main() -> int:
         "--sample-size", type=int, default=0,
         help="Conformations used per comparison. 0 uses every frame, which is "
              "what makes the two treatments comparable.",
+    )
+    parser.add_argument(
+        "--n-jobs", type=int, default=1,
+        help="Worker processes for the permutation null and the noise floor. "
+             "-1 uses every core. The result does not depend on this.",
     )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out")
@@ -124,10 +130,10 @@ def main() -> int:
         print(f"\n{name}:", file=sys.stderr)
         print("  published treatment...", file=sys.stderr)
         old = compare(ensembles, name, True, args.seed, args.s_num,
-                      args.n_permutations, sample_size)
+                      args.n_permutations, sample_size, args.n_jobs)
         print("  current treatment...", file=sys.stderr)
         new = compare(ensembles, name, False, args.seed, args.s_num,
-                      args.n_permutations, sample_size)
+                      args.n_permutations, sample_size, args.n_jobs)
 
         n_features = int(old[0].local_dissimilarity.size)
         lines += [
@@ -193,6 +199,9 @@ def main() -> int:
             if float(np.mean(b.raw_local_dissimilarity)) <= b.noise_floor
         )
         withheld_count = sum(1 for b in new if not b.p_values_reported)
+        from prothon.core.representation import resolve_order_parameter
+
+        spec = resolve_order_parameter(name)
         lines += [
             "",
             f"Largest change in any per-residue distance: **{magnitudes:.2e}**"
@@ -200,8 +209,18 @@ def main() -> int:
                 " — unchanged, as it should be: the Jensen–Shannon calculation "
                 "was always correct and only the significance filter moved."
                 if magnitudes < 1e-9
-                else " — this should be zero. Investigate before quoting "
-                "anything else here."
+                else (
+                    " — expected here, and a finding in its own right. This is "
+                    "a circular feature, and the published treatment estimated "
+                    "its density on a linear grid: a torsion whose values "
+                    "straddle the wrap at ±π appears as two separated modes, "
+                    "and two ensembles sitting on opposite sides of the wrap "
+                    "appear to share no support at all. The magnitudes change "
+                    "for those residues, not only the significance calls."
+                    if spec.circular
+                    else " — this should be zero. Investigate before quoting "
+                    "anything else here."
+                )
             ),
             "",
             f"Residues called different: **{flagged_old}/{total}** "
