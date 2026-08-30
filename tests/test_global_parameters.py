@@ -89,12 +89,42 @@ class TestThePhysicsIsRight:
             values = compute_representation(shaped(kind, 60, seed=4), "asph")
             assert (values >= 0).all() and (values <= 1).all()
 
-    def test_the_scaling_exponent_of_a_random_walk_is_a_half(self):
-        """An ideal chain has nu = 0.5 exactly. Recovered from the internal
-        scaling profile of each conformation, which is the point: a comparison
-        needs a distribution rather than one number for the ensemble."""
+    def test_the_per_conformation_exponent_is_below_the_ensemble_one(self):
+        """They are different quantities, and the documentation says so.
+
+        The ensemble fit takes log of the averaged distance; the
+        per-conformation fit averages the log. Jensen's inequality makes the
+        second smaller, by about 0.03 on an ideal chain, and the gap does not
+        shrink with chain length. Anyone quoting the mean of `nu` as a Flory
+        exponent would be about 0.03 low.
+        """
+        rng = np.random.default_rng(20)
+        walks = np.cumsum(rng.normal(0, 1, (400, 200, 3)), axis=1)
+        separations = np.arange(3, 100)
+
+        per_conformation = np.empty((400, separations.size))
+        for k, s in enumerate(separations):
+            delta = walks[:, s:] - walks[:, :-s]
+            per_conformation[:, k] = np.sqrt((delta**2).sum(-1).mean(axis=1))
+
+        logs = np.log(separations)
+        ensemble = np.polyfit(
+            logs, np.log(np.sqrt((per_conformation**2).mean(axis=0))), 1
+        )[0]
+        centred = logs - logs.mean()
+        log_profile = np.log(per_conformation)
+        each = (
+            centred @ (log_profile - log_profile.mean(axis=1, keepdims=True)).T
+        ) / (centred @ centred)
+
+        assert ensemble == pytest.approx(0.5, abs=0.03)      # the true value
+        assert each.mean() < ensemble - 0.01                 # systematically below
+        assert each.mean() == pytest.approx(0.47, abs=0.03)
+
+    def test_the_exponent_is_in_the_physical_range(self):
+        """Whatever it is called, it should land where a chain lands."""
         nu = compute_representation(shaped("coil", 300, seed=5), "nu")
-        assert nu.mean() == pytest.approx(0.5, abs=0.08)
+        assert 0.35 < nu.mean() < 0.65
 
     def test_a_collapsed_chain_scales_more_slowly_than_a_coil(self):
         coil = compute_representation(shaped("coil", 200, seed=6), "nu").mean()

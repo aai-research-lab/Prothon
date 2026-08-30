@@ -501,6 +501,28 @@ All notable changes to Prothon are recorded here. This project follows
   questions: whether column *i* is residue *i*, and whether there are many
   columns at all. A windowed torsion is the first without being the second.
 
+### Fixed — two claims about what is being measured
+
+- **The per-conformation scaling exponent is not the ensemble Flory
+  exponent**, and the documentation said it was. The ensemble fit takes the
+  log of the averaged distance; the per-conformation fit averages the log, and
+  Jensen's inequality makes the second smaller by about 0.03 on an ideal chain
+  — an offset that does not shrink with chain length, so it is not a sampling
+  artefact. Comparing two ensembles on `nu` is unaffected, since the same
+  estimator is applied to both, but a mean taken from it should not be quoted
+  as ν.
+- **The noise floor splits every ensemble, not only the reference**, which the
+  documentation had wrong in three places. The resolution limit of a
+  comparison is set by whichever side is sampled worse.
+- **And the floor is conservative by about a quarter.** Halves have half the
+  frames, so it measures the limit at *n*/2 while the study has *n*: a
+  1000-frame ensemble reports about 0.063 where the limit at 1000 frames is
+  0.050. The error is in the safe direction, and correcting it would mean
+  assuming the distance scales as *n*^(−1/2) for every metric, which has been
+  measured only for the Jensen–Shannon distance on Gaussians. Documented
+  rather than corrected, with the advice to read a result within 25% of its
+  floor as borderline.
+
 ### Refusals
 
 - **Coverage, not just identity.** Free end gaps make the aligner behave

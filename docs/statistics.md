@@ -9,10 +9,16 @@ each other. A finite sample never reproduces a continuous distribution exactly,
 so any distance measured between two samples includes a contribution that has
 nothing to do with the systems being compared.
 
-Prothon measures that contribution directly. It splits the reference in half at
-random, compares the halves, repeats, and reports the mean as the **noise
-floor**. A global dissimilarity below its floor is reported as *not resolvable
-at this sampling*, and `ComparisonResult.resolved` is `False`.
+Prothon measures that contribution directly. It splits **each** ensemble in
+half at random, compares the halves, repeats, and reports the mean as the
+**noise floor**. A global dissimilarity below its floor is reported as *not
+resolvable at this sampling*, and `ComparisonResult.resolved` is `False`.
+
+Halves of one ensemble are used because they are the only pair of samples
+guaranteed to come from the same distribution without assuming what that
+distribution is. A bootstrap assumes the sample is the population; a parametric
+reference assumes a shape. Two halves differ only by sampling, by
+construction.
 
 ```
 CBCN (reference: ensemble 0)

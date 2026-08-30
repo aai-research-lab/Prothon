@@ -100,18 +100,44 @@ standard way of asking what kind of polymer a disordered protein resembles:
 Measured values sit between these. Unfolded proteins in water average about
 0.46 and rise toward 0.6 in denaturant (Hofmann et al. 2012).
 
-**Prothon fits ν on each conformation rather than once over the ensemble.**
-The usual practice is a single fit to the ensemble-averaged internal scaling
-profile, which gives one number and no distribution — and a comparison needs a
-distribution. Fitting per conformation gives one, and it is not merely noise
-around the mean: a single ensemble can hold compact and expanded conformations
-with genuinely different exponents (Baul and Chakraborty 2024).
+**Prothon fits ν on each conformation rather than once over the ensemble**,
+because a comparison needs a distribution and a single ensemble fit gives one
+number. One conformation is enough to fit on: at separation *s* there are
+*N* − *s* pairs to average over, and the fit runs across about *N*/2
+separations.
 
-The per-conformation value is noisy, and the noise is real rather than an
-artefact of the fit — a spread of roughly 0.15 at thirty residues and 0.10 at a
-hundred and twenty. That spread is part of what two ensembles are compared on.
+:::{important}
+**This is not the same quantity as the ensemble Flory exponent, and its mean
+should not be quoted as one.**
+
+The ensemble fit takes the logarithm of the averaged distance; the
+per-conformation fit averages the logarithm. Those differ, and the second is
+always smaller. Measured on an ideal random walk, where ν = 0.5 exactly:
+
+| chain length | ensemble ν | mean per-conformation ν |
+|---|---|---|
+| 40 | 0.511 | 0.479 |
+| 80 | 0.501 | 0.472 |
+| 160 | 0.493 | 0.467 |
+| 320 | 0.499 | 0.475 |
+
+The offset is about 0.03 and does not shrink with chain length, so it is not a
+sampling artefact.
+
+What `nu` gives is the distribution of per-conformation fractal exponents. Two
+ensembles compared on it are compared correctly — the same estimator is applied
+to both and the offset cancels — but a mean taken from it belongs in a sentence
+that says which exponent it is.
+:::
+
+The per-conformation value is also genuinely variable, with a spread of roughly
+0.15 at thirty residues and 0.10 at a hundred and twenty. That variation is
+real rather than fitting noise: a single ensemble holds compact and expanded
+conformations with different exponents (Baul and Chakraborty 2024), and it is
+that variation two ensembles are compared on.
+
 A chain shorter than about ten residues is refused rather than fitted through
-too few points.
+too few separations.
 
 ### What comparing them adds
 

@@ -27,10 +27,14 @@ Jensen–Shannon distance between the two ensembles' distributions of C-beta
 contact number (Lin 1991; Aina, Hsueh and Plotkin 2023). It is bounded in
 [0, 1].
 
-**`floor 0.0472`** is what two disjoint halves of the reference ensemble score
-against *each other*. It is the smallest difference this much sampling can
-resolve. Had `d` come out at 0.03, the correct reading would be "no difference
-detectable here", not "a small difference".
+**`floor 0.0472`** is what two disjoint halves of each ensemble score against
+*each other* — the smallest difference this much sampling can resolve. Had `d`
+come out at 0.03, the correct reading would be "no difference detectable
+here", not "a small difference".
+
+It is conservative by roughly a quarter, because halves have half the frames.
+Read a result within about 25% of its floor as borderline. See
+[the statistics](statistics.md).
 
 **`34/76 residues differ`** counts residues whose distributions differ by more
 than a permutation null allows, after correcting for having asked the question

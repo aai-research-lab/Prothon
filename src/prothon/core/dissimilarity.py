@@ -632,14 +632,28 @@ def _split_half_floor(
     weights: tuple = (None, None),
     metric: str = "jsd",
 ) -> np.ndarray:
-    """Distance between two disjoint halves of a single ensemble.
+    """Distance between two disjoint halves of each ensemble.
 
-    This is the resolution limit: two independent samples of the same
-    distribution, at half the sampling the study actually has. A difference
-    between two ensembles smaller than this is not a difference.
+    The resolution limit: what two samples of the same distribution look like
+    at this much sampling. A difference between two ensembles smaller than
+    this is not a difference.
 
-    Disjoint halves, not bootstrap resamples -- that distinction is exactly
-    what version 2.0 got wrong, and it is worth roughly a factor of two.
+    Halves of one ensemble are the only pair of samples guaranteed to come
+    from the same distribution without assuming what that distribution is. A
+    bootstrap assumes the sample is the population; a parametric reference
+    assumes a shape. Two halves differ only by sampling.
+
+    **The result is conservative by about a quarter.** Halves have half the
+    frames, so this measures the limit at n/2 while the study has n: a
+    1000-frame ensemble reports about 0.063 where the limit at 1000 frames is
+    0.050. The error is in the safe direction -- a difference called resolvable
+    is resolvable -- and correcting it would mean assuming the distance scales
+    as n^(-1/2) for every metric, which has been measured only for the
+    Jensen-Shannon distance on Gaussians.
+
+    Both ensembles are split, not only the reference, and the results pooled:
+    the resolution limit of a comparison is set by whichever side is sampled
+    worse.
     """
     values = []
     for ensemble, w in zip(ensembles, weights):
