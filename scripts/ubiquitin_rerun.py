@@ -125,6 +125,7 @@ def main() -> int:
         "",
     ]
     collected: dict = {}
+    summary: dict = {}
 
     for name in names:
         print(f"\n{name}:", file=sys.stderr)
@@ -191,13 +192,16 @@ def main() -> int:
             for a, b in zip(old, new)
         )
         flagged_old = sum(int(a.n_significant) for a in old)
-        flagged_new = sum(int(b.n_significant) for b in new)
+        # Only the comparisons a test could actually be run on. Dividing by
+        # every comparison would count a withheld p-value as a residue that
+        # was tested and found not to differ, which is the one distinction
+        # this whole re-run exists to draw.
+        tested = [b for b in new if b.p_values_reported]
+        flagged_new = sum(int(b.n_significant) for b in tested)
         total = n_features * len(old)
-        unresolved = sum(
-            1 for b in new
-            if float(np.mean(b.raw_local_dissimilarity)) <= b.noise_floor
-        )
-        withheld_count = sum(1 for b in new if not b.p_values_reported)
+        tested_total = n_features * len(tested)
+        unresolved = sum(1 for b in new if not b.resolved)
+        withheld_count = len(new) - len(tested)
         from prothon.core.representation import resolve_order_parameter
 
         spec = resolve_order_parameter(name)
@@ -224,9 +228,47 @@ def main() -> int:
             "",
             f"Residues called different: **{flagged_old}/{total}** "
             f"({flagged_old / total:.0%}) under the published treatment, "
-            f"**{flagged_new}/{total}** ({flagged_new / total:.0%}) now.",
+            f"across all {len(old)} comparisons and {n_features} features.",
+            "",
+            (
+                (
+                    f"Under the current treatment, **no comparison could be "
+                    f"tested at all**: the correlation time leaves too few "
+                    f"independent blocks in every one of the {len(old)}. There "
+                    f"is no proportion to report, which is the point -- a "
+                    f"percentage here would be a statement the data cannot "
+                    f"support."
+                )
+                if not tested_total
+                else (
+                    f"Under the current treatment, "
+                    f"**{flagged_new}/{tested_total}** "
+                    f"({flagged_new / tested_total:.0%}) of the features that "
+                    f"could be tested at all"
+                    + (
+                        f", the remaining {withheld_count} comparison"
+                        f"{'s' if withheld_count != 1 else ''} having been "
+                        f"withheld."
+                        if withheld_count
+                        else "."
+                    )
+                )
+            ),
             "",
         ]
+        summary[name] = {
+            "n_features": n_features,
+            "comparisons": len(old),
+            "tested": len(tested),
+            "withheld": withheld_count,
+            "flagged_published": flagged_old,
+            "flagged_current": flagged_new,
+            "fraction_published": flagged_old / total,
+            "fraction_current": flagged_new / tested_total if tested_total else None,
+            "tau_min": min(float(b.correlation_time) for b in new),
+            "tau_max": max(float(b.correlation_time) for b in new),
+            "max_magnitude_change": magnitudes,
+        }
         if unresolved:
             lines.append(
                 f"{unresolved} of {len(new)} comparisons fall below their own "
@@ -239,6 +281,40 @@ def main() -> int:
                 f"a permutation null from. That is a statement about the "
                 f"sampling, not about the ensembles.\n"
             )
+
+    lines += [
+        "## Across order parameters",
+        "",
+        "`published` divides by every comparison, as that treatment reported a "
+        "p-value for all of them. `current` divides by the comparisons a test "
+        "could be run on, which is not the same denominator -- a withheld "
+        "p-value is not a residue that was tested and found not to differ.",
+        "",
+        "| order parameter | features | τ range | published | current | withheld |",
+        "|---|---|---|---|---|---|",
+    ]
+    for name, row in summary.items():
+        current = (
+            f"{row['fraction_current']:.0%}"
+            if row["fraction_current"] is not None
+            else "—"
+        )
+        lines.append(
+            f"| `{name}` | {row['n_features']} | "
+            f"{row['tau_min']:.0f}–{row['tau_max']:.0f} | "
+            f"{row['fraction_published']:.0%} | {current} | "
+            f"{row['withheld']}/{row['comparisons']} |"
+        )
+    total_tests = sum(
+        row["n_features"] * row["comparisons"] for row in summary.values()
+    )
+    lines += [
+        "",
+        f"**{total_tests} per-residue tests** in total across "
+        f"{len(summary)} order parameters.",
+        "",
+    ]
+    collected["_summary"] = summary
 
     document = "\n".join(lines)
     print()
