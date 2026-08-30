@@ -60,6 +60,16 @@ result contains what you added. The test count is the cheapest check available:
 if a commit claims to add tests, `pytest --collect-only` should report more
 than it did before.
 
+## Scripts
+
+Everything in `scripts/` carries a `#!/usr/bin/env python3` line and is
+executable, so it runs either way:
+
+```bash
+scripts/calibration.py --help
+python scripts/calibration.py --help
+```
+
 ## Before a release
 
 Two things in `scripts/` are measurements rather than tests, and both have
