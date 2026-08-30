@@ -64,8 +64,16 @@ def load(directory: str, stride: int):
     return ensembles
 
 
-def compare(ensembles, order_parameter, legacy, seed, s_num, permutations):
-    """Every ensemble against Q99, under one statistical treatment."""
+def compare(ensembles, order_parameter, legacy, seed, s_num, permutations,
+            sample_size):
+    """Every ensemble against Q99, under one statistical treatment.
+
+    ``sample_size`` must exceed the frame count for the two treatments to be
+    comparable. The published treatment computes the distance on every frame;
+    the current one subsamples to ``sample_size`` first, so leaving the default
+    of 1000 against 5000-frame ensembles compares 5000 frames with 1000 and
+    reports the difference as though the calculation had changed.
+    """
     from prothon import Prothon
 
     study = Prothon(ensembles=ensembles, random_state=seed)
@@ -74,6 +82,7 @@ def compare(ensembles, order_parameter, legacy, seed, s_num, permutations):
         ref=0,
         s_num=s_num,
         n_permutations=permutations,
+        sample_size=sample_size,
         legacy=legacy,
     )[order_parameter]
 
@@ -85,6 +94,11 @@ def main() -> int:
     parser.add_argument("--stride", type=int, default=1)
     parser.add_argument("--s-num", type=int, default=10)
     parser.add_argument("--n-permutations", type=int, default=200)
+    parser.add_argument(
+        "--sample-size", type=int, default=0,
+        help="Conformations used per comparison. 0 uses every frame, which is "
+             "what makes the two treatments comparable.",
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out")
     parser.add_argument("--json")
@@ -92,6 +106,9 @@ def main() -> int:
 
     print("Loading:", file=sys.stderr)
     ensembles = load(args.data, args.stride)
+
+    sample_size = args.sample_size or max(e.n_frames for e in ensembles)
+    print(f"  using {sample_size} conformations per comparison", file=sys.stderr)
 
     names = [p.strip() for p in args.order_parameters.split(",") if p.strip()]
     lines = [
@@ -107,16 +124,17 @@ def main() -> int:
         print(f"\n{name}:", file=sys.stderr)
         print("  published treatment...", file=sys.stderr)
         old = compare(ensembles, name, True, args.seed, args.s_num,
-                      args.n_permutations)
+                      args.n_permutations, sample_size)
         print("  current treatment...", file=sys.stderr)
         new = compare(ensembles, name, False, args.seed, args.s_num,
-                      args.n_permutations)
+                      args.n_permutations, sample_size)
 
         n_features = int(old[0].local_dissimilarity.size)
         lines += [
             f"## {name.upper()}",
             "",
-            "| against Q99 | raw d | floor | resolved | published | current | τ | blocks | n_eff |",
+            "| against Q99 | raw d | floor | resolved | published | current "
+            "| τ | blocks | independent |",
             "|---|---|---|---|---|---|---|---|---|",
         ]
         rows = []
@@ -144,7 +162,7 @@ def main() -> int:
                 f"{calls_old}/{n_features} | "
                 + ("withheld" if withheld else f"{calls_new}/{n_features}")
                 + f" | {b.correlation_time:.0f} | {b.n_blocks} | "
-                + f"{min(b.effective_samples):.0f} |"
+                + f"{sample_size / max(1.0, b.correlation_time):.0f} |"
             )
             rows.append({
                 "ensemble": label,
