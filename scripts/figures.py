@@ -13,6 +13,10 @@ with the command that produced them, and ``tests/test_figures.py`` asserts they
 still match the table in ``docs/calibration.md``. A stale figure is then a test
 failure rather than something a reader finds.
 
+The manuscript itself lives in Overleaf rather than in this repository, so the
+output of this script is uploaded there by hand. That is the one manual step
+in the loop, and it is why the consistency test exists.
+
 Usage::
 
     python scripts/figures.py                    # all figures, into paper/figures

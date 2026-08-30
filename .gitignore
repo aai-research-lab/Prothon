@@ -23,3 +23,11 @@ docs/_build/
 # Environments
 .venv/
 venv/
+
+# The manuscript, and anything generated for it.
+#
+# The paper lives in Overleaf, deliberately: it is not code, it is not
+# finished, and the repository is public. `scripts/figures.py` writes here by
+# default, so without this line a `git add -A` after regenerating the figures
+# would commit them, and eventually a draft alongside them.
+/paper/
