@@ -556,6 +556,22 @@ All notable changes to Prothon are recorded here. This project follows
 - Found because the ubiquitin re-analysis compares the same quantity under two
   code paths and checks they agree. Only `cata` disagreed, by 0.327.
 
+### Added — `n_jobs`
+
+- The permutation null and the split-half floor are loops over independent
+  draws and together are over 90% of the cost of a comparison. Both now run in
+  parallel: `n_jobs` on `dissimilarity` and `compare_ensembles`, `--n-jobs` on
+  the command line, `-1` for every core.
+- **The result does not depend on the worker count.** Seeds are drawn from the
+  caller's generator before the work is divided, so a parallel run reproduces a
+  serial one exactly; a test asserts it for both the frame and block nulls.
+- Work is sent in chunks of permutations rather than one per task, since the
+  pooled representation has to reach each worker and sending it a hundred times
+  costs more than the permutations do.
+- `scripts/parallel_speedup.py` measures the gain, because it depends on the
+  machine: each worker imports NumPy and SciPy before doing anything, and on a
+  small job that exceeds the work saved.
+
 ### Refusals
 
 - **Coverage, not just identity.** Free end gaps make the aligner behave

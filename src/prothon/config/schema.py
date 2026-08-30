@@ -129,6 +129,13 @@ PARAMETERS: tuple[Parameter, ...] = (
         commands=("compare",),
     ),
     _p(
+        "n_jobs", kind=int, default=1, metavar="N",
+        help="Worker processes for the permutation null and the noise floor, "
+             "which are most of the cost. -1 uses every core. The result does "
+             "not depend on this.",
+        commands=("compare",),
+    ),
+    _p(
         "sample_size", kind=int, default=1000, metavar="N",
         help="Conformations drawn from each ensemble per comparison. Larger "
              "buys a tighter noise floor at linear cost.",

@@ -128,6 +128,46 @@ class TestRandomSample:
         )
 
 
+class TestParallelReproducesSerial:
+    """The reason seeds are drawn up front rather than inside the workers.
+
+    A generator does not survive being sent to a worker process, and letting
+    each worker seed itself would make the result depend on how many cores
+    happened to be free. Drawing the seeds from the caller's generator before
+    the work is divided makes a parallel run and a serial run identical.
+    """
+
+    @staticmethod
+    def pair(seed=0, n=600, k=6):
+        rng = np.random.default_rng(seed)
+        return rng.normal(size=(n, k)), rng.normal(0.4, 1, (n, k))
+
+    def test_the_result_does_not_depend_on_the_worker_count(self):
+        a, b = self.pair()
+        common = dict(
+            x_min=-4, x_max=4, x_num=60, s_num=4, n_permutations=20,
+            sample_size=600, random_state=0, block_permutation=False,
+        )
+        serial = dissimilarity(a, b, n_jobs=1, **common)
+        parallel = dissimilarity(a, b, n_jobs=2, **common)
+
+        np.testing.assert_allclose(
+            serial.raw_local_dissimilarity, parallel.raw_local_dissimilarity
+        )
+        np.testing.assert_allclose(serial.p_values, parallel.p_values)
+        assert serial.noise_floor == pytest.approx(parallel.noise_floor)
+
+    def test_it_holds_for_the_blocked_null_too(self):
+        a, b = self.pair(seed=1)
+        common = dict(
+            x_min=-4, x_max=4, x_num=60, s_num=4, n_permutations=20,
+            sample_size=600, random_state=3, block_permutation=True,
+        )
+        serial = dissimilarity(a, b, n_jobs=1, **common)
+        parallel = dissimilarity(a, b, n_jobs=2, **common)
+        np.testing.assert_allclose(serial.p_values, parallel.p_values)
+
+
 class TestDissimilarity:
     def test_shifted_ensembles_are_resolved(self, shifted_matrices):
         a, b = shifted_matrices

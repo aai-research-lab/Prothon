@@ -526,7 +526,57 @@ def _subsample(
     return arr[keep], (None if weights is None else weights[keep] / weights[keep].sum())
 
 
+def _one_permutation(
+    k, seeds, blocks, total, n_reference, pooled, pooled_w, weighted,
+    x_min, x_max, x_num, circular, metric,
+):
+    """One relabelling, computed from its own seed.
+
+    Split out so it can run in a worker process. It takes a seed rather than a
+    generator because a generator does not survive being sent to one, and
+    because seeding per permutation is what makes a parallel run and a serial
+    run agree.
+    """
+    rng = np.random.default_rng(seeds[k])
+    if blocks is None:
+        order = rng.permutation(total)
+    else:
+        shuffled = rng.permutation(len(blocks))
+        order = np.concatenate([blocks[i] for i in shuffled])
+    left, right = order[:n_reference], order[n_reference:]
+    wl = wr = None
+    if weighted:
+        wl, wr = pooled_w[left], pooled_w[right]
+        wl, wr = wl / wl.sum(), wr / wr.sum()
+    return jsd_local(
+        pooled[left], pooled[right], x_min, x_max, x_num, circular, wl, wr, metric
+    )
+
+
+def _permutation_chunk(
+    indices, seeds, blocks, total, n_reference, pooled, pooled_w, weighted,
+    x_min, x_max, x_num, circular, metric,
+):
+    """A run of permutations, computed in one worker.
+
+    The unit of work is a chunk rather than a single permutation because the
+    pooled representation has to reach the worker, and sending it once per
+    permutation costs more than the permutation does.
+    """
+    return np.stack(
+        [
+            _one_permutation(
+                k, seeds, blocks, total, n_reference, pooled, pooled_w,
+                weighted, x_min, x_max, x_num, circular, metric,
+            )
+            for k in indices
+        ],
+        axis=0,
+    )
+
+
 def _permutation_null(
+    n_jobs: int,
     reference: np.ndarray,
     other: np.ndarray,
     x_min: float,
@@ -577,8 +627,42 @@ def _permutation_null(
     else:
         blocks = None
 
+    # Each permutation is independent, so the work divides cleanly. Seeds are
+    # drawn from the caller's generator up front rather than letting workers
+    # draw from a shared one: a parallel run and a serial run then produce the
+    # same null, and a result stays reproducible from its seed however many
+    # cores it was computed on.
+    seeds = rng.integers(0, 2**63 - 1, size=n_permutations)
+
+    def one(k: int) -> np.ndarray:
+        return _one_permutation(
+            k, seeds, blocks, total, n_reference, pooled, pooled_w, weighted,
+            x_min, x_max, x_num, circular, metric,
+        )
+
+    if n_jobs != 1 and n_permutations > 1:
+        import os
+
+        from joblib import Parallel, delayed
+
+        # One task per permutation sends the pooled array to a worker a hundred
+        # times and costs more than it saves. Chunking sends it once per
+        # worker, which is where the gain is.
+        workers = os.cpu_count() or 1 if n_jobs < 0 else n_jobs
+        chunks = np.array_split(np.arange(n_permutations), min(workers, n_permutations))
+        rows = Parallel(n_jobs=n_jobs, prefer="processes")(
+            delayed(_permutation_chunk)(
+                chunk, seeds, blocks, total, n_reference, pooled, pooled_w,
+                weighted, x_min, x_max, x_num, circular, metric,
+            )
+            for chunk in chunks
+            if chunk.size
+        )
+        return np.concatenate(rows, axis=0)
+
     null = np.empty((n_permutations, reference.shape[1]), dtype=np.float64)
     for k in range(n_permutations):
+        rng = np.random.default_rng(seeds[k])
         if blocks is None:
             order = rng.permutation(total)
         else:
@@ -635,6 +719,7 @@ def _studentised_p_values(observed: np.ndarray, null: np.ndarray) -> np.ndarray:
 
 
 def _split_half_floor(
+    n_jobs: int,
     ensembles: tuple[np.ndarray, ...],
     x_min: float,
     x_max: float,
@@ -668,24 +753,45 @@ def _split_half_floor(
     the resolution limit of a comparison is set by whichever side is sampled
     worse.
     """
-    values = []
+    def one_split(ensemble, w, half, seed):
+        rng = np.random.default_rng(seed)
+        order = rng.permutation(ensemble.shape[0])
+        left, right = order[:half], order[half : 2 * half]
+        wl = wr = None
+        if w is not None:
+            wl, wr = w[left], w[right]
+            wl, wr = wl / wl.sum(), wr / wr.sum()
+        return jsd_local(
+            ensemble[left], ensemble[right],
+            x_min, x_max, x_num, circular, wl, wr, metric,
+        )
+
+    jobs = []
     for ensemble, w in zip(ensembles, weights):
         half = ensemble.shape[0] // 2
         if half < 2:
             continue
-        for _ in range(repeats):
-            order = rng.permutation(ensemble.shape[0])
-            left, right = order[:half], order[half : 2 * half]
-            wl = wr = None
-            if w is not None:
-                wl, wr = w[left], w[right]
-                wl, wr = wl / wl.sum(), wr / wr.sum()
-            values.append(
-                jsd_local(
-                    ensemble[left], ensemble[right],
-                    x_min, x_max, x_num, circular, wl, wr, metric,
-                )
-            )
+        for seed in rng.integers(0, 2**63 - 1, size=repeats):
+            jobs.append((ensemble, w, half, seed))
+
+    if n_jobs != 1 and len(jobs) > 1:
+        import os
+
+        from joblib import Parallel, delayed
+
+        workers = os.cpu_count() or 1 if n_jobs < 0 else n_jobs
+        groups = np.array_split(np.arange(len(jobs)), min(workers, len(jobs)))
+        batched = Parallel(n_jobs=n_jobs, prefer="processes")(
+            delayed(lambda g: [one_split(*jobs[i]) for i in g])(group)
+            for group in groups
+            if group.size
+        )
+        values = [row for group in batched for row in group]
+        if not values:
+            return np.zeros((1, ensembles[0].shape[1]))
+        return np.stack(values, axis=0)
+
+    values = [one_split(*job) for job in jobs]
     if not values:
         return np.zeros((1, ensembles[0].shape[1]))
     return np.stack(values, axis=0)
@@ -739,6 +845,7 @@ def dissimilarity(
     circular: bool = False,
     sample_size: int = DEFAULT_SAMPLE_SIZE,
     n_permutations: int = DEFAULT_PERMUTATIONS,
+    n_jobs: int = 1,
     weights_ref=None,
     weights=None,
     metric: str = "jsd",
@@ -935,6 +1042,7 @@ def dissimilarity(
             w_ref, w_other, metric,
         )
         null = _permutation_null(
+            n_jobs,
             reference_sample, other_sample, x_min, x_max, x_num,
             use_circular, n_permutations, rng, w_ref, w_other, metric,
             block_length,
@@ -964,6 +1072,7 @@ def dissimilarity(
         noise_floor = float(
             np.mean(
                 _split_half_floor(
+                    n_jobs,
                     (reference_sample, other_sample),
                     x_min, x_max, x_num, use_circular, max(1, s_num // 2), rng,
                     weights=(w_ref, w_other), metric=metric,
