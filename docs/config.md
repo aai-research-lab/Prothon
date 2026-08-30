@@ -145,6 +145,7 @@ Within one ensemble:
 | `label` | Used in figures, tables and messages. |
 | `weights` | A file of per-frame weights. |
 | `stride` | Take every *n*-th frame. |
+| `chains` | Keep only these chains: a PDB letter, an index, or several. |
 
 Under `compare`, every long flag name works: `order_parameters`, `metric`,
 `random_state`, `n_permutations`, `s_num`, `x_num`, `alpha`, `report`,

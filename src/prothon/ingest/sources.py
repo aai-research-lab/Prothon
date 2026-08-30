@@ -67,6 +67,7 @@ def resolve(
     label: str | None = None,
     cache_dir: str | os.PathLike | None = None,
     stride: int | None = None,
+    chains=None,
 ) -> Ensemble:
     """Load whatever a source names.
 
@@ -85,13 +86,19 @@ def resolve(
         source.
     cache_dir
         Where to keep downloaded entries.
+    chains
+        Keep only these chains: a PDB chain letter, an index, or several of
+        either. A complex is often compared one chain at a time.
 
     Returns
     -------
     Ensemble
     """
+    def _chains(ensemble):
+        return ensemble if chains is None else ensemble.select_chains(chains)
+
     if isinstance(source, Ensemble):
-        return source
+        return _chains(source)
 
     text = str(source).strip()
     if not text:
@@ -102,12 +109,12 @@ def resolve(
         from .ped import ped_ensemble
 
         accession, ensemble_id = ped.group(1), ped.group(2) or "e001"
-        return ped_ensemble(
-            accession, ensemble_id, label=label, cache_dir=cache_dir
+        return _chains(
+            ped_ensemble(accession, ensemble_id, label=label, cache_dir=cache_dir)
         )
 
     if os.path.isdir(text) or any(c in text for c in "*?["):
-        return Ensemble.from_pdb_models(text, label=label)
+        return _chains(Ensemble.from_pdb_models(text, label=label))
 
     if not os.path.exists(text):
         raise FileNotFoundError(
@@ -124,13 +131,17 @@ def resolve(
                 f"topology. Pass --topology, or use a multi-model PDB or a PED "
                 f"accession, which carry their own."
             )
-        return Ensemble.from_trajectory(text, topology, label=label, stride=stride)
+        return _chains(
+            Ensemble.from_trajectory(text, topology, label=label, stride=stride)
+        )
 
     # A structure file. With a topology it is a trajectory of one frame; on its
     # own it is a multi-model PDB, which is the usual case.
     if topology is not None and extension not in {".pdb", ".cif", ".mmcif"}:
-        return Ensemble.from_trajectory(text, topology, label=label, stride=stride)
-    return Ensemble.from_pdb_models(text, label=label)
+        return _chains(
+            Ensemble.from_trajectory(text, topology, label=label, stride=stride)
+        )
+    return _chains(Ensemble.from_pdb_models(text, label=label))
 
 
 def resolve_all(
@@ -138,6 +149,7 @@ def resolve_all(
     topology=None,
     cache_dir: str | os.PathLike | None = None,
     stride: int | None = None,
+    chains=None,
 ) -> list[Ensemble]:
     """Resolve several sources, keeping them separate.
 
@@ -191,11 +203,25 @@ def resolve_all(
                 f"none at all for sources that carry their own."
             )
 
+    if chains is None or isinstance(chains, (str, int)):
+        wanted = [chains] * len(flattened)
+    else:
+        wanted = list(chains)
+        if len(wanted) == 1:
+            wanted *= len(flattened)
+        elif len(wanted) != len(flattened):
+            raise ValueError(
+                f"{len(wanted)} chain selections for {len(flattened)} "
+                f"ensembles. Give one, or one per ensemble in the same order."
+            )
+
     resolved = []
-    for item, top in zip(flattened, topologies):
+    for item, top, chain in zip(flattened, topologies, wanted):
         if not isinstance(item, Ensemble):
             logger.info("Loading %s (%s)", item, describe_source(item))
-        resolved.append(resolve(item, top, cache_dir=cache_dir, stride=stride))
+        resolved.append(
+            resolve(item, top, cache_dir=cache_dir, stride=stride, chains=chain)
+        )
     return resolved
 
 

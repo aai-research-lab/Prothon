@@ -48,6 +48,7 @@ conditions averages away the difference being measured.
 | `--config` | `-c` | | A study in a YAML file. Flags override it. |
 | `--ensembles` | `-e` | required | Sources to compare, unless `--config` names them. |
 | `--topology` | `-t` | | One shared path, or one per ensemble in the same order. |
+| `--chains` | | | Keep only these chains: a PDB letter or an index. One shared, or one per ensemble. |
 | `--reference` | `-r` | `0` | An index into `--ensembles`, or a source of its own. |
 | `--order-parameters` | `-p` | `cbcn` | `cbcn`, `cacn`, `caba`, `cata`, `sasa`. |
 | `--metric` | `-m` | `jsd` | `jsd`, `wasserstein`, `ks`. |

@@ -529,6 +529,18 @@ All notable changes to Prothon are recorded here. This project follows
   split sizes fails the same way, landing 29% low on a skewed distribution.
   `scripts/floor_scaling.py` reproduces the measurement.
 
+### Added — one chain of a complex
+
+- **`chains`** on the constructor, `--chains` on the command line, and a
+  `chains` key per ensemble in a study file. A chain is named by its PDB
+  letter or by index, several may be kept, and one selection covers every
+  ensemble or one is given each — so a protomer of one complex can be compared
+  against a protomer of another.
+- **An unknown chain is refused with the available ones named.** MDTraj's own
+  selector takes an integer index, and a chain letter passed to it matches
+  nothing and returns an empty selection without complaining, so the failure
+  would otherwise be an ensemble with no atoms rather than a message.
+
 ### Refusals
 
 - **Coverage, not just identity.** Free end gaps make the aligner behave

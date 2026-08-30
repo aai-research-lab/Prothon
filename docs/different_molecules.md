@@ -135,6 +135,42 @@ load the same one repeatedly.
 populations, so an ensemble loaded from it has uniform weights. That is a fact
 about PED rather than an assumption made here.
 
+## One chain of a complex
+
+A complex is often compared one chain at a time: a bound peptide against its
+free form, one protomer of a dimer against another, or a domain against the
+same domain in a different construct. The rest of the system is a different
+molecule, and averaging over it is not what the question asked.
+
+```bash
+prothon compare -e bound.xtc free.xtc -t complex.pdb --chains A -p cbcn
+```
+
+```python
+Prothon(ensembles=["bound.xtc", "free.xtc"], topology="complex.pdb", chains="A")
+```
+
+A chain is named by its PDB letter or by index, and several may be kept with
+`"A,B"` or `[0, 1]`. One selection covers every ensemble, or give one each:
+
+```python
+Prothon(
+    ensembles=["dimer.xtc", "other.xtc"],
+    topology=["dimer.pdb", "other.pdb"],
+    chains=["A", "B"],          # a protomer of each
+)
+```
+
+Chains selected from different molecules are reconciled by sequence alignment
+in the usual way, so a protomer of one complex compares against a protomer of
+another even where the sequences differ.
+
+An unknown chain is refused with the available ones named. This matters more
+than it sounds: MDTraj's own selector takes an integer index, and a chain
+letter passed to it matches nothing and returns an empty selection without
+complaining — so the failure would otherwise be an ensemble with no atoms in
+it rather than a message.
+
 ## Weighted ensembles
 
 A deposited ensemble stores a probability per conformer, and a reweighted

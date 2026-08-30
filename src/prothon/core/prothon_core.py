@@ -101,6 +101,7 @@ class Prothon:
         verbose: bool = False,
         random_state: int | None = None,
         cache_dir: str | None = None,
+        chains=None,
         study=None,
         *,
         traj_files=None,
@@ -123,6 +124,11 @@ class Prothon:
             accession and a multi-model PDB both do.
 
             Not required at all when every ensemble is already loaded.
+        chains
+            Keep only these chains, as a letter, an index, or several of
+            either -- one selection shared by every ensemble, or one per
+            ensemble. A complex is often compared one chain at a time, since
+            the rest of the system is a different molecule.
         random_state
             Seed for the resampling behind the noise floor and the p-values.
             Set it and a rerun gives the same numbers.
@@ -153,7 +159,7 @@ class Prothon:
         if ensembles is None:
             raise TypeError("Prothon needs ensembles= : two or more sources.")
 
-        loaded = resolve_all(ensembles, topology, cache_dir=cache_dir)
+        loaded = resolve_all(ensembles, topology, cache_dir=cache_dir, chains=chains)
         if len(loaded) < 2:
             raise ValueError(
                 f"A comparison needs at least two ensembles; {len(loaded)} "

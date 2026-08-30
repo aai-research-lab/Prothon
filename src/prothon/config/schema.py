@@ -91,6 +91,13 @@ PARAMETERS: tuple[Parameter, ...] = (
         commands=("compare", "validate"),
     ),
     _p(
+        "chains", nargs="+", metavar="ID",
+        help="Keep only these chains: a PDB chain letter or an index. One "
+             "selection shared by every ensemble, or one per ensemble in the "
+             "same order.",
+        commands=("compare", "validate"),
+    ),
+    _p(
         "reference", short="-r", default="0", metavar="SOURCE",
         help="The ensemble the others are measured against: an index into "
              "--ensembles, or a source of its own.",

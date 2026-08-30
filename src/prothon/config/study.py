@@ -64,7 +64,9 @@ TOP_LEVEL = {"ensembles", "reference", "compare", "output_dir", "description"}
 
 #: Keys allowed for one ensemble. ``source`` is the older name for
 #: ``ensemble`` and still works.
-ENSEMBLE_KEYS = {"ensemble", "source", "topology", "label", "weights", "stride"}
+ENSEMBLE_KEYS = {
+    "ensemble", "source", "topology", "label", "weights", "stride", "chains",
+}
 
 #: Where an ensemble's conformations come from, and the name it used to have.
 WHERE = "ensemble"
@@ -148,14 +150,33 @@ class Study:
                 if path is not None:
                     entry["topology"] = path
 
+        chains = getattr(args, "chains", None)
+        if chains:
+            picks = (
+                [chains] * len(ensembles)
+                if isinstance(chains, str)
+                else list(chains) * len(ensembles)
+                if len(chains) == 1
+                else list(chains)
+            )
+            if len(picks) != len(ensembles):
+                raise ValueError(
+                    f"{len(chains)} chain selections for {len(ensembles)} "
+                    f"ensembles. Give one, or one per ensemble."
+                )
+            for entry, pick in zip(ensembles, picks):
+                entry["chains"] = pick
+
         # A flag not given is a flag not written down. argparse reports an
         # unset `store_true` as False while the schema declares its default as
         # None, so comparing against the schema alone would record every
         # boolean flag as an explicit false and produce a file full of
         # settings nobody chose.
         specs = {p.name: p for p in parameters_for("compare")}
+        # `chains` lands on each ensemble entry above, not in the settings:
+        # it says which part of a molecule an ensemble is, not how to compare.
         skip = {"ensembles", "topology", "reference", "output_dir", "config",
-                "json", "verbose", "save_config"}
+                "json", "verbose", "save_config", "chains"}
         settings = {}
         for name, spec in specs.items():
             if name in skip:
@@ -205,7 +226,7 @@ class Study:
         # comparison, and the ones below say how a study was reached rather
         # than what it says.
         skip = {"config", "save_config", "json", "verbose", "output_dir",
-                "ensembles", "topology", "reference"}
+                "ensembles", "topology", "reference", "chains"}
         settings = {k: v for k, v in self.settings.items() if k not in skip}
         for name, spec in specs.items():
             if name in skip:
@@ -239,7 +260,8 @@ class Study:
 
         settings = dict(self.settings)
         for key in ("report", "json", "verbose", "config", "save_config",
-                    "output_dir", "ensembles", "topology", "reference"):
+                    "output_dir", "ensembles", "topology", "reference",
+                    "chains"):
             settings.pop(key, None)
 
         block = None
@@ -485,6 +507,7 @@ def resolve_ensembles(study: Study, cache_dir: str | None = None):
             label=entry.get("label"),
             cache_dir=cache_dir,
             stride=entry.get("stride"),
+            chains=entry.get("chains"),
         )
         if weights is not None:
             ensemble.weights = ensemble._validate_weights(weights, ensemble.n_frames)

@@ -269,6 +269,87 @@ class Ensemble:
             },
         )
 
+    def select_chains(self, chains) -> Ensemble:
+        """One or more chains of this ensemble, as an ensemble of their own.
+
+        A complex is often compared one chain at a time: a bound peptide
+        against its free form, or one protomer of a dimer against another. The
+        rest of the system is a different molecule and averaging over it is
+        not what the question asked.
+
+        Parameters
+        ----------
+        chains
+            A chain letter as written in the PDB (``"A"``), an integer index
+            (``0``), or several of either (``"A,B"`` or ``[0, 1]``).
+
+        Notes
+        -----
+        MDTraj's ``chainid`` selector takes the integer index, and a letter
+        passed to it matches nothing and returns an empty selection rather
+        than failing -- so letters are resolved here against
+        ``chain.chain_id`` and an unknown one is refused with the available
+        ones named.
+        """
+        topology = self.trajectory.topology
+        available = {
+            (c.chain_id or "").strip(): c.index
+            for c in topology.chains
+            if (c.chain_id or "").strip()
+        }
+
+        if isinstance(chains, (str, int)):
+            chains = [chains]
+        wanted = []
+        for item in chains:
+            for part in (
+                str(item).split(",") if isinstance(item, str) else [item]
+            ):
+                part = str(part).strip()
+                if not part:
+                    continue
+                if part.isdigit():
+                    index = int(part)
+                elif part in available:
+                    index = available[part]
+                else:
+                    named = ", ".join(sorted(available)) or "none are labelled"
+                    raise ValueError(
+                        f"{self.label}: no chain {part!r}. Chains present: "
+                        f"{named}. An index also works: 0 to "
+                        f"{topology.n_chains - 1}."
+                    )
+                if not 0 <= index < topology.n_chains:
+                    raise ValueError(
+                        f"{self.label}: chain index {index} is out of range; "
+                        f"there are {topology.n_chains}."
+                    )
+                wanted.append(index)
+
+        if not wanted:
+            raise ValueError(f"{self.label}: no chains selected.")
+
+        atoms = topology.select(
+            " or ".join(f"chainid {i}" for i in sorted(set(wanted)))
+        )
+        if atoms.size == 0:
+            raise ValueError(
+                f"{self.label}: chains {sorted(set(wanted))} hold no atoms."
+            )
+
+        label = f"{self.label} chain {'+'.join(str(i) for i in sorted(set(wanted)))}"
+        selected = Ensemble(
+            trajectory=self.trajectory.atom_slice(atoms),
+            weights=self.weights,
+            label=label,
+            provenance={**self.provenance, "chains": sorted(set(wanted))},
+        )
+        logger.info(
+            "%s: %d of %d residues", label,
+            selected.trajectory.topology.n_residues, topology.n_residues,
+        )
+        return selected
+
     @classmethod
     def from_ped(
         cls,
