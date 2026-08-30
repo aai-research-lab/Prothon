@@ -454,7 +454,14 @@ def estimate_pdf(
         kde = gaussian_kde(values, bw_method="silverman", weights=w)
     except np.linalg.LinAlgError:  # pragma: no cover - degenerate input
         return grid, _constant_pdf(values, grid)
-    return grid, kde(grid)
+
+    # The same floor the circular estimator carries, and for the same reason:
+    # a Gaussian kernel underflows to exact zero far enough into the tail, and
+    # an exact zero opposite a positive value makes the Jensen-Shannon distance
+    # infinite. With the floor in place the distance is always defined, and two
+    # genuinely disjoint distributions approach 1 because that is what the
+    # arithmetic gives rather than because a fallback said so.
+    return grid, np.maximum(kde(grid), _DENSITY_FLOOR)
 
 
 def jsd_local(

@@ -571,6 +571,21 @@ All notable changes to Prothon are recorded here. This project follows
 - `scripts/parallel_speedup.py` measures the gain, because it depends on the
   machine: each worker imports NumPy and SciPy before doing anything, and on a
   small job that exceeds the work saved.
+### Fixed — the density floor belongs on both estimators
+
+- The circular estimator was given a density floor to stop an underflowed
+  kernel producing an infinite Kullback–Leibler term; the linear one was not,
+  and a non-finite distance there was reported as `1.0`.
+- **That was wrong for a near-degenerate feature.** Buried solvent
+  accessibility is nearly constant, its kernel collapses, and a value of 1.0
+  says "maximally different" about two halves of the same ensemble. It raised
+  the measured noise floor on `sasa` from 0.032 to 0.053 and took the count of
+  significant residues to zero.
+- Both estimators now floor their density, the distance is defined for every
+  input, and two genuinely disjoint distributions reach 1.0 by arithmetic
+  rather than by fallback. A non-finite result now raises rather than
+  returning a number, because neither 0 nor 1 can be told from a measurement
+  by the caller.
 
 ### Refusals
 

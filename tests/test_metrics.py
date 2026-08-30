@@ -98,6 +98,50 @@ class TestWasserstein:
         assert max(values) - min(values) < 1e-9
 
 
+class TestTheDistanceIsAlwaysDefined:
+    """Both estimators floor their density, so no input produces an infinite
+    Kullback-Leibler term and no fallback value has to be invented.
+
+    The first attempt at this returned 1.0 whenever the distance came out
+    non-finite. That is right for two genuinely disjoint distributions and
+    wrong for a near-degenerate feature whose kernel has collapsed, and the two
+    are indistinguishable at the point of decision. It raised the measured
+    noise floor by two thirds on solvent accessibility, where buried residues
+    are nearly constant, and took the significant-residue count to zero.
+    """
+
+    def test_disjoint_distributions_reach_one_by_arithmetic(self):
+        rng = np.random.default_rng(0)
+        a = rng.normal(0, 0.05, (3000, 1))
+        b = rng.normal(5, 0.05, (3000, 1))
+        assert jsd_local(a, b, -1, 6, 100)[0] == pytest.approx(1.0, abs=1e-6)
+
+    def test_two_halves_of_one_ensemble_stay_near_zero(self):
+        """The case the fallback broke: a floor that fires here inflates the
+        resolution limit and hides every real difference behind it."""
+        rng = np.random.default_rng(1)
+        x = rng.normal(0, 1, (6000, 1))
+        assert jsd_local(x[:3000], x[3000:], -4, 4, 100)[0] < 0.06
+
+    def test_a_nearly_constant_feature_is_not_maximally_different(self):
+        """Buried solvent accessibility is nearly constant, and a collapsed
+        kernel must not read as two unrelated distributions."""
+        rng = np.random.default_rng(2)
+        a = rng.normal(0.001, 0.0005, (3000, 1))
+        b = rng.normal(0.001, 0.0005, (3000, 1))
+        assert jsd_local(a, b, a.min(), a.max(), 100)[0] < 0.2
+
+    def test_no_density_contains_an_exact_zero(self):
+        from prothon.core.dissimilarity import estimate_pdf
+
+        rng = np.random.default_rng(3)
+        for circular in (False, True):
+            _, density = estimate_pdf(
+                rng.normal(0.9, 0.15, 3000), -np.pi, np.pi, 100, circular
+            )
+            assert (density > 0).all(), f"exact zero with circular={circular}"
+
+
 class TestAConcentratedCircularFeatureIsNotReportedAsIdentical:
     """A tight torsion drove the von Mises kernel to underflow, which made the
     Jensen-Shannon distance infinite, which the caller reported as zero.

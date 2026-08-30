@@ -130,12 +130,15 @@ def _jsd(x, y, wx, wy, circular, grid, x_num):
     if np.isfinite(value):
         return float(value)
 
-    # Non-finite means the two densities share no support the estimator can
-    # see, which is the *most* different two distributions can be. Reporting
-    # zero here -- as this did -- turns a maximal difference into no
-    # difference, and it did so silently on every tightly concentrated
-    # torsion.
-    return 1.0
+    # Both densities carry a floor, so every grid point is positive and the
+    # distance is defined. Reaching here means something else has gone wrong,
+    # and neither 0 nor 1 would be an answer: 0 reads as agreement and 1 as
+    # maximal disagreement, and a caller cannot tell either from a measurement.
+    raise FloatingPointError(
+        "The Jensen-Shannon distance came out non-finite, which the density "
+        "floor should make impossible. This is a bug rather than a property "
+        "of the data; please report it."
+    )
 
 
 def _wasserstein(x, y, wx, wy, circular, grid, x_num):
