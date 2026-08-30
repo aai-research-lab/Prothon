@@ -541,6 +541,21 @@ All notable changes to Prothon are recorded here. This project follows
   nothing and returns an empty selection without complaining, so the failure
   would otherwise be an ensemble with no atoms rather than a message.
 
+### Fixed — a concentrated torsion was reported as no difference at all
+
+- A tightly concentrated circular feature drove the von Mises kernel to a
+  concentration of order a thousand, at which it underflows to exact zero a
+  few grid points from the peak. An exact zero opposite a positive value makes
+  a Kullback–Leibler term infinite, and the Jensen–Shannon distance with it.
+- **The caller then reported that infinity as `0.0`.** A pair of torsion
+  distributions genuinely 0.29 apart came back as identical, silently, on
+  every buried residue of every comparison using `cata`.
+- The density now carries a floor 300 orders of magnitude below anything that
+  matters, and a non-finite distance is reported as 1.0 — no shared support is
+  the *most* two distributions can differ, not the least.
+- Found because the ubiquitin re-analysis compares the same quantity under two
+  code paths and checks they agree. Only `cata` disagreed, by 0.327.
+
 ### Refusals
 
 - **Coverage, not just identity.** Free end gaps make the aligner behave

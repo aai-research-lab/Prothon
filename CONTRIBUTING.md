@@ -47,6 +47,19 @@ one in `tests/test_dissimilarity.py` to copy. This is not optional — the bug
 that motivated the 2.1 release passed every unit test in 2.0 and failed exactly
 this check.
 
+## Editing by text match
+
+Several changes in this project's history have been applied by matching a
+string and replacing it. When the string has moved, the match fails, the
+replacement writes nothing, and the operation reports success. It has happened
+to the README three times and to a test file once, and in every case the loss
+was silent.
+
+If you edit that way, assert the anchor exists before writing and assert the
+result contains what you added. The test count is the cheapest check available:
+if a commit claims to add tests, `pytest --collect-only` should report more
+than it did before.
+
 ## Before a release
 
 Two things in `scripts/` are measurements rather than tests, and both have

@@ -127,7 +127,15 @@ def _jsd(x, y, wx, wy, circular, grid, x_num):
     _, p = estimate_pdf(x, x_min, x_max, x_num, circular, wx)
     _, q = estimate_pdf(y, x_min, x_max, x_num, circular, wy)
     value = jensenshannon(p, q, base=2)
-    return 0.0 if not np.isfinite(value) else float(value)
+    if np.isfinite(value):
+        return float(value)
+
+    # Non-finite means the two densities share no support the estimator can
+    # see, which is the *most* different two distributions can be. Reporting
+    # zero here -- as this did -- turns a maximal difference into no
+    # difference, and it did so silently on every tightly concentrated
+    # torsion.
+    return 1.0
 
 
 def _wasserstein(x, y, wx, wy, circular, grid, x_num):

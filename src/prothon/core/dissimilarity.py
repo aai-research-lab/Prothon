@@ -355,6 +355,12 @@ def _vonmises_bandwidth(angles: np.ndarray, weights: np.ndarray | None = None) -
     return float(np.clip(kappa, _KAPPA_MIN, _KAPPA_MAX))
 
 
+#: Smallest density reported anywhere on a grid. Present only to keep an
+#: underflowed kernel from producing an infinite Kullback-Leibler term; it is
+#: some three hundred orders of magnitude below any density that matters.
+_DENSITY_FLOOR = 1e-300
+
+
 def _circular_pdf(
     values: np.ndarray, grid: np.ndarray, weights: np.ndarray | None = None
 ) -> np.ndarray:
@@ -372,7 +378,14 @@ def _circular_pdf(
         total = kernel.sum(axis=1) / values.size
     else:
         total = kernel @ weights
-    return total / (2.0 * np.pi * ive(0, kappa))
+    density = total / (2.0 * np.pi * ive(0, kappa))
+
+    # A tight torsion gives a concentration of order a thousand, at which the
+    # kernel underflows to exact zero a few grid points from the peak. An
+    # exact zero opposite a positive value makes a Kullback-Leibler term
+    # infinite, and the Jensen-Shannon distance with it. The floor is far
+    # below any density that carries weight and removes the discontinuity.
+    return np.maximum(density, _DENSITY_FLOOR)
 
 
 def _constant_pdf(values: np.ndarray, grid: np.ndarray) -> np.ndarray:

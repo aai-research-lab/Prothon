@@ -98,6 +98,55 @@ class TestWasserstein:
         assert max(values) - min(values) < 1e-9
 
 
+class TestAConcentratedCircularFeatureIsNotReportedAsIdentical:
+    """A tight torsion drove the von Mises kernel to underflow, which made the
+    Jensen-Shannon distance infinite, which the caller reported as zero.
+
+    The chain matters more than any link in it: a numerical underflow became a
+    maximal distance became no distance, and the output was 0.0000 --- a value
+    that looks like a measurement and reads as agreement.
+    """
+
+    @staticmethod
+    def concentrated(seed, centre, spread=0.15, n=4000):
+        return np.random.default_rng(seed).normal(centre, spread, (n, 1))
+
+    def test_a_real_difference_is_not_reported_as_zero(self):
+        a = self.concentrated(0, 0.9)
+        b = self.concentrated(1, 1.0, 0.20)
+        assert jsd_local(a, b, -np.pi, np.pi, 100, True)[0] > 0.1
+
+    def test_circular_and_linear_agree_away_from_the_wrap(self):
+        """A distribution nowhere near the wrap should give the same answer
+        either way. Before the fix the circular value was 0.29 low."""
+        a = self.concentrated(2, 0.9)
+        b = self.concentrated(3, 1.0, 0.20)
+        low, high = min(a.min(), b.min()), max(a.max(), b.max())
+        linear = jsd_local(a, b, low, high, 100, False)[0]
+        circular = jsd_local(a, b, -np.pi, np.pi, 100, True)[0]
+        assert circular == pytest.approx(linear, abs=0.02)
+
+    def test_identical_input_still_gives_zero(self):
+        a = self.concentrated(4, 0.5)
+        assert jsd_local(a, a.copy(), -np.pi, np.pi, 100, True)[0] == pytest.approx(0.0)
+
+    def test_disjoint_support_gives_the_maximum_not_the_minimum(self):
+        """Two torsions with no overlap are as different as two distributions
+        can be. The answer is 1, not 0."""
+        a = self.concentrated(5, -2.5, 0.05)
+        b = self.concentrated(6, 2.5, 0.05)
+        assert jsd_local(a, b, -np.pi, np.pi, 100, True)[0] > 0.99
+
+    def test_a_density_never_contains_an_exact_zero(self):
+        from prothon.core.dissimilarity import estimate_pdf
+
+        _, density = estimate_pdf(
+            self.concentrated(7, 0.9).ravel(), -np.pi, np.pi, 100, True
+        )
+        assert (density > 0).all()
+        assert np.isfinite(density).all()
+
+
 class TestSupremum:
     def test_kuiper_is_rotation_invariant_and_ks_is_not(self):
         """KS asks for the largest gap between two cumulative distributions.
