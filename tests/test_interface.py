@@ -389,6 +389,57 @@ class TestOneImport:
         assert pathlib.Path(out).exists()
 
 
+class TestNothingIsUnreachable:
+    """A parameter the estimator accepts and the study does not pass is a
+    setting nobody can use.
+
+    `sample_size` and `correlation_time_frames` were both in this state:
+    documented on `dissimilarity`, reachable from neither the study object nor
+    the command line, and discovered only when a script tried to set one.
+    """
+
+    def test_every_estimator_parameter_reaches_the_study(self):
+        import inspect
+
+        from prothon import Prothon
+        from prothon.core.dissimilarity import dissimilarity
+
+        # These are supplied by the study from what it already knows.
+        internal = {
+            "reference", "other", "ref_rep", "rep", "x_min", "x_max",
+            "circular", "weights", "weights_ref", "ensemble_index",
+            "reference_index", "order_parameter", "random_state",
+        }
+        estimator = set(inspect.signature(dissimilarity).parameters) - internal
+        study = set(inspect.signature(Prothon.compare_ensembles).parameters)
+
+        missing = sorted(estimator - study)
+        assert not missing, (
+            f"dissimilarity accepts these and compare_ensembles cannot pass "
+            f"them: {missing}"
+        )
+
+    def test_sample_size_reaches_the_command_line(self, files, capsys):
+        assert main([
+            "compare", "-e", str(files / "a.dcd"), str(files / "b.dcd"),
+            "-t", str(files / "top.pdb"), "-p", "cbcn", "-s", "0",
+            "--s-num", "2", "--sample-size", "200",
+        ]) == 0
+        assert "CBCN" in capsys.readouterr().out
+
+    def test_a_supplied_correlation_time_reaches_the_estimator(self, files):
+        from prothon import Prothon
+
+        study = Prothon(
+            ensembles=[str(files / "a.dcd"), str(files / "b.dcd")],
+            topology=str(files / "top.pdb"), random_state=0,
+        )
+        result = study.compare_ensembles(
+            "cbcn", s_num=2, correlation_time_frames=12.0
+        )["cbcn"][0]
+        assert result.correlation_time == 12.0
+
+
 class TestSources:
     def test_a_trajectory_needs_a_topology(self, files):
         with pytest.raises(ValueError, match="needs a topology"):

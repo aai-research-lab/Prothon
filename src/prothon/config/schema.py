@@ -129,6 +129,12 @@ PARAMETERS: tuple[Parameter, ...] = (
         commands=("compare",),
     ),
     _p(
+        "sample_size", kind=int, default=1000, metavar="N",
+        help="Conformations drawn from each ensemble per comparison. Larger "
+             "buys a tighter noise floor at linear cost.",
+        commands=("compare",),
+    ),
+    _p(
         "s_num", kind=int, default=5, metavar="N",
         help="Split-half repeats behind the noise floor.",
         commands=("compare",),
