@@ -20,6 +20,30 @@ Lysozyme and Insulin. *Journal of Molecular Biology* **1973**, *79* (2),
 351–371.
 [doi:10.1016/0022-2836(73)90011-9](https://doi.org/10.1016/0022-2836(73)90011-9)
 
+## Global shape and polymer scaling
+
+Flory, P. J. *Statistical Mechanics of Chain Molecules*; Interscience: New
+York, 1969.
+
+Le Guillou, J. C.; Zinn-Justin, J. Critical Exponents for the n-Vector Model in
+Three Dimensions from Field Theory. *Physical Review Letters* **1977**, *39*
+(2), 95–98.
+[doi:10.1103/PhysRevLett.39.95](https://doi.org/10.1103/PhysRevLett.39.95)
+
+Hofmann, H.; Soranno, A.; Borgia, A.; Gast, K.; Nettels, D.; Schuler, B.
+Polymer Scaling Laws of Unfolded and Intrinsically Disordered Proteins
+Quantified with Single-Molecule Spectroscopy. *Proceedings of the National
+Academy of Sciences* **2012**, *109* (40), 16155–16160.
+[doi:10.1073/pnas.1207719109](https://doi.org/10.1073/pnas.1207719109)
+
+Baul, U.; Chakraborty, D. Intrinsically Disordered Proteins Can Behave as
+Different Polymers across Their Conformational Ensemble. *bioRxiv* **2024**.
+[doi:10.1101/2024.09.27.615433](https://doi.org/10.1101/2024.09.27.615433)
+
+Rudnick, J.; Gaspari, G. The Aspherity of Random Walks. *Journal of Physics A*
+**1986**, *19* (4), L191–L193.
+[doi:10.1088/0305-4470/19/4/004](https://doi.org/10.1088/0305-4470/19/4/004)
+
 ## Distances between distributions
 
 Lin, J. Divergence Measures Based on the Shannon Entropy. *IEEE Transactions on

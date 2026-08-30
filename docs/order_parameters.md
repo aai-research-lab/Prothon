@@ -34,37 +34,93 @@ method (Aina, Hsueh and Plotkin 2023).
 
 One column: a single number per conformation, describing the whole molecule.
 These say *whether* two ensembles differ in overall size or shape, which is
-what a paper on a disordered protein usually reports.
+what a study of a disordered protein usually reports.
 
-| name | quantity | units | typical values |
+| name | quantity | units | reference values |
 |---|---|---|---|
 | `rg` | Radius of gyration | nm | |
 | `ree` | End-to-end distance | nm | |
-| `asph` | Asphericity | | 0 sphere, 0.25 disc, 1 rod |
-| `nu` | Flory scaling exponent | | 0.33 compact, 0.5 ideal, 0.588 expanded |
+| `asph` | Asphericity | | 0 sphere · 0.25 disc · 1 rod |
+| `nu` | Flory scaling exponent | | 0.33 globule · 0.5 ideal · 0.588 self-avoiding |
 
 ```bash
 prothon compare -e md.xtc PED00024 -t top.pdb -p rg,nu
 ```
 
-A global parameter compares the distribution, not the mean. Two ensembles with
-the same average radius of gyration and different breadth are different
-ensembles, and this reports them as such.
+The summary says `differs` rather than counting residues, since there is one
+column and nothing to plot per position.
 
-The summary says `differs` rather than counting residues, since there is only
-one column and nothing to plot per position.
+### `rg` — radius of gyration
 
-**`asph`** comes from the gyration tensor eigenvalues, so it describes how the
-mass is arranged rather than how much there is: two conformations can share a
-radius of gyration and differ completely in shape.
+The root-mean-square distance of the atoms from their centre of mass, mass
+weighted. The single most reported number about a disordered ensemble, and the
+one a SAXS experiment measures most directly.
 
-**`nu`** is fitted on each conformation separately — the root-mean-square
-distance between residues separated by *s* in sequence goes as *s*<sup>ν</sup>,
-and ν is the slope on log axes. Fitting per conformation rather than once over
-the ensemble is what makes it comparable: a comparison needs a distribution.
-The per-frame value is noisy on a short chain, with a spread of roughly 0.15 at
-thirty residues and 0.10 at a hundred and twenty, and that spread is part of
-what is being compared. A chain shorter than about ten residues is refused.
+It says how large a conformation is and nothing about its shape: a compact
+sphere and an open hairpin can share a radius of gyration.
+
+### `ree` — end-to-end distance
+
+The distance between the first and last alpha carbon. What a FRET experiment
+reports, once the dye positions are accounted for.
+
+Together with `rg` it carries shape information that neither has alone. For an
+ideal chain ⟨R²ₑₑ⟩/⟨R²_g⟩ = 6; a value below that means the ends are closer
+than the chain's overall size implies, which is a long-range contact.
+
+### `asph` — asphericity
+
+From the eigenvalues λ₁ ≤ λ₂ ≤ λ₃ of the gyration tensor:
+
+$$
+\Delta = 1 - 3\,\frac{\lambda_1\lambda_2 + \lambda_2\lambda_3 + \lambda_1\lambda_3}
+                       {(\lambda_1 + \lambda_2 + \lambda_3)^2}
+$$
+
+Zero when the three are equal — a sphere — and one when a single axis carries
+everything — a rod. A flat disc gives 0.25.
+
+This is the shape information `rg` discards. Two ensembles with the same
+radius of gyration and different asphericity are differently shaped, and a
+change in asphericity without a change in `rg` is a rearrangement at constant
+size.
+
+### `nu` — Flory scaling exponent
+
+The root-mean-square distance between alpha carbons separated by *s* positions
+in sequence goes as *s*<sup>ν</sup>, and ν is the slope on log axes. It is the
+standard way of asking what kind of polymer a disordered protein resembles:
+
+| ν | meaning |
+|---|---|
+| ≈ 0.33 | collapsed globule — a folded protein, or a poor solvent |
+| ≈ 0.5 | ideal chain, attraction and excluded volume in balance |
+| ≈ 0.588 | self-avoiding walk in good solvent — a denatured chain |
+
+Measured values sit between these. Unfolded proteins in water average about
+0.46 and rise toward 0.6 in denaturant (Hofmann et al. 2012).
+
+**Prothon fits ν on each conformation rather than once over the ensemble.**
+The usual practice is a single fit to the ensemble-averaged internal scaling
+profile, which gives one number and no distribution — and a comparison needs a
+distribution. Fitting per conformation gives one, and it is not merely noise
+around the mean: a single ensemble can hold compact and expanded conformations
+with genuinely different exponents (Baul and Chakraborty 2024).
+
+The per-conformation value is noisy, and the noise is real rather than an
+artefact of the fit — a spread of roughly 0.15 at thirty residues and 0.10 at a
+hundred and twenty. That spread is part of what two ensembles are compared on.
+A chain shorter than about ten residues is refused rather than fitted through
+too few points.
+
+### What comparing them adds
+
+Reporting ⟨Rg⟩ ± SD and comparing the means is the usual practice. Prothon
+compares the distributions, and reports the smallest difference the sampling
+can resolve beside the result — so two ensembles with the same mean radius of
+gyration and different breadth are correctly reported as different, and a
+difference smaller than two halves of one ensemble show against each other is
+reported as unresolvable.
 
 ## Contact numbers
 
