@@ -359,3 +359,63 @@ class TestSaturationIsCaughtByAPlateauNotARatio:
 
         slope = float(np.polyfit(np.log(lengths), np.log(taus), 1)[0])
         assert slope > PLATEAU_SLOPE, "the slope must still catch it"
+
+
+class TestTheWarningFiresWhereItMatters:
+    """A warning nobody reads is worse than no warning.
+
+    The convergence check trips easily when the correlation time hovers near
+    one: the estimate is noisy, and the log-slope of a noisy near-constant is
+    meaningless. Left unguarded it fired on every small test fixture, which is
+    how a warning becomes something to filter out.
+    """
+
+    @staticmethod
+    def _ou(n, tau_exp, seed=0, features=30):
+        import numpy as np
+
+        rng = np.random.default_rng(seed)
+        phi = np.exp(-1.0 / tau_exp)
+        x = np.zeros((n, features))
+        for i in range(1, n):
+            x[i] = phi * x[i - 1] + np.sqrt(1 - phi**2) * rng.normal(size=features)
+        return x
+
+    def _warnings_from(self, a, b, n):
+        import warnings
+
+        from prothon.core.dissimilarity import dissimilarity
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            dissimilarity(
+                a, b, -6.0, 6.0, s_num=3, n_permutations=10,
+                sample_size=n, random_state=0,
+            )
+        return [str(w.message) for w in caught]
+
+    def test_silent_when_the_correction_is_immaterial(self):
+        """An essentially uncorrelated series says nothing about convergence."""
+        import numpy as np
+
+        rng = np.random.default_rng(0)
+        a, b = rng.normal(size=(300, 20)), rng.normal(size=(300, 20))
+        messages = self._warnings_from(a, b, 300)
+        assert not any("correlation time" in m for m in messages)
+
+    def test_fires_when_the_correlation_is_real(self):
+        a, b = self._ou(2000, 45.0, seed=0), self._ou(2000, 45.0, seed=1)
+        messages = self._warnings_from(a, b, 2000)
+        assert any("still rising" in m for m in messages)
+
+    def test_unverified_is_not_the_same_claim_as_rising(self):
+        """Too short to fit a trend is not the same as a trend that was found."""
+        import numpy as np
+
+        from prothon.core.correlation import correlation_time_estimate
+
+        estimate = correlation_time_estimate(self._ou(200, 45.0))
+        assert not estimate.converged
+        assert not np.isfinite(estimate.slope), (
+            "an unfittable trend must be distinguishable from a rising one"
+        )

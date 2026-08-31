@@ -83,6 +83,12 @@ from .metrics import feature_distance, resolve_metric
 
 logger = get_logger("dissimilarity")
 
+#: Correlation time below which an unsettled estimate is not worth warning
+#: about: the block correction is immaterial there and the warning would be
+#: noise. Above it, an unsettled estimate makes the effective sample size and
+#: the block count upper bounds, which is worth saying.
+_WARN_ABOVE_TAU = 2.0
+
 __all__ = [
     "ComparisonResult",
     "benjamini_hochberg",
@@ -1046,6 +1052,7 @@ def dissimilarity(
     # can be built from.
     tau = 1.0
     tau_converged = True
+    tau_assessable = True
     block_length, n_blocks = 1, min(ref_rep.shape[0], rep.shape[0])
     if not legacy and block_permutation is not False:
         if correlation_time_frames is not None:
@@ -1060,6 +1067,12 @@ def dissimilarity(
             right = correlation_time_estimate(rep)
             tau = max(left.tau, right.tau)
             tau_converged = bool(left.converged and right.converged)
+            # A trend that could not be fitted is not a trend that was found.
+            # "Unverified" and "known to be rising" are different statements
+            # and the warning below distinguishes them.
+            tau_assessable = bool(
+                np.isfinite(left.slope) and np.isfinite(right.slope)
+            )
         if tau > 1.0 or block_permutation is True:
             smaller = min(ref_rep.shape[0], rep.shape[0])
             block_length, n_blocks = plan_blocks(smaller, tau)
@@ -1098,18 +1111,37 @@ def dissimilarity(
         # One check, because the block length is no longer shortened to
         # manufacture blocks: a trajectory too short for its own correlation
         # time now shows up as too few blocks, which is what it is.
-        if not tau_converged:
-            warnings.warn(
-                f"The correlation time is still rising with trajectory "
-                f"length, so the estimate of about {tau:.0f} frames is a "
-                f"lower bound rather than a value. Everything derived from it "
-                f"is correspondingly optimistic: the {n_blocks} blocks below "
-                f"are an upper bound, and so is the effective sample size. "
-                f"Sample this system for longer before treating the "
-                f"per-residue calls as settled.",
-                UserWarning,
-                stacklevel=3,
-            )
+        # Only worth saying when the correlation correction is doing
+        # something. Below two frames the blocks are three frames long, the
+        # effective sample size is within a factor of two of the frame count,
+        # and an unsettled estimate changes nothing a reader would act on. The
+        # log-slope of a noisy estimate hovering near 1 trips easily, so
+        # without this the warning fires on every small dataset -- which is how
+        # a warning stops being read.
+        if not tau_converged and tau >= _WARN_ABOVE_TAU:
+            if tau_assessable:
+                warnings.warn(
+                    f"The correlation time is still rising with trajectory "
+                    f"length, so the estimate of about {tau:.0f} frames is a "
+                    f"lower bound rather than a value. Everything derived "
+                    f"from it is correspondingly optimistic: the {n_blocks} "
+                    f"blocks below are an upper bound, and so is the "
+                    f"effective sample size. Sample this system for longer "
+                    f"before treating the per-residue calls as settled.",
+                    UserWarning,
+                    stacklevel=3,
+                )
+            else:
+                warnings.warn(
+                    f"The trajectory is too short to check whether its "
+                    f"correlation time of about {tau:.0f} frames has settled: "
+                    f"fitting the trend needs several nested prefixes and "
+                    f"there are not enough frames for them. The estimate is "
+                    f"used, and it is unverified rather than known to be "
+                    f"wrong.",
+                    UserWarning,
+                    stacklevel=3,
+                )
 
         withheld = block_length > 1 and n_blocks < MINIMUM_BLOCKS
         if withheld:
