@@ -131,3 +131,51 @@ class TestTheCitationIsUsable:
                     r"https://orcid\.org/\d{4}-\d{4}-\d{4}-\d{3}[\dX]",
                     author["orcid"],
                 )
+
+
+class TestZenodoAgreesWithTheCitation:
+    """Three files now describe this software and they must not diverge.
+
+    `CITATION.cff` is read by GitHub, `.zenodo.json` by Zenodo when it mints a
+    DOI, and `pyproject.toml` by PyPI. A DOI is permanent, so a title or an
+    author list that was wrong on the day of the release stays wrong.
+    """
+
+    @staticmethod
+    def _zenodo():
+        import json
+        import pathlib
+
+        path = pathlib.Path(__file__).resolve().parent.parent / ".zenodo.json"
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def test_the_title_matches(self, citation):
+        assert self._zenodo()["title"] == citation["title"]
+
+    def test_the_licence_matches(self, citation):
+        assert self._zenodo()["license"] == citation["license"]
+
+    def test_the_author_list_matches_in_order(self, citation):
+        """Order is authorship, not presentation."""
+        zenodo = [c["name"] for c in self._zenodo()["creators"]]
+        cff = [
+            f"{a['family-names']}, {a['given-names']}"
+            for a in citation["authors"]
+        ]
+        assert zenodo == cff
+
+    def test_the_method_paper_is_linked(self, citation):
+        """The DOI must point back at what it is supplementary to."""
+        doi = citation["preferred-citation"]["doi"]
+        related = {
+            r["identifier"] for r in self._zenodo()["related_identifiers"]
+        }
+        assert doi in related, f"{doi} is not among the related identifiers"
+
+    def test_the_orcid_is_bare_in_zenodo_and_a_url_in_the_citation(self):
+        """The two schemas want it written differently, which is easy to get
+        wrong by copying one into the other."""
+        citation_orcid = "0000-0002-8215-7452"
+        creator = self._zenodo()["creators"][0]
+        assert creator["orcid"] == citation_orcid
+        assert not creator["orcid"].startswith("http")

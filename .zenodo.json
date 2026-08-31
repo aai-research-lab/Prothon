@@ -1,0 +1,49 @@
+{
+  "title": "Prothon: statistically calibrated comparison of protein conformational ensembles",
+  "description": "<p>Prothon represents a protein conformational ensemble as a vector of probability distributions over local order parameters and quantifies the dissimilarity between ensembles by the Jensen-Shannon distance between corresponding distributions. The local representation requires no structural superposition, so the cost is linear rather than quadratic in ensemble size.</p><p>Every comparison is reported alongside a noise floor measured from disjoint halves of each ensemble, which is the smallest difference the available sampling can resolve. Per-residue significance is assessed against a null built by permuting contiguous blocks of conformations, with block length set from an estimated autocorrelation time and calibrated against synthetic systems whose correct answer is fixed by construction. The effective sample size is computed from both conformer weights and temporal correlation, and no p-value is reported where the data cannot support one.</p><p>The method is described in Aina, Hsueh and Plotkin, <em>J. Chem. Inf. Model.</em> <strong>2023</strong>, 63, 3453-3461. Please cite that paper for the method and this record for the specific version of the software used.</p>",
+  "upload_type": "software",
+  "license": "MIT",
+  "access_right": "open",
+  "creators": [
+    {
+      "name": "Aina, Adekunle",
+      "affiliation": "California State University Dominguez Hills",
+      "orcid": "0000-0002-8215-7452"
+    },
+    {
+      "name": "Hsueh, Shawn C. C."
+    },
+    {
+      "name": "Plotkin, Steven S."
+    }
+  ],
+  "keywords": [
+    "conformational ensembles",
+    "molecular dynamics",
+    "intrinsically disordered proteins",
+    "ensemble comparison",
+    "statistical calibration",
+    "effective sample size",
+    "local order parameters"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "10.1021/acs.jcim.3c00145",
+      "relation": "isSupplementTo",
+      "resource_type": "publication-article",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "10.5281/zenodo.7792288",
+      "relation": "references",
+      "resource_type": "dataset",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "https://github.com/aai-research-lab/Prothon",
+      "relation": "isSupplementTo",
+      "resource_type": "software",
+      "scheme": "url"
+    }
+  ]
+}
