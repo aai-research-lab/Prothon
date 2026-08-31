@@ -40,23 +40,49 @@ differs.
 
 ```{toctree}
 :maxdepth: 2
+:caption: Guide
 
 installation
 getting_started
 examples
 config
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Reference
+
 order_parameters
 metrics
 statistics
-calibration
 different_molecules
 benchmark
 validate
 cli_reference
-performance
 api
 references
 ```
+
+```{toctree}
+:maxdepth: 2
+:caption: Measurements
+
+calibration
+circular
+convergence
+ubiquitin
+performance
+```
+
+The measurements are not illustrations. Each is produced by a script in
+`scripts/`, reports a number rather than a claim, and is the reason some
+default in the software is what it is. **Calibration** is the false-positive
+rate of the significance test against systems whose correct answer is fixed by
+construction. **Circular** is what treating a circular order parameter as
+linear costs, which differs by two orders of magnitude between metrics.
+**Convergence** asks how long a trajectory must run before a difference of a
+given size can be resolved at all. **Ubiquitin** re-analyses the published
+dataset the method was introduced on.
 
 ## Citation
 
