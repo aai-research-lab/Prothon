@@ -60,12 +60,26 @@ def _latest_tag() -> str | None:
 
 
 class TestTheFilesAgreeWithEachOther:
-    def test_the_contact_address_is_the_same_in_both(self, citation, pyproject):
+    def test_the_two_contact_addresses_are_deliberately_different(
+        self, citation, pyproject
+    ):
+        """They are not supposed to match, and a test once assumed they were.
+
+        The package metadata carries a personal address and the citation an
+        institutional one. That is a choice: the software outlives any one
+        affiliation, and correspondence about the paper should reach the
+        institution. An earlier version of this test asserted the two agreed
+        and would have blocked putting them back.
+
+        What is worth checking is that both are present and well formed, not
+        that they are the same.
+        """
         cff = {a["email"] for a in citation["authors"] if "email" in a}
         project = {a["email"] for a in pyproject["project"]["authors"]}
-        assert project <= cff, (
-            f"pyproject.toml lists {project - cff}, which CITATION.cff does not"
-        )
+        assert cff, "CITATION.cff should carry a contact address"
+        assert project, "pyproject.toml should carry a contact address"
+        for address in cff | project:
+            assert "@" in address and "." in address.split("@")[-1], address
 
     def test_maintainers_and_authors_do_not_disagree(self, pyproject):
         authors = {a["email"] for a in pyproject["project"]["authors"]}
