@@ -6,6 +6,7 @@
 
 [![DOI](https://img.shields.io/badge/DOI-10.1021%2Facs.jcim.3c00145-blue)](https://doi.org/10.1021/acs.jcim.3c00145)
 [![PyPI](https://img.shields.io/pypi/v/prothon-ensembles?label=pypi)](https://pypi.org/project/prothon-ensembles/)
+[![conda-forge](https://img.shields.io/conda/vn/conda-forge/prothon?label=conda-forge)](https://anaconda.org/conda-forge/prothon)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://pypi.org/project/prothon-ensembles/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -78,17 +79,22 @@ the data cannot support.
 
 ```bash
 # two conditions, one protein
-prothon compare -e wt.dcd mutant.dcd -t top.pdb -p cbcn -s 0
+prothon compare --ensembles wt.dcd mutant.dcd --topology top.pdb \
+                --order-parameters cbcn --random-state 0
 
 # a simulation, a deposited ensemble and a generative model, on equal terms
-prothon compare -e md.xtc PED00024 bioemu/ -t target.pdb
+prothon compare --ensembles md.xtc PED00024 bioemu/ --topology target.pdb
 
 # several models against one reference, ranked on margin above their own floors
-prothon compare -e bioemu/ alphaflow/ bbflow/ -r md.xtc -t target.pdb --report table
+prothon compare --ensembles bioemu/ alphaflow/ bbflow/ \
+                --reference md.xtc --topology target.pdb --report table
 
 # or write the study down and commit it beside the manuscript
 prothon compare --config study.yml
 ```
+
+Every flag has a short form (`-e`, `-t`, `-p`, `-s`) and the same name as its
+keyword argument in Python, because both are generated from one schema.
 
 One import, and everything is reachable from it:
 
@@ -146,13 +152,9 @@ All of it, in detail, at **[prothon.readthedocs.io](https://prothon.readthedocs.
 ## Install
 
 ```bash
-pip install prothon-ensembles
-prothon info
+pip install prothon-ensembles     # the import and the command are both `prothon`
+conda install -c conda-forge prothon
 ```
-
-The distribution is `prothon-ensembles` because PyPI's `prothon` was registered
-in 2020 by an unrelated project. **The import name and the command are both
-`prothon`.**
 
 ## Citation
 
@@ -177,16 +179,11 @@ in 2020 by an unrelated project. **The import name and the command are both
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). The version 1 code accompanying the 2023
-paper is preserved unchanged under `legacy/`.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
-
-Earlier releases were distributed under GPL-3.0, and copies obtained under that
-licence remain governed by it; relicensing is not retroactive and takes nothing
-away from anyone holding one.
 
 ---
 
