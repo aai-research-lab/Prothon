@@ -2,11 +2,16 @@ name: tests
 
 on:
   push:
-    # Feature branches as well as main. Without the wildcard a push to a branch
-    # triggers nothing, so the tests only ever ran after a merge -- which is
-    # the wrong end of the operation to find out at, and which quietly looked
-    # like a scheduling race for several weeks.
-    branches: [main, "v*", "fix/*", "feat/*"]
+    # Every branch. An allowlist was tried first -- main, v*, fix/*, feat/* --
+    # and it failed the moment a branch was called something else: pushing
+    # `architecture-2.3` matched nothing and ran no tests at all, silently, so
+    # the only way to learn whether a change passed was to merge it to main and
+    # watch the jobs run there. That is the wrong end of the operation, and it
+    # is the second time this trigger has been the reason.
+    #
+    # A branch that should not be tested costs a few minutes of runner time. A
+    # branch that is not tested costs a broken main.
+    branches: ["**"]
   pull_request:
   workflow_dispatch:
 
