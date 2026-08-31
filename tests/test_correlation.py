@@ -9,14 +9,14 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from prothon.core.correlation import (
+from prothon.compare.dissimilarity import dissimilarity
+from prothon.sampling.correlation import (
     MINIMUM_BLOCKS,
     block_labels,
     correlation_time,
     effective_frames,
     plan_blocks,
 )
-from prothon.core.dissimilarity import dissimilarity
 
 
 def ou(n_frames, n_features, tau, rng, mean=0.0):
@@ -271,14 +271,14 @@ class TestSaturationIsCaughtByAPlateauNotARatio:
         return x
 
     def test_a_short_series_is_flagged(self):
-        from prothon.core.correlation import correlation_time_estimate
+        from prothon.sampling.correlation import correlation_time_estimate
 
         estimate = correlation_time_estimate(self._ou(500, 45.0))
         assert not estimate.converged
         assert estimate.slope > 0.15
 
     def test_a_long_series_is_not(self):
-        from prothon.core.correlation import correlation_time_estimate
+        from prothon.sampling.correlation import correlation_time_estimate
 
         estimate = correlation_time_estimate(self._ou(20000, 45.0))
         assert estimate.converged
@@ -288,7 +288,7 @@ class TestSaturationIsCaughtByAPlateauNotARatio:
         """Not merely uncertain: wrong in a known direction."""
         import numpy as np
 
-        from prothon.core.correlation import correlation_time_estimate
+        from prothon.sampling.correlation import correlation_time_estimate
 
         short = correlation_time_estimate(self._ou(500, 45.0))
         long = correlation_time_estimate(self._ou(20000, 45.0))
@@ -300,14 +300,14 @@ class TestSaturationIsCaughtByAPlateauNotARatio:
 
     def test_a_series_too_short_to_halve_claims_nothing(self):
         """The one answer that is certainly unearned is `converged`."""
-        from prothon.core.correlation import correlation_time_estimate
+        from prothon.sampling.correlation import correlation_time_estimate
 
         estimate = correlation_time_estimate(self._ou(20, 5.0))
         assert not estimate.converged
 
     def test_the_prefix_estimates_are_reported(self):
         """A verdict the caller cannot check is a verdict taken on trust."""
-        from prothon.core.correlation import correlation_time_estimate
+        from prothon.sampling.correlation import correlation_time_estimate
 
         estimate = correlation_time_estimate(self._ou(2000, 45.0))
         assert len(estimate.prefix_taus) >= 3
@@ -316,7 +316,7 @@ class TestSaturationIsCaughtByAPlateauNotARatio:
     def test_the_flag_reaches_the_comparison_result(self):
         import warnings
 
-        from prothon.core.dissimilarity import dissimilarity
+        from prothon.compare.dissimilarity import dissimilarity
 
         a, b = self._ou(400, 45.0, seed=0), self._ou(400, 45.0, seed=1)
         with warnings.catch_warnings():
@@ -333,7 +333,7 @@ class TestSaturationIsCaughtByAPlateauNotARatio:
         """The other end, where the answer is known exactly."""
         import numpy as np
 
-        from prothon.core.correlation import correlation_time_estimate
+        from prothon.sampling.correlation import correlation_time_estimate
 
         rng = np.random.default_rng(0)
         estimate = correlation_time_estimate(rng.normal(size=(4000, 40)))
@@ -349,7 +349,7 @@ class TestSaturationIsCaughtByAPlateauNotARatio:
         """
         import numpy as np
 
-        from prothon.core.correlation import PLATEAU_SLOPE
+        from prothon.sampling.correlation import PLATEAU_SLOPE
 
         lengths = np.array([250, 500, 1000, 2000, 2500, 5000], dtype=float)
         taus = np.array([5, 17, 21, 19, 30, 45], dtype=float)
@@ -384,7 +384,7 @@ class TestTheWarningFiresWhereItMatters:
     def _warnings_from(self, a, b, n):
         import warnings
 
-        from prothon.core.dissimilarity import dissimilarity
+        from prothon.compare.dissimilarity import dissimilarity
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -412,7 +412,7 @@ class TestTheWarningFiresWhereItMatters:
         """Too short to fit a trend is not the same as a trend that was found."""
         import numpy as np
 
-        from prothon.core.correlation import correlation_time_estimate
+        from prothon.sampling.correlation import correlation_time_estimate
 
         estimate = correlation_time_estimate(self._ou(200, 45.0))
         assert not estimate.converged

@@ -36,10 +36,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..core.dissimilarity import dissimilarity
-from ..core.precision_recall import precision_recall
-from ..core.representation import resolve_order_parameter
+from ..compare.coverage import precision_recall
+from ..compare.dissimilarity import dissimilarity
 from ..ingest import Ensemble
+from ..represent.order_parameters import resolve_order_parameter
 from ..utils import get_logger
 
 logger = get_logger("benchmark")
@@ -216,7 +216,7 @@ def _compare_one(
     **kwargs,
 ) -> BenchmarkRow:
     """One model against the reference, catching a refusal as a result."""
-    from ..core.prothon_core import Prothon
+    from ..study import Prothon
 
     spec = resolve_order_parameter(order_parameter)
     row = BenchmarkRow(
@@ -306,7 +306,7 @@ def benchmark(
     -------
     BenchmarkResult
     """
-    from ..core.prothon_core import Prothon
+    from ..study import Prothon
     from ..utils import split_list_arg
 
     names = split_list_arg(order_parameters)

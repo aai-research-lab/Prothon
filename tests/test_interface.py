@@ -402,7 +402,7 @@ class TestNothingIsUnreachable:
         import inspect
 
         from prothon import Prothon
-        from prothon.core.dissimilarity import dissimilarity
+        from prothon.compare.dissimilarity import dissimilarity
 
         # These are supplied by the study from what it already knows.
         internal = {
@@ -715,9 +715,9 @@ class TestCommandLine:
         import dataclasses
 
         from prothon.batch.benchmark import BenchmarkRow
+        from prothon.compare.coverage import PrecisionRecall
+        from prothon.compare.dissimilarity import ComparisonResult
         from prothon.config.schema import COMMANDS, PARAMETERS
-        from prothon.core.dissimilarity import ComparisonResult
-        from prothon.core.precision_recall import PrecisionRecall
 
         for cls in (ComparisonResult, BenchmarkRow, PrecisionRecall):
             names = {f.name for f in dataclasses.fields(cls)}

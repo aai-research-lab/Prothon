@@ -19,7 +19,7 @@ Typical use::
     results = study.compare_ensembles(methods="cbcn")
 
 The public surface is deliberately small: :class:`Prothon` for whole studies,
-and the functions in :mod:`prothon.core` for anyone assembling their own.
+and the subpackages below for anyone assembling their own.
 """
 
 from __future__ import annotations
@@ -35,22 +35,22 @@ except ImportError:  # pragma: no cover - source checkout without setuptools-scm
     __version__ = "2.1.0.dev0"
 
 from .batch.benchmark import BenchmarkResult, benchmark
-from .core.dissimilarity import (
+from .compare.coverage import PrecisionRecall, precision_recall
+from .compare.dissimilarity import (
     ComparisonResult,
     dissimilarity,
     effective_sample_size,
     estimate_pdf,
     jsd_local,
 )
-from .core.ensemble_metrics import EnsembleComparison, distinguishability
-from .core.metrics import METRICS, describe_metric, feature_distance
-from .core.precision_recall import PrecisionRecall, precision_recall
-from .core.prothon_core import Prothon
-from .core.representation import (
+from .compare.distance import METRICS, describe_metric, feature_distance
+from .compare.joint import EnsembleComparison, distinguishability
+from .represent.order_parameters import (
     ORDER_PARAMETERS,
     compute_ensemble_representation,
     describe_order_parameter,
 )
+from .study import Prothon
 from .utils import load_trajectories
 from .validate import AgreementResult, score_observable
 

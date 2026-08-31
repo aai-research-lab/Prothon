@@ -117,7 +117,7 @@ GENERATORS = {
 # ---------------------------------------------------------------------------
 def one_replicate(job):
     """Run one null comparison and report how much of it was rejected."""
-    from prothon.core.dissimilarity import dissimilarity
+    from prothon.compare.dissimilarity import dissimilarity
 
     seed, settings = job
     rng = np.random.default_rng(seed)

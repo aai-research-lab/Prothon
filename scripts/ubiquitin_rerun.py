@@ -202,7 +202,7 @@ def main() -> int:
         tested_total = n_features * len(tested)
         unresolved = sum(1 for b in new if not b.resolved)
         withheld_count = len(new) - len(tested)
-        from prothon.core.representation import resolve_order_parameter
+        from prothon.represent.order_parameters import resolve_order_parameter
 
         spec = resolve_order_parameter(name)
         lines += [

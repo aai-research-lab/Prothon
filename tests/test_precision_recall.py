@@ -10,8 +10,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from prothon.core.dissimilarity import jsd_local
-from prothon.core.precision_recall import precision_recall
+from prothon.compare.coverage import precision_recall
+from prothon.compare.dissimilarity import jsd_local
 
 
 def ensemble(n=1200, open_fraction=0.35, extra_state=False, seed=0):

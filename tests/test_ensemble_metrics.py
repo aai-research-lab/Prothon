@@ -11,8 +11,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from prothon.core.dissimilarity import jsd_local
-from prothon.core.ensemble_metrics import (
+from prothon.compare.dissimilarity import jsd_local
+from prothon.compare.joint import (
     P_VALUE_FLOOR,
     EnsembleComparison,
     distinguishability,

@@ -256,7 +256,7 @@ class Study:
         Returns the :class:`~prothon.Prothon` object, so results, summaries and
         further analyses are all reachable from it.
         """
-        from ..core.prothon_core import Prothon
+        from ..study import Prothon
 
         settings = dict(self.settings)
         for key in ("report", "json", "verbose", "config", "save_config",

@@ -21,7 +21,7 @@ import sys
 
 import numpy as np
 
-from prothon.core.metrics import METRICS, feature_distance
+from prothon.compare.distance import METRICS, feature_distance
 
 SIZES = (250, 500, 1000, 2000, 4000)
 

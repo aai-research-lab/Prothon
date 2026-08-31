@@ -13,8 +13,8 @@ import itertools
 import numpy as np
 import pytest
 
-from prothon.core.dissimilarity import dissimilarity, jsd_local
-from prothon.core.metrics import (
+from prothon.compare.dissimilarity import dissimilarity, jsd_local
+from prothon.compare.distance import (
     METRICS,
     describe_metric,
     feature_distance,
@@ -132,7 +132,7 @@ class TestTheDistanceIsAlwaysDefined:
         assert jsd_local(a, b, a.min(), a.max(), 100)[0] < 0.2
 
     def test_no_density_contains_an_exact_zero(self):
-        from prothon.core.dissimilarity import estimate_pdf
+        from prothon.compare.dissimilarity import estimate_pdf
 
         rng = np.random.default_rng(3)
         for circular in (False, True):
@@ -182,7 +182,7 @@ class TestAConcentratedCircularFeatureIsNotReportedAsIdentical:
         assert jsd_local(a, b, -np.pi, np.pi, 100, True)[0] > 0.99
 
     def test_a_density_never_contains_an_exact_zero(self):
-        from prothon.core.dissimilarity import estimate_pdf
+        from prothon.compare.dissimilarity import estimate_pdf
 
         _, density = estimate_pdf(
             self.concentrated(7, 0.9).ravel(), -np.pi, np.pi, 100, True

@@ -10,25 +10,28 @@ anyone who wants them.
 
 ## The shape of it
 
-The sections below follow the order a study runs in, which is not the order the
-package is laid out in. Both are given, because the first is what you want when
-you are working and the second is what you want when you are reading the source.
+The package is laid out in the order a study runs in, so the module you want is
+the stage you are at.
 
 | stage | what it does | module |
 |---|---|---|
 | **Load** | trajectories, directories, PED accessions, multi-model PDB; and the residue correspondence when the molecules differ | `prothon.ingest` |
-| **Represent** | conformations to an *M* × *N* matrix of local order parameters | `prothon.core.representation` |
-| **Compare** | distances between distributions, per residue and globally | `prothon.core.dissimilarity`, `prothon.core.metrics` |
-| **Qualify** | correlation time, blocks, effective sample size — what the comparison is worth | `prothon.core.correlation` |
-| **Beyond per-residue** | whole-ensemble tests, precision and recall | `prothon.core.ensemble_metrics`, `prothon.core.precision_recall` |
+| **Represent** | conformations to an *M* × *N* matrix of local order parameters | `prothon.represent` |
+| **Compare** | distances between distributions per residue and globally, whole-ensemble tests, precision and recall | `prothon.compare` |
+| **Sampling** | correlation time, blocks, effective sample size — what the comparison is worth | `prothon.sampling` |
 | **Score** | against experimental observables | `prothon.validate` |
 | **Batch** | several ensembles against one reference | `prothon.batch` |
 | **Record** | a study as a file, and the schema behind every interface | `prothon.config` |
-| **Draw** | figures, each carrying its noise floor | `prothon.core.plotting` |
+| **Draw** | figures, each carrying its noise floor | `prothon.plot` |
 
-The **Qualify** row is the one with no counterpart elsewhere. Most tools go from
-represent to compare and stop; the question of what the comparison is worth,
-given how the data was sampled, is the reason for this one.
+`prothon.sampling` is the one with no counterpart in comparable tools. Most go
+from represent to compare and stop; asking what a comparison is worth, given how
+the data was sampled, is the reason for this one, and it is a top-level name
+rather than a file inside something else for that reason.
+
+Before 2.3 all of this lived under `prothon.core`, which held eight modules
+whose only shared property was not being `ingest`. `prothon.core` remains as a
+shim that forwards with a `DeprecationWarning`, and is removed in 3.0.
 
 ## The study object
 
@@ -49,26 +52,26 @@ given how the data was sampled, is the reason for this one.
 ## Representations
 
 ```{eval-rst}
-.. automodule:: prothon.core.representation
+.. automodule:: prothon.represent.order_parameters
    :members: MEASURES, Measure, compute_ensemble_representation, compute_representation, describe_measure, resolve_measure
 ```
 
 ## Distances and statistics
 
 ```{eval-rst}
-.. automodule:: prothon.core.dissimilarity
+.. automodule:: prothon.compare.dissimilarity
    :members: dissimilarity, jsd_local, estimate_pdf, effective_sample_size, benjamini_hochberg
 ```
 
 ```{eval-rst}
-.. automodule:: prothon.core.metrics
+.. automodule:: prothon.compare.distance
    :members: METRICS, Metric, feature_distance, describe_metric, resolve_metric
 ```
 
 ## Correlation and blocking
 
 ```{eval-rst}
-.. automodule:: prothon.core.correlation
+.. automodule:: prothon.sampling.correlation
    :members: correlation_time, effective_frames, plan_blocks, block_labels, MINIMUM_BLOCKS
 ```
 
@@ -97,12 +100,12 @@ given how the data was sampled, is the reason for this one.
 ## Whole-ensemble comparison
 
 ```{eval-rst}
-.. automodule:: prothon.core.ensemble_metrics
+.. automodule:: prothon.compare.joint
    :members: EnsembleComparison, distinguishability, maximum_mean_discrepancy, classifier_two_sample
 ```
 
 ```{eval-rst}
-.. automodule:: prothon.core.precision_recall
+.. automodule:: prothon.compare.coverage
    :members: PrecisionRecall, precision_recall
 ```
 
@@ -145,6 +148,6 @@ ignored.
 ## Plotting
 
 ```{eval-rst}
-.. automodule:: prothon.core.plotting
+.. automodule:: prothon.plot.figures
    :members: replot_global_dissimilarity, replot_local_dissimilarity, get_ensemble_colors
 ```

@@ -14,7 +14,7 @@ matplotlib.use("Agg")
 
 from prothon import Prothon
 from prothon.cli import main
-from prothon.core.plotting import (
+from prothon.plot.figures import (
     get_ensemble_colors,
     get_method_output_dir,
     replot_global_dissimilarity,
@@ -113,7 +113,7 @@ class TestCompareEnsembles:
     def test_mds_is_refused_above_the_frame_limit(self, study, monkeypatch):
         # Refusing beats an out-of-memory failure an hour in; and the refusal
         # must not lose the comparison that already succeeded.
-        import prothon.core.plotting as plotting
+        import prothon.plot.figures as plotting
 
         monkeypatch.setattr(plotting, "MDS_FRAME_LIMIT", 10)
         results = study.compare_ensembles(order_parameters="cbcn", dimred="mds", s_num=2)
@@ -287,7 +287,7 @@ class TestGlobalDissimilarityIsNotFiltered:
     def _result(self, *, withheld, raw=0.40, floor=0.035, n=70):
         import numpy as np
 
-        from prothon.core.dissimilarity import ComparisonResult
+        from prothon.compare.dissimilarity import ComparisonResult
 
         return ComparisonResult(
             ensemble_index=1,

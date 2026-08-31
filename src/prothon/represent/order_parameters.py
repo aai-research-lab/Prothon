@@ -23,7 +23,7 @@ coordinates.
 degrees and +179 degrees are two degrees apart, not 358. A contact number lives
 on the positive half-line. Estimating a density needs to know which, and the
 call site is the wrong place to remember it -- so each measure carries the fact
-with it in :data:`ORDER_PARAMETERS`, and :mod:`prothon.core.dissimilarity` reads it.
+with it in :data:`ORDER_PARAMETERS`, and :mod:`prothon.compare.dissimilarity` reads it.
 Version 2.0 estimated torsion densities on a linear grid, which put spurious
 mass at the wraparound and understated the dissimilarity of any residue sampling
 both sides of it.

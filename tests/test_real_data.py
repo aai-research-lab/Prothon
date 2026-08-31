@@ -26,15 +26,15 @@ import mdtraj as md
 import numpy as np
 import pytest
 
-from prothon.core.dissimilarity import dissimilarity
-from prothon.core.metrics import METRICS
-from prothon.core.precision_recall import precision_recall
-from prothon.core.representation import (
+from prothon.compare.coverage import precision_recall
+from prothon.compare.dissimilarity import dissimilarity
+from prothon.compare.distance import METRICS
+from prothon.ingest import Ensemble, reconcile, sequence_of
+from prothon.represent.order_parameters import (
     _PAIR_BLOCK,
     ORDER_PARAMETERS,
     compute_representation,
 )
-from prothon.ingest import Ensemble, reconcile, sequence_of
 
 pytestmark = pytest.mark.network
 
@@ -307,7 +307,7 @@ class TestEveryMetricOnRealData:
 
     @pytest.mark.parametrize("method", ["mmd", "c2st"])
     def test_joint_methods_run_on_a_real_ensemble(self, corpus, method):
-        from prothon.core.ensemble_metrics import distinguishability
+        from prothon.compare.joint import distinguishability
 
         traj = md.load(corpus["frame0.xtc"], top=corpus["native.pdb"])
         rep = compute_representation(traj, "sasa")

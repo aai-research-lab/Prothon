@@ -169,7 +169,7 @@ def figure_floor_scaling(out_dir: str, repeats: int) -> str:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from floor_scaling import SIZES, draw
 
-    from prothon.core.metrics import feature_distance
+    from prothon.compare.distance import feature_distance
 
     sizes = np.asarray(SIZES, dtype=float)
     metrics = ("jsd", "wasserstein", "ks")

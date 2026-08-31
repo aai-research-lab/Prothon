@@ -14,7 +14,7 @@ import pytest
 from test_ingest import as_residues
 
 from prothon import Prothon
-from prothon.core.representation import (
+from prothon.represent.order_parameters import (
     ORDER_PARAMETERS,
     compute_representation,
     resolve_order_parameter,
@@ -198,7 +198,7 @@ class TestThroughAStudy:
         """A single feature is the smallest possible study, and the
         multiplicity correction over one test is a no-op. The rate should
         still be near the threshold."""
-        from prothon.core.dissimilarity import dissimilarity
+        from prothon.compare.dissimilarity import dissimilarity
 
         flagged = 0
         for seed in range(30):

@@ -38,7 +38,7 @@ import sys
 
 import numpy as np
 
-from prothon.core.metrics import feature_distance
+from prothon.compare.distance import feature_distance
 
 #: Separations in radians. The point of the small ones is that a genuinely
 #: small difference is where a linear treatment does the most damage.

@@ -25,9 +25,9 @@ from collections.abc import Sequence
 from typing import Any
 
 from . import __version__
+from .compare.distance import METRICS, describe_metric
 from .config.schema import COMMANDS, parameters_for
-from .core.metrics import METRICS, describe_metric
-from .core.representation import ORDER_PARAMETERS, describe_order_parameter
+from .represent.order_parameters import ORDER_PARAMETERS, describe_order_parameter
 from .utils import configure_logging, split_list_arg
 
 __all__ = ["build_parser", "main"]

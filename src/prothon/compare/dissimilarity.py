@@ -72,14 +72,14 @@ import numpy as np
 from scipy.special import ive
 from scipy.stats import gaussian_kde, mannwhitneyu
 
-from ..utils import get_logger
-from .correlation import (
+from ..sampling.correlation import (
     MINIMUM_BLOCKS,
     block_labels,
     correlation_time_estimate,
     plan_blocks,
 )
-from .metrics import feature_distance, resolve_metric
+from ..utils import get_logger
+from .distance import feature_distance, resolve_metric
 
 logger = get_logger("dissimilarity")
 
@@ -516,7 +516,7 @@ def jsd_local(
 
     Jensen-Shannon by default, in [0, 1] with base-2 logarithms so the bound is
     1 for distributions with disjoint support. ``metric`` selects another from
-    :data:`~prothon.core.metrics.METRICS`; the name of this function is kept
+    :data:`~prothon.compare.distance.METRICS`; the name of this function is kept
     for the code written against 2.1.
     """
     if ensemble1.shape[1] != ensemble2.shape[1]:
@@ -924,7 +924,7 @@ def dissimilarity(
         pooled across features.
     circular
         Whether the feature values live on a circle. Read from the measure's
-        entry in :data:`~prothon.core.representation.MEASURES` when called
+        entry in :data:`~prothon.represent.order_parameters.MEASURES` when called
         through :class:`~prothon.Prothon`.
     sample_size
         Ensembles larger than this are subsampled, without replacement, before

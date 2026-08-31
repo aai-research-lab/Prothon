@@ -6,7 +6,7 @@ import mdtraj as md
 import numpy as np
 import pytest
 
-from prothon.core.representation import (
+from prothon.represent.order_parameters import (
     ORDER_PARAMETERS,
     compute_caba,
     compute_cacn,
@@ -21,7 +21,7 @@ from prothon.core.representation import (
 
 class TestMeasureRegistry:
     def test_every_measure_is_computable(self):
-        from prothon.core.representation import _COMPUTE
+        from prothon.represent.order_parameters import _COMPUTE
 
         assert set(ORDER_PARAMETERS) == set(_COMPUTE)
 
@@ -41,7 +41,7 @@ class TestMeasureRegistry:
         """`measure` collided with `metric`, which means something else here,
         so the registry took the term the paper uses. Published code keeps
         importing the old names."""
-        from prothon.core.representation import (
+        from prothon.represent.order_parameters import (
             MEASURES,
             Measure,
             OrderParameter,

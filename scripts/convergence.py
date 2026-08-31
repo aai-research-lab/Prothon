@@ -73,7 +73,7 @@ def load(directory: str, names: list[str]):
 
 
 def represent(ensemble, order_parameter: str):
-    from prothon.core.representation import compute_representation
+    from prothon.represent.order_parameters import compute_representation
 
     return compute_representation(ensemble.trajectory, order_parameter)
 
@@ -96,17 +96,17 @@ def main() -> int:
     parser.add_argument("--json")
     args = parser.parse_args()
 
-    from prothon.core.correlation import (
+    from prothon.compare.coverage import precision_recall
+    from prothon.compare.dissimilarity import dissimilarity
+    from prothon.sampling.correlation import (
         correlation_time_estimate,
         effective_frames,
     )
-    from prothon.core.dissimilarity import dissimilarity
-    from prothon.core.precision_recall import precision_recall
 
     print("Loading:", file=sys.stderr)
     reference, comparison = load(args.data, [args.reference, args.compare])
 
-    from prothon.core.representation import resolve_order_parameter
+    from prothon.represent.order_parameters import resolve_order_parameter
 
     spec = resolve_order_parameter(args.order_parameter)
     full_ref = represent(reference, args.order_parameter)

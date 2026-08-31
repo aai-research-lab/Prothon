@@ -63,8 +63,8 @@ _CHILD = textwrap.dedent(
     xyz += rng.normal(0, 0.25, xyz.shape).astype(np.float32)
     traj = md.Trajectory(xyz, top)
 
-    from prothon.core.dissimilarity import dissimilarity
-    from prothon.core.representation import compute_representation
+    from prothon.compare.dissimilarity import dissimilarity
+    from prothon.represent.order_parameters import compute_representation
 
     start = time.perf_counter()
     if task in ("cbcn", "cacn", "caba", "cata", "sasa"):

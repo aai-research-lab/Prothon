@@ -38,7 +38,7 @@ from typing import Any
 
 import numpy as np
 
-from ..core.dissimilarity import MINIMUM_EFFECTIVE_SAMPLES, effective_sample_size
+from ..compare.dissimilarity import MINIMUM_EFFECTIVE_SAMPLES, effective_sample_size
 from ..utils import get_logger
 
 logger = get_logger("validate.score")

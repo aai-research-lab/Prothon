@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ..core.representation import resolve_order_parameter
+from ..represent.order_parameters import resolve_order_parameter
 from ..utils import get_logger
 from .sequence import (
     MINIMUM_COVERAGE,

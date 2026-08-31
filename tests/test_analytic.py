@@ -15,13 +15,13 @@ import numpy as np
 import pytest
 from scipy.stats import vonmises
 
-from prothon.core.dissimilarity import (
+from prothon.compare.dissimilarity import (
     benjamini_hochberg,
     effective_sample_size,
     estimate_pdf,
 )
-from prothon.core.ensemble_metrics import maximum_mean_discrepancy
-from prothon.core.metrics import feature_distance
+from prothon.compare.distance import feature_distance
+from prothon.compare.joint import maximum_mean_discrepancy
 
 
 class TestDensityEstimation:

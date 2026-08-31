@@ -173,7 +173,7 @@ class TestAgainstPed:
         assert loaded == reported
 
     def test_a_loaded_ensemble_can_be_compared(self, tmp_path):
-        from prothon.core.representation import compute_representation
+        from prothon.represent.order_parameters import compute_representation
 
         ensemble = ped_ensemble("PED00001", "e001", cache_dir=str(tmp_path))
         matrix = compute_representation(ensemble.trajectory, "cacn")

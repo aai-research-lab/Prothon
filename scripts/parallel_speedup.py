@@ -25,7 +25,7 @@ import time
 
 import numpy as np
 
-from prothon.core.dissimilarity import dissimilarity
+from prothon.compare.dissimilarity import dissimilarity
 
 
 def main() -> int:

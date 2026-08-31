@@ -15,7 +15,6 @@ import mdtraj as md
 import numpy as np
 import pytest
 
-from prothon.core.representation import compute_cbcn, compute_ensemble_representation
 from prothon.ingest import (
     Ensemble,
     align,
@@ -24,6 +23,7 @@ from prothon.ingest import (
     sequence_of,
 )
 from prothon.ingest.sequence import THREE_TO_ONE, residue_letter
+from prothon.represent.order_parameters import compute_cbcn, compute_ensemble_representation
 
 UBIQUITIN = "MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG"
 

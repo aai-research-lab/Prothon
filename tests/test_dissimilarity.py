@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from prothon.core.dissimilarity import (
+from prothon.compare.dissimilarity import (
     benjamini_hochberg,
     dissimilarity,
     estimate_pdf,

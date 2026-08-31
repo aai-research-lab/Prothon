@@ -20,9 +20,8 @@ from typing import Any
 
 import numpy as np
 
-from ..utils import configure_logging, get_logger, split_list_arg
-from .dissimilarity import ComparisonResult, dissimilarity
-from .plotting import (
+from .compare.dissimilarity import ComparisonResult, dissimilarity
+from .plot.figures import (
     dimensionality_reduction_plot,
     get_method_output_dir,
     plot_combined_local_dissimilarity,
@@ -33,11 +32,12 @@ from .plotting import (
     replot_local_dissimilarity,
     save_matrix_data_and_plot,
 )
-from .representation import (
+from .represent.order_parameters import (
     ORDER_PARAMETERS,
     compute_representation,
     resolve_order_parameter,
 )
+from .utils import configure_logging, get_logger, split_list_arg
 
 logger = get_logger("core")
 
@@ -139,7 +139,7 @@ class Prothon:
         traj_files
             The name this argument had in 2.x. Accepted, and warns.
         """
-        from ..ingest.sources import resolve_all
+        from .ingest.sources import resolve_all
 
         if traj_files is not None:
             if ensembles is not None:
@@ -200,7 +200,7 @@ class Prothon:
 
         >>> Prothon.from_config("study.yml")          # doctest: +SKIP
         """
-        from ..config.study import Study
+        from .config.study import Study
 
         study = Study.from_file(path)
         study.settings.update(overrides)
@@ -217,21 +217,21 @@ class Prothon:
 
         >>> Prothon.load("PED00024")                  # doctest: +SKIP
         """
-        from ..ingest.sources import resolve
+        from .ingest.sources import resolve
 
         return resolve(source, topology=topology, label=label, **kwargs)
 
     @staticmethod
     def order_parameters() -> dict:
         """Every local order parameter, by name."""
-        from .representation import ORDER_PARAMETERS
+        from .represent.order_parameters import ORDER_PARAMETERS
 
         return dict(ORDER_PARAMETERS)
 
     @staticmethod
     def metrics() -> dict:
         """Every per-residue distance, by name."""
-        from .metrics import METRICS
+        from .compare.distance import METRICS
 
         return dict(METRICS)
 
@@ -239,7 +239,7 @@ class Prothon:
     def observables() -> dict:
         """Every observable that can be computed and scored against
         measurements."""
-        from ..validate.observables import OBSERVABLES
+        from .validate.observables import OBSERVABLES
 
         return dict(OBSERVABLES)
 
@@ -257,7 +257,7 @@ class Prothon:
         noise floor rather than by raw distance, with coverage and fidelity
         beside each row.
         """
-        from ..batch.benchmark import benchmark
+        from .batch.benchmark import benchmark
 
         others = [e for i, e in enumerate(self.ensembles) if i != ref]
         if not others:
@@ -294,12 +294,12 @@ class Prothon:
         """
         import numpy as np
 
-        from ..validate.observables import (
+        from .validate.observables import (
             end_to_end,
             j_coupling_hn_ha,
             radius_of_gyration,
         )
-        from ..validate.score import score_observable
+        from .validate.score import score_observable
 
         compute = {
             "rg": lambda t: radius_of_gyration(t)[:, None],
@@ -326,7 +326,7 @@ class Prothon:
 
     def save_config(self, path) -> str:
         """Write this study to a file, so it can be re-run and committed."""
-        from ..config.study import WHERE, Study
+        from .config.study import WHERE, Study
 
         study = self.study or Study(
             ensembles=[
@@ -560,7 +560,7 @@ class Prothon:
         if self.shares_topology and reference.shape[1] == other.shape[1]:
             return reference, other, None
 
-        from ..ingest import feature_residues, reconcile
+        from .ingest import feature_residues, reconcile
 
         key = (ref_index, other_index)
         correspondence = self.correspondences.get(key)
@@ -636,8 +636,8 @@ class Prothon:
         -------
         list of EnsembleComparison
         """
-        from .ensemble_metrics import distinguishability as compare
-        from .representation import resolve_order_parameter
+        from .compare.joint import distinguishability as compare
+        from .represent.order_parameters import resolve_order_parameter
 
         spec = resolve_order_parameter(order_parameter)
         reps = self.get_representation_data(spec.name)
@@ -690,8 +690,8 @@ class Prothon:
         an experimentally derived ensemble -- and the others are assessed
         against it. The two roles are not interchangeable.
         """
-        from .precision_recall import precision_recall
-        from .representation import resolve_order_parameter
+        from .compare.coverage import precision_recall
+        from .represent.order_parameters import resolve_order_parameter
 
         spec = resolve_order_parameter(order_parameter)
         reps = self.get_representation_data(spec.name)
@@ -739,7 +739,7 @@ class Prothon:
     ) -> str:
         """Record what was run, so the result can be reproduced rather than
         merely admired."""
-        from .. import __version__
+        from . import __version__
 
         out_dir = get_method_output_dir(self.output_dir, order_parameter)
         path = os.path.join(out_dir, "manifest.json")
