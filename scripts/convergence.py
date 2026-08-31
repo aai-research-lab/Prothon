@@ -43,6 +43,8 @@ import os
 import sys
 import warnings
 
+import numpy as np
+
 warnings.filterwarnings("ignore")
 
 #: Prefix lengths, in conformations. Each is a contiguous prefix rather than a
@@ -164,7 +166,8 @@ def main() -> int:
             "tau": tau,
             "tau_is_lower_bound": bool(saturated),
             "tau_growth": float(estimate.growth),
-            "tau_half": float(min(estimate.prefix_taus.values())),
+            "tau_slope": float(estimate.slope),
+            "tau_prefixes": {int(k): float(v) for k, v in estimate.prefix_taus.items()},
             "independent": independent,
             "precision": float(coverage.mean_precision),
             "recall": float(coverage.mean_recall),
@@ -201,24 +204,32 @@ def main() -> int:
         f"much sampling can resolve; precision and recall are the prefix "
         f"measured against the whole trajectory.",
         "",
-        "| conformations | floor | τ | growth | independent | precision | recall |",
+        "| conformations | floor | τ | slope | independent | precision | recall |",
         "|---|---|---|---|---|---|---|",
     ]
     for row in rows:
         lines.append(
             f"| {row['length']} | {row['floor']:.4f} | "
             f"{row['tau']:.0f}{'+' if row['tau_is_lower_bound'] else ''} | "
-            f"{row['tau_growth']:.2f} | "
-            f"{row['independent']:.0f} | {row['precision']:.3f} | "
-            f"{row['recall']:.3f} |"
+            + (
+                "— | "
+                if not np.isfinite(row["tau_slope"])
+                else f"{row['tau_slope']:.2f} | "
+            )
+            + f"{row['independent']:.0f} | {row['precision']:.3f} | "
+            + f"{row['recall']:.3f} |"
         )
 
     flagged = sum(1 for r in rows if r["tau_is_lower_bound"])
     lines += [
         "",
-        "`growth` is the estimate on all the frames divided by the estimate "
-        "on half of them. One means settled. A `τ` marked `+` is still "
-        "rising, so it is a **lower bound**, and the `independent` column "
+        "`slope` is the slope of log τ against log n across four nested "
+        "prefixes. Zero means the answer does not depend on how much data it "
+        "was given, which is what a settled estimate looks like; one means the "
+        "estimate is reporting the trajectory length rather than the "
+        "correlation. `—` means the prefix was too short to fit three "
+        "sub-prefixes, so no trend could be fitted and nothing is claimed. A "
+        "`τ` marked `+` is a **lower bound**, and the `independent` column "
         "beside it is correspondingly an upper bound. "
         + (
             f"{flagged} of {len(rows)} lengths are flagged."

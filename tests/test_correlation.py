@@ -250,8 +250,13 @@ class TestSaturationIsCaughtByAPlateauNotARatio:
     frames, a 250-frame prefix returned 5 and the ratio read 50 -- above any
     sane threshold -- while the true ratio was 5.6.
 
-    The plateau test asks the only question that can be answered from the data:
-    estimate it again on half and see whether it moved.
+    The plateau test asks the only question the data can answer: estimate it
+    again on less data and see whether the answer moved. It fits a slope of
+    log tau against log n across four prefixes rather than taking a ratio
+    between two, because two points cannot tell a dip from a plateau -- on
+    prefixes of the real trajectory the sequence ran 5, 17, 21, 19, 30, 45 and
+    the single dip from 21 to 19 made a two-point ratio report a plateau in the
+    middle of a clear climb.
     """
 
     @staticmethod
@@ -270,13 +275,14 @@ class TestSaturationIsCaughtByAPlateauNotARatio:
 
         estimate = correlation_time_estimate(self._ou(500, 45.0))
         assert not estimate.converged
-        assert estimate.growth > 1.0
+        assert estimate.slope > 0.15
 
     def test_a_long_series_is_not(self):
         from prothon.core.correlation import correlation_time_estimate
 
         estimate = correlation_time_estimate(self._ou(20000, 45.0))
         assert estimate.converged
+        assert estimate.slope <= 0.15
 
     def test_the_estimate_is_a_lower_bound_when_flagged(self):
         """Not merely uncertain: wrong in a known direction."""
@@ -304,8 +310,8 @@ class TestSaturationIsCaughtByAPlateauNotARatio:
         from prothon.core.correlation import correlation_time_estimate
 
         estimate = correlation_time_estimate(self._ou(2000, 45.0))
-        assert len(estimate.prefix_taus) == 2
-        assert 2000 in estimate.prefix_taus and 1000 in estimate.prefix_taus
+        assert len(estimate.prefix_taus) >= 3
+        assert 2000 in estimate.prefix_taus
 
     def test_the_flag_reaches_the_comparison_result(self):
         import warnings
@@ -321,3 +327,35 @@ class TestSaturationIsCaughtByAPlateauNotARatio:
             )
         assert not result.correlation_time_converged
         assert result.to_dict()["correlation_time_converged"] is False
+
+
+    def test_an_uncorrelated_series_settles_at_one(self):
+        """The other end, where the answer is known exactly."""
+        import numpy as np
+
+        from prothon.core.correlation import correlation_time_estimate
+
+        rng = np.random.default_rng(0)
+        estimate = correlation_time_estimate(rng.normal(size=(4000, 40)))
+        assert estimate.converged
+        assert estimate.tau < 1.5
+
+    def test_a_dip_in_one_prefix_does_not_read_as_a_plateau(self):
+        """The failure that retired the two-point ratio.
+
+        A sequence that climbs overall but dips once must still be flagged.
+        Reproduced from the real trajectory: 5, 17, 21, 19, 30, 45, where the
+        21-to-19 step made a ratio of the last two points report 0.90.
+        """
+        import numpy as np
+
+        from prothon.core.correlation import PLATEAU_SLOPE
+
+        lengths = np.array([250, 500, 1000, 2000, 2500, 5000], dtype=float)
+        taus = np.array([5, 17, 21, 19, 30, 45], dtype=float)
+
+        two_point = taus[3] / taus[2]
+        assert two_point < 1.0, "the dip is what made the old test pass"
+
+        slope = float(np.polyfit(np.log(lengths), np.log(taus), 1)[0])
+        assert slope > PLATEAU_SLOPE, "the slope must still catch it"

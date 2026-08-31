@@ -57,7 +57,8 @@ logger = get_logger("correlation")
 
 __all__ = [
     "MINIMUM_BLOCKS",
-    "PLATEAU_TOLERANCE",
+    "PLATEAU_PREFIXES",
+    "PLATEAU_SLOPE",
     "CorrelationEstimate",
     "block_labels",
     "correlation_time",
@@ -82,12 +83,27 @@ BLOCK_MULTIPLIER = 2.0
 #: multiplicity correction is already coarser than a 5% threshold.
 MINIMUM_BLOCKS = 8
 
-#: How much the estimate may grow between half a trajectory and all of it and
-#: still count as settled. Anything above this is still rising, which means the
-#: sum has not yet run out of correlation and the value is a lower bound.
-#: 1.25 allows a quarter of growth, which is generous for an estimate that
-#: should be flat once converged.
-PLATEAU_TOLERANCE = 1.25
+#: Slope of log(tau_hat) against log(n) below which the estimate counts as
+#: settled. A converged estimator has slope zero: the answer does not depend on
+#: how much data you gave it. A saturating one climbs, and in the limit where
+#: the autocorrelation sum never closes its window the estimate is proportional
+#: to n, giving slope one. 0.15 allows a shallow climb from noise.
+#:
+#: **A ratio between two prefixes is not enough**, which was learned the
+#: expensive way. The per-feature estimates are noisy and their quantile dips;
+#: on prefixes of a real trajectory the sequence ran 5, 17, 21, 19, 30, 45, and
+#: the single dip from 21 to 19 made a two-point ratio report a plateau in the
+#: middle of a clear climb. A slope over several prefixes cannot be fooled by
+#: one point.
+PLATEAU_SLOPE = 0.15
+
+#: Prefixes to estimate on, as fractions of the trajectory. Four points spanning
+#: a factor of eight is enough for a slope and cheap: the three short ones cost
+#: less together than the full-length estimate.
+PLATEAU_PREFIXES = (0.125, 0.25, 0.5, 1.0)
+
+#: Below this many frames an estimate is too poor to contribute to the slope.
+_PLATEAU_MINIMUM = 64
 
 #: Features whose values never change carry no autocorrelation and would
 #: otherwise contribute a meaningless estimate to the summary.
@@ -115,14 +131,21 @@ class CorrelationEstimate:
     prefix_taus
         The estimate at each prefix, keyed by frame count, so a caller can see
         the trend rather than take the verdict on trust.
+    slope
+        Slope of ``log tau`` against ``log n`` across the prefixes. Zero means
+        the answer does not depend on how much data it was given, which is what
+        a converged estimate looks like. One means the estimate is reporting
+        the trajectory length rather than the correlation.
     growth
-        ``tau(n) / tau(n/2)``. One means settled; larger means still rising.
+        ``tau(n) / tau(n/2)``, kept for reporting. **The verdict does not rest
+        on it**: two points cannot tell a dip from a plateau.
     """
 
     tau: float
     converged: bool = True
     prefix_taus: dict[int, float] = field(default_factory=dict)
     growth: float = 1.0
+    slope: float = 0.0
 
     def __float__(self) -> float:
         return float(self.tau)
@@ -222,7 +245,7 @@ def correlation_time_estimate(
     matrix: np.ndarray,
     quantile: float = 0.75,
     max_features: int = 200,
-    tolerance: float = PLATEAU_TOLERANCE,
+    tolerance: float = PLATEAU_SLOPE,
 ) -> CorrelationEstimate:
     """Correlation time, plus whether the trajectory was long enough to find it.
 
@@ -265,29 +288,48 @@ def correlation_time_estimate(
     n_frames = matrix.shape[0]
     tau = correlation_time(matrix, quantile, max_features)
 
-    half = n_frames // 2
-    if half < 16:
-        # Too short to halve and still estimate anything. Nothing can be said
-        # about convergence, and claiming convergence would be the one answer
-        # that is certainly unearned.
+    lengths = sorted(
+        {
+            int(n_frames * fraction)
+            for fraction in PLATEAU_PREFIXES
+            if int(n_frames * fraction) >= _PLATEAU_MINIMUM
+        }
+    )
+    if len(lengths) < 3:
+        # Too short to establish a trend. Nothing can be said about
+        # convergence, and claiming it would be the one answer certainly
+        # unearned.
         return CorrelationEstimate(
-            tau=tau, converged=False, prefix_taus={n_frames: tau}, growth=float("inf"),
+            tau=tau, converged=False,
+            prefix_taus={n_frames: tau}, growth=float("inf"), slope=float("inf"),
         )
 
-    tau_half = correlation_time(matrix[:half], quantile, max_features)
-    growth = tau / max(tau_half, 1e-12)
-    converged = bool(growth <= tolerance)
+    taus = {
+        length: (
+            tau if length == n_frames
+            else correlation_time(matrix[:length], quantile, max_features)
+        )
+        for length in lengths
+    }
+
+    # Slope of log tau against log n. Zero is settled; one is an estimate that
+    # is simply reporting how much data it was given.
+    x = np.log(np.array(lengths, dtype=np.float64))
+    y = np.log(np.maximum([taus[length] for length in lengths], 1e-12))
+    slope = float(np.polyfit(x, y, 1)[0])
+    converged = bool(slope <= tolerance)
+
+    largest_half = max(length for length in lengths if length < n_frames)
+    growth = tau / max(taus[largest_half], 1e-12)
 
     logger.debug(
-        "correlation time: %.1f on %d frames, %.1f on %d, growth %.2f -> %s",
-        tau, n_frames, tau_half, half, growth,
+        "correlation time: %s -> slope %.2f (%s)",
+        {k: round(v, 1) for k, v in taus.items()}, slope,
         "settled" if converged else "still rising",
     )
     return CorrelationEstimate(
-        tau=tau,
-        converged=converged,
-        prefix_taus={half: tau_half, n_frames: tau},
-        growth=float(growth),
+        tau=tau, converged=converged, prefix_taus=taus,
+        growth=float(growth), slope=slope,
     )
 
 
