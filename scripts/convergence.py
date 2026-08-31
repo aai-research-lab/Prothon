@@ -13,10 +13,13 @@ dissimilarity a given amount of sampling can resolve. Measured on prefixes of
 across that curve meets it at the length where that comparison becomes
 possible. That is the practical output of this script.
 
-**The correlation time against length.** Section 3.3 of the paper shows the
-estimator saturating on a synthetic series whose true value is known. A short
-prefix of a real trajectory should do the same, and should trip the lower-bound
-report, and this shows whether it does on data rather than on a construction.
+**The correlation time against length.** The estimator saturates on a short
+series, and this reports whether the guard notices. It is the measurement that
+retired the guard that came before: a ratio test on `n / tau_hat` puts the
+saturated value in its own denominator, so severe saturation produces a
+healthy-looking ratio. On this trajectory a 250-frame prefix returned 5 where
+the whole returns 45, and the ratio read 50. The plateau test asks instead
+whether the estimate moved between half the frames and all of them.
 
 **Precision and recall, where the answer is known in advance.** A prefix has
 visited a subset of what the whole trajectory visited. It has therefore missed
@@ -91,7 +94,10 @@ def main() -> int:
     parser.add_argument("--json")
     args = parser.parse_args()
 
-    from prothon.core.correlation import correlation_time, effective_frames
+    from prothon.core.correlation import (
+        correlation_time_estimate,
+        effective_frames,
+    )
     from prothon.core.dissimilarity import dissimilarity
     from prothon.core.precision_recall import precision_recall
 
@@ -134,10 +140,13 @@ def main() -> int:
         )
         floor = float(result.noise_floor)
 
-        # The correlation time the estimator returns at this length, and
-        # whether it says so as a bound.
-        tau = float(correlation_time(prefix))
-        saturated = length < 20 * tau
+        # The correlation time at this length, and whether it has settled.
+        # Not a ratio test: see the module docstring for why that one was
+        # wrong. A flagged estimate is a lower bound, so `independent` below
+        # is an upper bound.
+        estimate = correlation_time_estimate(prefix)
+        tau = float(estimate.tau)
+        saturated = not estimate.converged
         independent = float(effective_frames(length, tau))
 
         # Precision and recall of the prefix against the whole trajectory.
@@ -154,6 +163,8 @@ def main() -> int:
             "floor": floor,
             "tau": tau,
             "tau_is_lower_bound": bool(saturated),
+            "tau_growth": float(estimate.growth),
+            "tau_half": float(min(estimate.prefix_taus.values())),
             "independent": independent,
             "precision": float(coverage.mean_precision),
             "recall": float(coverage.mean_recall),
@@ -190,22 +201,30 @@ def main() -> int:
         f"much sampling can resolve; precision and recall are the prefix "
         f"measured against the whole trajectory.",
         "",
-        "| conformations | floor | τ | independent | precision | recall |",
-        "|---|---|---|---|---|---|",
+        "| conformations | floor | τ | growth | independent | precision | recall |",
+        "|---|---|---|---|---|---|---|",
     ]
     for row in rows:
         lines.append(
             f"| {row['length']} | {row['floor']:.4f} | "
             f"{row['tau']:.0f}{'+' if row['tau_is_lower_bound'] else ''} | "
+            f"{row['tau_growth']:.2f} | "
             f"{row['independent']:.0f} | {row['precision']:.3f} | "
             f"{row['recall']:.3f} |"
         )
 
+    flagged = sum(1 for r in rows if r["tau_is_lower_bound"])
     lines += [
         "",
-        "`τ` marked `+` is reported as a lower bound: the trajectory is "
-        "shorter than about twenty correlation times, so the estimator has "
-        "exhausted the data before it exhausted the correlation.",
+        "`growth` is the estimate on all the frames divided by the estimate "
+        "on half of them. One means settled. A `τ` marked `+` is still "
+        "rising, so it is a **lower bound**, and the `independent` column "
+        "beside it is correspondingly an upper bound. "
+        + (
+            f"{flagged} of {len(rows)} lengths are flagged."
+            if flagged
+            else "No length is flagged."
+        ),
         "",
         "## Where the crossing is",
         "",

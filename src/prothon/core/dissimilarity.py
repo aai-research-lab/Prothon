@@ -76,7 +76,7 @@ from ..utils import get_logger
 from .correlation import (
     MINIMUM_BLOCKS,
     block_labels,
-    correlation_time,
+    correlation_time_estimate,
     plan_blocks,
 )
 from .metrics import feature_distance, resolve_metric
@@ -197,6 +197,12 @@ class ComparisonResult:
     #: blocks the null was built from. A correlation time of 1.0 means the
     #: frames were treated as independent.
     correlation_time: float = 1.0
+    #: Whether that correlation time stopped growing between half the frames
+    #: and all of them. False makes it a *lower bound*, and makes ``n_blocks``
+    #: and ``effective_samples`` upper bounds -- the optimistic direction. A
+    #: block count clearing MINIMUM_BLOCKS on a lower-bound tau has not
+    #: necessarily cleared it on the true one.
+    correlation_time_converged: bool = True
     n_blocks: int = 0
     #: Set when the sampling could not support a p-value at all, in which case
     #: every entry of ``p_values`` is 1 and the floor is the only guide. Two
@@ -271,6 +277,7 @@ class ComparisonResult:
             "n_frames": list(self.n_frames),
             "effective_samples": list(self.effective_samples),
             "correlation_time": float(self.correlation_time),
+            "correlation_time_converged": bool(self.correlation_time_converged),
             "n_blocks": int(self.n_blocks),
             "p_values_withheld": bool(self.p_values_withheld),
             "feature_index": (
@@ -1038,13 +1045,21 @@ def dissimilarity(
     # How much of this trajectory is independent, and therefore what the null
     # can be built from.
     tau = 1.0
+    tau_converged = True
     block_length, n_blocks = 1, min(ref_rep.shape[0], rep.shape[0])
     if not legacy and block_permutation is not False:
-        tau = (
-            float(correlation_time_frames)
-            if correlation_time_frames is not None
-            else max(correlation_time(ref_rep), correlation_time(rep))
-        )
+        if correlation_time_frames is not None:
+            # Supplied by the caller, who is responsible for it.
+            tau = float(correlation_time_frames)
+        else:
+            # Estimated on both, and checked for having settled. A correlation
+            # time that is still rising with trajectory length is a lower
+            # bound, which makes the block count below an *upper* bound: it can
+            # clear MINIMUM_BLOCKS on a number the data does not support.
+            left = correlation_time_estimate(ref_rep)
+            right = correlation_time_estimate(rep)
+            tau = max(left.tau, right.tau)
+            tau_converged = bool(left.converged and right.converged)
         if tau > 1.0 or block_permutation is True:
             smaller = min(ref_rep.shape[0], rep.shape[0])
             block_length, n_blocks = plan_blocks(smaller, tau)
@@ -1083,6 +1098,19 @@ def dissimilarity(
         # One check, because the block length is no longer shortened to
         # manufacture blocks: a trajectory too short for its own correlation
         # time now shows up as too few blocks, which is what it is.
+        if not tau_converged:
+            warnings.warn(
+                f"The correlation time is still rising with trajectory "
+                f"length, so the estimate of about {tau:.0f} frames is a "
+                f"lower bound rather than a value. Everything derived from it "
+                f"is correspondingly optimistic: the {n_blocks} blocks below "
+                f"are an upper bound, and so is the effective sample size. "
+                f"Sample this system for longer before treating the "
+                f"per-residue calls as settled.",
+                UserWarning,
+                stacklevel=3,
+            )
+
         withheld = block_length > 1 and n_blocks < MINIMUM_BLOCKS
         if withheld:
             # Fewer independent units than a p-value can be built from. The
@@ -1138,6 +1166,7 @@ def dissimilarity(
         n_frames=(int(ref_rep.shape[0]), int(rep.shape[0])),
         effective_samples=n_eff,
         correlation_time=float(tau),
+        correlation_time_converged=bool(tau_converged),
         n_blocks=int(n_blocks),
         p_values_withheld=bool(withheld),
         order_parameter=order_parameter,

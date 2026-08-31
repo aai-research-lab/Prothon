@@ -47,6 +47,8 @@ supported.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
 import numpy as np
 
 from ..utils import get_logger
@@ -55,8 +57,11 @@ logger = get_logger("correlation")
 
 __all__ = [
     "MINIMUM_BLOCKS",
+    "PLATEAU_TOLERANCE",
+    "CorrelationEstimate",
     "block_labels",
     "correlation_time",
+    "correlation_time_estimate",
     "effective_frames",
     "plan_blocks",
 ]
@@ -77,9 +82,50 @@ BLOCK_MULTIPLIER = 2.0
 #: multiplicity correction is already coarser than a 5% threshold.
 MINIMUM_BLOCKS = 8
 
+#: How much the estimate may grow between half a trajectory and all of it and
+#: still count as settled. Anything above this is still rising, which means the
+#: sum has not yet run out of correlation and the value is a lower bound.
+#: 1.25 allows a quarter of growth, which is generous for an estimate that
+#: should be flat once converged.
+PLATEAU_TOLERANCE = 1.25
+
 #: Features whose values never change carry no autocorrelation and would
 #: otherwise contribute a meaningless estimate to the summary.
 _CONSTANT_TOLERANCE = 1e-12
+
+
+@dataclass
+class CorrelationEstimate:
+    """A correlation time, and whether it can be believed.
+
+    ``tau`` alone cannot be checked. A saturated estimate is a plausible
+    number, in the right units, smaller than the truth, and there is nothing
+    about it that looks wrong. The only way to find out is to estimate it again
+    on less data and see whether it moved.
+
+    Attributes
+    ----------
+    tau
+        The estimate on the whole matrix, in frames.
+    converged
+        Whether ``tau`` stopped growing between half the frames and all of
+        them. False means it is a **lower bound**, and everything computed from
+        it -- the effective sample size, the block count -- is correspondingly
+        an *upper* bound, which is the optimistic direction.
+    prefix_taus
+        The estimate at each prefix, keyed by frame count, so a caller can see
+        the trend rather than take the verdict on trust.
+    growth
+        ``tau(n) / tau(n/2)``. One means settled; larger means still rising.
+    """
+
+    tau: float
+    converged: bool = True
+    prefix_taus: dict[int, float] = field(default_factory=dict)
+    growth: float = 1.0
+
+    def __float__(self) -> float:
+        return float(self.tau)
 
 
 def _autocorrelation_time(series: np.ndarray, c: float = SOKAL_WINDOW) -> float:
@@ -170,6 +216,79 @@ def correlation_time(
         np.median(times), 100 * quantile, tau, times.max(),
     )
     return tau
+
+
+def correlation_time_estimate(
+    matrix: np.ndarray,
+    quantile: float = 0.75,
+    max_features: int = 200,
+    tolerance: float = PLATEAU_TOLERANCE,
+) -> CorrelationEstimate:
+    """Correlation time, plus whether the trajectory was long enough to find it.
+
+    The estimate is a sum of the autocorrelation function, and on a short
+    series the sum runs out of data before it runs out of correlation. What
+    comes back is then a plausible number in the right units that is smaller
+    than the truth, with nothing about it that looks wrong.
+
+    **A ratio test on the estimate itself does not catch this.** Comparing
+    ``n / tau_hat`` against a threshold puts the saturated value in the
+    denominator, so the worse the saturation the healthier the ratio looks. On
+    prefixes of a real trajectory whose settled value is 45 frames, a
+    250-frame prefix returns 5 and the ratio reads 50, comfortably above any
+    threshold, while the true ratio is 5.6. The test fires when saturation is
+    mild and passes when it is severe, which is the wrong way round.
+
+    So this estimates twice, on half the frames and on all of them, and asks
+    whether the answer moved. That is the criterion Flyvbjerg and Petersen give
+    for block averaging -- the curve must reach a plateau before the number is
+    accepted -- applied to the quantity rather than to a proxy for it.
+
+    Parameters
+    ----------
+    matrix
+        ``(n_frames, n_features)`` representation, **in frame order**.
+    quantile, max_features
+        As :func:`correlation_time`.
+    tolerance
+        Growth between the half and the whole that still counts as settled.
+
+    Returns
+    -------
+    CorrelationEstimate
+        ``converged=False`` means ``tau`` is a lower bound. Everything derived
+        from it is then an upper bound: a block count that clears
+        :data:`MINIMUM_BLOCKS` on a lower-bound tau has not necessarily cleared
+        it on the true one.
+    """
+    matrix = np.atleast_2d(np.asarray(matrix, dtype=np.float64))
+    n_frames = matrix.shape[0]
+    tau = correlation_time(matrix, quantile, max_features)
+
+    half = n_frames // 2
+    if half < 16:
+        # Too short to halve and still estimate anything. Nothing can be said
+        # about convergence, and claiming convergence would be the one answer
+        # that is certainly unearned.
+        return CorrelationEstimate(
+            tau=tau, converged=False, prefix_taus={n_frames: tau}, growth=float("inf"),
+        )
+
+    tau_half = correlation_time(matrix[:half], quantile, max_features)
+    growth = tau / max(tau_half, 1e-12)
+    converged = bool(growth <= tolerance)
+
+    logger.debug(
+        "correlation time: %.1f on %d frames, %.1f on %d, growth %.2f -> %s",
+        tau, n_frames, tau_half, half, growth,
+        "settled" if converged else "still rising",
+    )
+    return CorrelationEstimate(
+        tau=tau,
+        converged=converged,
+        prefix_taus={half: tau_half, n_frames: tau},
+        growth=float(growth),
+    )
 
 
 def effective_frames(n_frames: int, tau: float) -> float:

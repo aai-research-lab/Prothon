@@ -234,3 +234,90 @@ class TestRefusal:
             n_permutations=50, random_state=0, correlation_time_frames=30.0,
         )
         assert not result.p_values_reported
+
+
+class TestSaturationIsCaughtByAPlateauNotARatio:
+    """A ratio test puts the saturated estimate in its own denominator.
+
+    The correlation-time estimator saturates on a short series: the sum runs
+    out of data before it runs out of correlation, and returns a plausible
+    number in the right units that is smaller than the truth.
+
+    The obvious guard is to require `n / tau_hat` above some threshold. It does
+    not work, and it fails in the worst direction. The worse the saturation,
+    the smaller `tau_hat`, the *larger* the ratio, and the healthier the series
+    looks. On prefixes of a ubiquitin trajectory whose settled value is 45
+    frames, a 250-frame prefix returned 5 and the ratio read 50 -- above any
+    sane threshold -- while the true ratio was 5.6.
+
+    The plateau test asks the only question that can be answered from the data:
+    estimate it again on half and see whether it moved.
+    """
+
+    @staticmethod
+    def _ou(n, tau_exp, seed=0, features=40):
+        import numpy as np
+
+        rng = np.random.default_rng(seed)
+        phi = np.exp(-1.0 / tau_exp)
+        x = np.zeros((n, features))
+        for i in range(1, n):
+            x[i] = phi * x[i - 1] + np.sqrt(1 - phi**2) * rng.normal(size=features)
+        return x
+
+    def test_a_short_series_is_flagged(self):
+        from prothon.core.correlation import correlation_time_estimate
+
+        estimate = correlation_time_estimate(self._ou(500, 45.0))
+        assert not estimate.converged
+        assert estimate.growth > 1.0
+
+    def test_a_long_series_is_not(self):
+        from prothon.core.correlation import correlation_time_estimate
+
+        estimate = correlation_time_estimate(self._ou(20000, 45.0))
+        assert estimate.converged
+
+    def test_the_estimate_is_a_lower_bound_when_flagged(self):
+        """Not merely uncertain: wrong in a known direction."""
+        import numpy as np
+
+        from prothon.core.correlation import correlation_time_estimate
+
+        short = correlation_time_estimate(self._ou(500, 45.0))
+        long = correlation_time_estimate(self._ou(20000, 45.0))
+        assert short.tau < long.tau
+        # And the settled value is the integrated time of the process, which
+        # for AR(1) is about twice the relaxation time it was built from.
+        phi = np.exp(-1.0 / 45.0)
+        assert long.tau > 0.5 * (1 + phi) / (1 - phi)
+
+    def test_a_series_too_short_to_halve_claims_nothing(self):
+        """The one answer that is certainly unearned is `converged`."""
+        from prothon.core.correlation import correlation_time_estimate
+
+        estimate = correlation_time_estimate(self._ou(20, 5.0))
+        assert not estimate.converged
+
+    def test_the_prefix_estimates_are_reported(self):
+        """A verdict the caller cannot check is a verdict taken on trust."""
+        from prothon.core.correlation import correlation_time_estimate
+
+        estimate = correlation_time_estimate(self._ou(2000, 45.0))
+        assert len(estimate.prefix_taus) == 2
+        assert 2000 in estimate.prefix_taus and 1000 in estimate.prefix_taus
+
+    def test_the_flag_reaches_the_comparison_result(self):
+        import warnings
+
+        from prothon.core.dissimilarity import dissimilarity
+
+        a, b = self._ou(400, 45.0, seed=0), self._ou(400, 45.0, seed=1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = dissimilarity(
+                a, b, -6.0, 6.0, s_num=3, n_permutations=20,
+                sample_size=400, random_state=0,
+            )
+        assert not result.correlation_time_converged
+        assert result.to_dict()["correlation_time_converged"] is False
