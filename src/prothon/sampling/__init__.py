@@ -17,9 +17,22 @@ from .correlation import (
     effective_frames,
     plan_blocks,
 )
+from .floor import split_half_floor
+from .null import permutation_null, studentised_p_values
+from .statistics import (
+    benjamini_hochberg,
+    effective_sample_size,
+    random_sample,
+)
 
 __all__ = [
     "MINIMUM_BLOCKS",
+    "benjamini_hochberg",
+    "effective_sample_size",
+    "permutation_null",
+    "random_sample",
+    "split_half_floor",
+    "studentised_p_values",
     "CorrelationEstimate",
     "block_labels",
     "correlation_time",

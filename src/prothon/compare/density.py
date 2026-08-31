@@ -184,5 +184,3 @@ def estimate_pdf(
     # genuinely disjoint distributions approach 1 because that is what the
     # arithmetic gives rather than because a fallback said so.
     return grid, np.maximum(kde(grid), _DENSITY_FLOOR)
-
-

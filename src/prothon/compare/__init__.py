@@ -7,7 +7,8 @@ is missing states or inventing them.
 """
 
 from .coverage import PrecisionRecall, precision_recall
-from .dissimilarity import ComparisonResult, dissimilarity, estimate_pdf, jsd_local
+from .density import estimate_pdf
+from .dissimilarity import ComparisonResult, dissimilarity, jsd_local
 from .distance import METRICS, feature_distance, resolve_metric
 
 __all__ = [

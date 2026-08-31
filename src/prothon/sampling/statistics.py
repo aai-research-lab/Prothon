@@ -108,4 +108,3 @@ def benjamini_hochberg(p_values: np.ndarray) -> np.ndarray:
     adjusted = np.empty_like(stepped)
     adjusted[order] = np.clip(stepped, 0.0, 1.0)
     return adjusted
-
