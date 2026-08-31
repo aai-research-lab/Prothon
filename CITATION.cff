@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use Prothon, please cite the method paper below."
-title: "Prothon: statistically calibrated comparison of protein conformational ensembles"
+title: "Prothon: statistically accurate comparison of protein conformational ensembles"
 abstract: >-
   Prothon represents a protein conformational ensemble as a vector of
   probability distributions over local order parameters and quantifies the
