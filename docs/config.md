@@ -20,7 +20,7 @@ settings to live.
 | `Study.from_file("s.yml").run()` | the same object |
 
 ```bash
-prothon compare --config study.yml
+prothon compare --config prothon.yml
 ```
 
 ```yaml
@@ -55,11 +55,11 @@ It runs the other way too. A command line typed once becomes a study that can
 be committed:
 
 ```bash
-prothon compare -e wt.xtc mut.xtc -t top.pdb -p cbcn -s 0 --save-config study.yml
+prothon compare -e wt.xtc mut.xtc -t top.pdb -p cbcn -s 0 --save-config prothon.yml
 ```
 
 ```yaml
-# Written by Prothon. Run with: prothon compare --config study.yml
+# Written by Prothon. Run with: prothon compare --config prothon.yml
 ensembles:
 - ensemble: wt.xtc
   topology: top.pdb
@@ -115,7 +115,7 @@ compare:
 ```
 
 ```
-prothon: study.yml: unknown setting 'random_seed' under 'compare'. A setting
+prothon: prothon.yml: unknown setting 'random_seed' under 'compare'. A setting
 that is silently ignored is worse than one that is refused: a misspelled
 'random_state' would leave the study unseeded and say nothing. Did you mean
 random_state?
@@ -166,8 +166,8 @@ ensembles:
 So a study can be re-run with one thing changed, without editing it:
 
 ```bash
-prothon compare --config study.yml --random-state 7
-prothon compare --config study.yml --report table -o rerun/
+prothon compare --config prothon.yml --random-state 7
+prothon compare --config prothon.yml --report table -o rerun/
 ```
 
 Anything given explicitly on the command line wins; anything left at its
@@ -181,7 +181,7 @@ found later carries the question it answered rather than only the answer:
 ```json
 {
   "study": {
-    "path": "/work/study.yml",
+    "path": "/work/prothon.yml",
     "description": "wild type against the F5G mutant",
     "ensembles": [
       {"ensemble": "wt.xtc", "topology": "wt.pdb", "label": "wild type"}
@@ -198,7 +198,7 @@ The same object, constructed directly or read from a file:
 ```python
 from prothon.config import Study
 
-study = Study.from_file("study.yml")
+study = Study.from_file("prothon.yml")
 comparison = study.run()
 print(comparison.summary())
 ```
@@ -213,7 +213,7 @@ study = Study(
     settings={"order_parameters": "cbcn", "random_state": 0},
 )
 study.run()
-study.save("study.yml")       # and write it down
+study.save("prothon.yml")       # and write it down
 ```
 
 `study.resolve()` returns the loaded ensembles without running anything, for

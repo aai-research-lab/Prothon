@@ -35,11 +35,11 @@ From Python, if you want the numbers:
 ```python
 from prothon import Prothon
 
-study = Prothon(
+prothon = Prothon(
     ensembles=["wt.dcd", "mutant.dcd"], topology="top.pdb",
     order_parameters="cbcn", random_state=0,
 )
-result = study.compare()["cbcn"][0]
+result = prothon.compare()["cbcn"][0]
 
 result.global_dissimilarity     # 0.5625
 result.noise_floor              # 0.1209
@@ -78,7 +78,7 @@ identical per-residue profile and are a different ensemble. No per-residue
 metric can see it.
 
 ```python
-study.distinguishability(order_parameter="cbcn", method="c2st")
+prothon.distinguishability(order_parameter="cbcn", method="c2st")
 ```
 
 ```
@@ -99,7 +99,7 @@ A single distance says an ensemble is wrong. It does not say how, and the two
 ways call for opposite work.
 
 ```python
-study.coverage_and_fidelity(order_parameter="cbcn")
+prothon.coverage_and_fidelity(order_parameter="cbcn")
 ```
 
 ```
@@ -126,8 +126,8 @@ from prothon.ingest import Ensemble
 wt  = Ensemble.from_trajectory("wt.xtc",  "wt.pdb",  label="wild type")
 mut = Ensemble.from_trajectory("mut.xtc", "mut.pdb", label="F5G")
 
-study = Prothon(ensembles=[wt, mut], random_state=0)
-study.compare_ensembles(order_parameters="cbcn")
+prothon = Prothon(ensembles=[wt, mut], random_state=0)
+prothon.compare_ensembles(order_parameters="cbcn")
 ```
 
 ```
@@ -247,7 +247,7 @@ terms. Only the trajectory uses `--topology`; the other two carry their own.
 ## 10. The study, written down
 
 ```bash
-prothon compare --config study.yml
+prothon compare --config prothon.yml
 ```
 
 ```yaml
@@ -276,7 +276,7 @@ re-runs with a different seed without being edited.
 It works the other way too — a command line typed once becomes a study:
 
 ```bash
-prothon compare -e wt.xtc mut.xtc -t top.pdb -p cbcn -s 0 --save-config study.yml
+prothon compare -e wt.xtc mut.xtc -t top.pdb -p cbcn -s 0 --save-config prothon.yml
 ```
 
 Flags, a file and the Python API all build the same object, so none of them can

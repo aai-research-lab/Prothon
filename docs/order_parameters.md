@@ -179,7 +179,8 @@ two tight torsion populations either side of the cut reports 4.43 radians where
 the true separation is 0.28 — a factor of twenty-one, reported without
 complaint.
 
-Prothon handles this by having each measure *declare* whether it is circular,
+Prothon handles this by having each order parameter *declare* whether it is
+circular,
 and every estimator read that declaration: a von Mises kernel for densities, a
 circular optimal-transport distance for Wasserstein, Kuiper's statistic in
 place of Kolmogorov–Smirnov, and a $(\cos, \sin)$ encoding for the
@@ -190,20 +191,20 @@ they will not.
 
 Shrake–Rupley (1973), per residue, in nm², computed through MDTraj (McGibbon
 et al. 2015). Useful for detecting changes in burial that
-contact numbers can miss, and the measure most likely to contain constant
+contact numbers can miss, and the order parameter most likely to contain constant
 columns — a residue with zero exposure in every frame. Those are handled
 explicitly rather than crashing the density estimate.
 
 ## Which to choose
 
-`cbcn` is the default and the measure the 2023 paper validated. It is sensitive
+`cbcn` is the default and the order parameter the 2023 paper validated. It is sensitive
 to tertiary packing.
 
 `cacn` is the same idea without needing side-chain atoms, so it works on
 coarse-grained models and on glycine-rich sequences.
 
 `caba` and `cata` describe backbone geometry and are sensitive to local
-secondary structure. Being window measures, they are the first to lose columns
+secondary structure. Being defined over windows, they are the first to lose columns
 when comparing molecules that differ by an insertion or deletion.
 
 `sasa` speaks to burial and exposure directly, which is often what a question

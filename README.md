@@ -95,7 +95,7 @@ prothon compare --ensembles bioemu/ alphaflow/ bbflow/ \
                 --reference md.xtc --topology target.pdb --report table
 
 # or write the study down and commit it beside the manuscript
-prothon compare --config study.yml
+prothon compare --config prothon.yml
 ```
 
 Every flag has a short form (`-e`, `-t`, `-p`, `-s`) and the same name as its
@@ -106,15 +106,15 @@ One import, and everything is reachable from it:
 ```python
 from prothon import Prothon
 
-study = Prothon(["wild_type.dcd", "mutant.dcd"], "topology.pdb", "cbcn",
-                random_state=0)
+prothon = Prothon(["wild_type.dcd", "mutant.dcd"], "topology.pdb", "cbcn",
+                  random_state=0)
 
-study.compare()                       # where do they differ
-study.distinguishability()            # differences *between* residues
-study.coverage_and_fidelity()         # missed states, or invented ones
-study.rank()                          # several against a reference
-study.validate("rg", [2.71], [0.08])  # against experiment
-study.save_config()                   # writes prothon.yml
+prothon.compare()                       # where do they differ
+prothon.distinguishability()            # differences *between* residues
+prothon.coverage_and_fidelity()         # missed states, or invented ones
+prothon.rank()                          # several against a reference
+prothon.validate("rg", [2.71], [0.08])  # against experiment
+prothon.save_config()                   # writes prothon.yml
 ```
 
 The order parameter is a property of the study, so it is named once. Any method

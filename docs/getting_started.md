@@ -93,17 +93,17 @@ Everything else is a method on the study or a function on the class:
 ```python
 from prothon import Prothon
 
-study = Prothon(
+prothon = Prothon(
     ensembles=["wt.dcd", "mut.dcd"], topology="top.pdb",
     order_parameters="cbcn", random_state=0,
 )
 
-study.compare()                          # per residue, with a floor
-study.distinguishability()               # differences between residues
-study.coverage_and_fidelity()            # missed states or invented ones
-study.rank()                             # ranked against the reference
-study.validate("rg", [2.71], [0.08])     # against experiment
-study.save_config()                      # writes prothon.yml
+prothon.compare()                          # per residue, with a floor
+prothon.distinguishability()               # differences between residues
+prothon.coverage_and_fidelity()            # missed states or invented ones
+prothon.rank()                             # ranked against the reference
+prothon.validate("rg", [2.71], [0.08])     # against experiment
+prothon.save_config()                      # writes prothon.yml
 ```
 
 The underlying functions are importable — `prothon.validate.score_observable`,
@@ -114,13 +114,13 @@ The underlying functions are importable — `prothon.validate.score_observable`,
 ```python
 from prothon import Prothon
 
-study = Prothon(
+prothon = Prothon(
     ["wild_type.dcd", "mutant.dcd"],
     topology="topology.pdb",
     output_dir="results",
     random_state=0,
 )
-results = study.compare_ensembles(order_parameters="cbcn,cata", s_num=5)
+results = prothon.compare_ensembles(order_parameters="cbcn,cata", s_num=5)
 
 for comparison in results["cbcn"]:
     print(comparison.ensemble_index, comparison.global_dissimilarity)
@@ -128,7 +128,7 @@ for comparison in results["cbcn"]:
     print(comparison.correlation_time, comparison.n_blocks)
     print(comparison.p_values_withheld)
 
-print(study.summary())
+print(prothon.summary())
 ```
 
 ## Other things to ask
@@ -162,7 +162,7 @@ already subsampled have no correlation to correct for. Blocking them costs
 resolution for nothing:
 
 ```python
-study.compare_ensembles(order_parameters="cbcn", block_permutation=False)
+prothon.compare_ensembles(order_parameters="cbcn", block_permutation=False)
 ```
 
 Prothon detects the absence of correlation and does this for you, so it is

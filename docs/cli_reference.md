@@ -90,8 +90,8 @@ operation is how they come to disagree. See [benchmarking](benchmark.md).
 ### A study in a file
 
 ```bash
-prothon compare --config study.yml
-prothon compare -e wt.xtc mut.xtc -t top.pdb --save-config study.yml
+prothon compare --config prothon.yml
+prothon compare -e wt.xtc mut.xtc -t top.pdb --save-config prothon.yml
 ```
 
 Flags, a file and the Python API all build the same `Study` object and run

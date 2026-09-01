@@ -66,7 +66,7 @@ but no longer at the same time, give an identical profile at every residue and
 are a different ensemble.
 
 ```python
-study.distinguishability(measure="cbcn", method="c2st")
+prothon.distinguishability("cbcn", method="c2st")
 ```
 
 ```
@@ -105,7 +105,7 @@ and one that opens pockets no physics produces are both wrong and score alike
 on any symmetric distance.
 
 ```python
-study.coverage_and_fidelity(measure="cbcn")
+prothon.coverage_and_fidelity("cbcn")
 ```
 
 ```

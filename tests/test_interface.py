@@ -826,3 +826,68 @@ class TestSaveConfigHasADefaultName:
         study = Prothon(ensemble_files, topology_file, random_state=0)
         study.save_config("elsewhere.yml")
         assert (tmp_path / "elsewhere.yml").exists()
+
+
+class TestTheDocumentedExamplesUseRealArguments:
+    """A keyword in the documentation that the method does not take.
+
+    `docs/metrics.md` carried `study.distinguishability(measure="cbcn")` and
+    `study.coverage_and_fidelity(measure="cbcn")` for several releases. Neither
+    runs: the parameter is `order_parameter`, and `measure` was the vocabulary
+    of an earlier version. A reader who copied either got a TypeError, and
+    nothing in the suite noticed, because prose is not executed.
+
+    This does not execute it either. It reads every keyword argument passed to
+    a `Prothon` method in a documented example and checks the method accepts
+    it, which catches the whole class without needing the examples to run.
+    """
+
+    import pathlib
+
+    DOCS = pathlib.Path(__file__).resolve().parent.parent / "docs"
+
+    @staticmethod
+    def _calls(text):
+        """(method, keyword) for every `prothon.method(... keyword=...)`."""
+        import re
+
+        for match in re.finditer(
+            r"\bprothon\.(\w+)\(([^)]*)\)", text, re.S
+        ):
+            method, args = match.group(1), match.group(2)
+            for kw in re.finditer(r"(\w+)\s*=", args):
+                yield method, kw.group(1)
+
+    def test_every_keyword_in_the_docs_is_a_real_parameter(self):
+        import inspect
+
+        from prothon import Prothon
+
+        problems = []
+        for page in sorted(self.DOCS.glob("*.md")):
+            for method, keyword in self._calls(page.read_text(encoding="utf-8")):
+                function = getattr(Prothon, method, None)
+                if function is None or not callable(function):
+                    continue
+                parameters = inspect.signature(function).parameters
+                if keyword in parameters:
+                    continue
+                if any(
+                    p.kind is inspect.Parameter.VAR_KEYWORD
+                    for p in parameters.values()
+                ):
+                    continue
+                problems.append(f"{page.name}: {method}({keyword}=...)")
+        assert not problems, "documented keywords that do not exist: " + "; ".join(
+            problems
+        )
+
+    def test_measure_is_gone_from_the_vocabulary(self):
+        """`measure` was renamed to `order parameter`. It should not survive
+        as a keyword anywhere, in prose or in code."""
+        offenders = [
+            page.name
+            for page in self.DOCS.glob("*.md")
+            if "measure=" in page.read_text(encoding="utf-8")
+        ]
+        assert not offenders, f"`measure=` still in {offenders}"

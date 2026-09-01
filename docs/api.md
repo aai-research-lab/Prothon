@@ -8,9 +8,9 @@ A study is built with the ensembles, the topology and the order parameters it
 is about, so the last of those is named once rather than at every call:
 
 ```python
-study = Prothon(["a.dcd", "b.dcd"], "top.pdb", "cbcn", random_state=0)
-study.compare()                 # uses cbcn
-study.compare("cata")           # overrides it for this call only
+prothon = Prothon(["a.dcd", "b.dcd"], "top.pdb", "cbcn", random_state=0)
+prothon.compare()                 # uses cbcn
+prothon.compare("cata")           # overrides it for this call only
 ```
 
 Note that `Prothon.order_parameters()` is the registry of every available
