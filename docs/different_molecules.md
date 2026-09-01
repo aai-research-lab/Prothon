@@ -16,9 +16,10 @@ from prothon import Prothon
 study = Prothon(
     ensembles=["wt.xtc", "mut.xtc"],
     topology=["wt.pdb", "mut.pdb"],     # one each: they are different molecules
+    order_parameters="cbcn",
     random_state=0,
 )
-study.compare("cbcn")
+study.compare()
 ```
 
 or from the command line:

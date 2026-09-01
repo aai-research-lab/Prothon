@@ -93,14 +93,17 @@ Everything else is a method on the study or a function on the class:
 ```python
 from prothon import Prothon
 
-study = Prothon(ensembles=["wt.dcd", "mut.dcd"], topology="top.pdb", random_state=0)
+study = Prothon(
+    ensembles=["wt.dcd", "mut.dcd"], topology="top.pdb",
+    order_parameters="cbcn", random_state=0,
+)
 
-study.compare("cbcn")                    # per residue, with a floor
+study.compare()                          # per residue, with a floor
 study.distinguishability()               # differences between residues
 study.coverage_and_fidelity()            # missed states or invented ones
 study.rank()                             # ranked against the reference
 study.validate("rg", [2.71], [0.08])     # against experiment
-study.save_config("study.yml")           # write the study down
+study.save_config()                      # writes prothon.yml
 ```
 
 The underlying functions are importable — `prothon.validate.score_observable`,

@@ -97,6 +97,7 @@ class Prothon:
         self,
         ensembles=None,
         topology=None,
+        order_parameters: str | list[str] | None = None,
         output_dir: str | None = None,
         verbose: bool = False,
         random_state: int | None = None,
@@ -110,6 +111,11 @@ class Prothon:
 
         Parameters
         ----------
+        order_parameters
+            The order parameter, or several, this study is about. Set here it
+            becomes the default for every method, so ``study.compare()`` needs
+            no argument. Any method still takes one to override it for a single
+            call. Defaults to ``"cbcn"``.
         ensembles
             Two or more sources, or already-loaded
             :class:`~prothon.ingest.Ensemble` objects, or a mixture. A source
@@ -175,6 +181,10 @@ class Prothon:
         self.output_dir = output_dir
         self.verbose = verbose
         self.random_state = random_state
+        # Private, because `Prothon.order_parameters()` is the registry and an
+        # instance attribute of that name would shadow it: `study.order_
+        # parameters()` would raise "str object is not callable".
+        self._order_parameters = order_parameters
         self.study = study
 
         self.ensembles_data: dict[str, list[np.ndarray]] = {}
@@ -245,12 +255,22 @@ class Prothon:
 
     # -- analyses ---------------------------------------------------------
 
-    def compare(self, order_parameters: str = "cbcn", **kwargs):
-        """Compare the ensembles. A shorter name for
-        :meth:`compare_ensembles`, which is what published scripts call."""
-        return self.compare_ensembles(order_parameters, **kwargs)
+    def _parameters(self, order_parameters=None):
+        """Whichever was given: the call's, the study's, or the default."""
+        if order_parameters is not None:
+            return order_parameters
+        return self._order_parameters or "cbcn"
 
-    def rank(self, order_parameters: str = "cbcn", ref: int = 0, **kwargs):
+    def compare(self, order_parameters=None, **kwargs):
+        """Compare the ensembles.
+
+        Uses the order parameters the study was built with unless given others
+        for this call. A shorter name for :meth:`compare_ensembles`, which is
+        what published scripts call.
+        """
+        return self.compare_ensembles(self._parameters(order_parameters), **kwargs)
+
+    def rank(self, order_parameters=None, ref: int = 0, **kwargs):
         """Rank every other ensemble against the reference.
 
         The benchmark view: ordered by the margin above each ensemble's own
@@ -324,8 +344,13 @@ class Prothon:
             **kwargs,
         )
 
-    def save_config(self, path) -> str:
-        """Write this study to a file, so it can be re-run and committed."""
+    def save_config(self, path: str = "prothon.yml") -> str:
+        """Write this study to a file, so it can be re-run and committed.
+
+        Defaults to ``prothon.yml`` in the working directory, because a study
+        written beside the data it describes almost always wants the obvious
+        name, and asking for one every time is a step that earns nothing.
+        """
         from .config.study import WHERE, Study
 
         study = self.study or Study(
@@ -368,7 +393,7 @@ class Prothon:
 
     def compare_ensembles(
         self,
-        order_parameters: str | Sequence[str] = "cbcn",
+        order_parameters: str | Sequence[str] | None = None,
         ref: int = 0,
         x_num: int = 100,
         s_num: int = 5,
@@ -419,6 +444,7 @@ class Prothon:
             Measure name to the list of :class:`ComparisonResult`, one per
             non-reference ensemble.
         """
+        order_parameters = self._parameters(order_parameters)
         for old, value in (("measures", measures), ("methods", methods)):
             if value is not None:
                 warnings.warn(
@@ -606,7 +632,7 @@ class Prothon:
 
     def distinguishability(
         self,
-        order_parameter: str = "cbcn",
+        order_parameter: str | None = None,
         method: str = "c2st",
         ref: int = 0,
         random_state: int | None = None,
@@ -636,6 +662,7 @@ class Prothon:
         -------
         list of EnsembleComparison
         """
+        order_parameter = self._parameters(order_parameter)
         from .compare.joint import distinguishability as compare
         from .represent.order_parameters import resolve_order_parameter
 
@@ -675,7 +702,7 @@ class Prothon:
 
     def coverage_and_fidelity(
         self,
-        order_parameter: str = "cbcn",
+        order_parameter: str | None = None,
         ref: int = 0,
         **kwargs,
     ) -> list[Any]:
@@ -690,6 +717,7 @@ class Prothon:
         an experimentally derived ensemble -- and the others are assessed
         against it. The two roles are not interchangeable.
         """
+        order_parameter = self._parameters(order_parameter)
         from .compare.coverage import precision_recall
         from .represent.order_parameters import resolve_order_parameter
 

@@ -2,7 +2,19 @@
 
 ## One import
 
-`from prothon import Prothon` is the whole of what a user needs. Everything
+`from prothon import Prothon` is the whole of what a user needs.
+
+A study is built with the ensembles, the topology and the order parameters it
+is about, so the last of those is named once rather than at every call:
+
+```python
+study = Prothon(["a.dcd", "b.dcd"], "top.pdb", "cbcn", random_state=0)
+study.compare()                 # uses cbcn
+study.compare("cata")           # overrides it for this call only
+```
+
+Note that `Prothon.order_parameters()` is the registry of every available
+parameter and is unrelated to the constructor argument of the same name. Everything
 below is reachable from the class or from an instance — the registries as
 functions on the class, the other ways of starting a study as constructors,
 and the analyses as methods. The underlying functions remain importable for

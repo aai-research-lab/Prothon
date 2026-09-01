@@ -22,8 +22,9 @@
 
 ---
 
+Two ensembles differ. By how much, and is the difference real?
+
 ```bash
-pip install prothon-ensembles
 prothon compare --ensembles wild_type.dcd mutant.dcd --topology topology.pdb
 ```
 
@@ -32,12 +33,16 @@ CBCN (reference: ensemble 0)
   ensemble 1: d = 0.2841 (floor 0.0472) — 34/76 residues differ
 ```
 
-**That second number is why this exists.** Two independent halves of a *single*
-ensemble are not at distance zero from each other, because a finite sample never
-reproduces a continuous distribution exactly. That self-distance is the smallest
-difference your sampling can resolve. Prothon measures it and prints it beside
-every result. A difference below the floor is reported as unresolvable, not as a
-small difference.
+Two numbers, and the second is the one other tools do not give you. Split one
+ensemble in half at random and compare the halves: the answer is not zero,
+because a finite sample never reproduces a continuous distribution exactly.
+That self-distance is the **noise floor** — the smallest difference this much
+sampling can resolve.
+
+Here 0.2841 clears a floor of 0.0472 by six times, so the difference is real.
+At 0.05 it would not have been, and Prothon would say so rather than report a
+small difference. Every result carries its floor, and where the sampling cannot
+support a per-residue conclusion, no p-value is printed at all.
 
 ## Why it is fast, and what that buys
 
@@ -101,41 +106,35 @@ One import, and everything is reachable from it:
 ```python
 from prothon import Prothon
 
-study = Prothon(["wild_type.dcd", "mutant.dcd"], "topology.pdb", random_state=0)
+study = Prothon(["wild_type.dcd", "mutant.dcd"], "topology.pdb", "cbcn",
+                random_state=0)
 
-study.compare("cbcn")                 # where do they differ
+study.compare()                       # where do they differ
 study.distinguishability()            # differences *between* residues
 study.coverage_and_fidelity()         # missed states, or invented ones
 study.rank()                          # several against a reference
 study.validate("rg", [2.71], [0.08])  # against experiment
-study.save_config("study.yml")        # write the study down
+study.save_config()                   # writes prothon.yml
 ```
+
+The order parameter is a property of the study, so it is named once. Any method
+takes one to override it for a single call.
 
 Flags, a config file and the Python API build the same object, so none of them
 can offer a setting the others cannot.
 
 ## What else it does
 
-- **Different molecules** — mutant against wild type, or a construct against a
-  longer one, through a sequence alignment
-- **Weighted ensembles** — conformer probabilities reach the density estimate,
-  and Kish's effective sample size sizes the floor
-- **Deposited ensembles** — `Ensemble.from_ped("PED00024")`, by accession
-- **Whole-ensemble tests** — MMD and a classifier two-sample test, which see
-  differences *between* residues that no per-residue metric can
-- **Coverage and fidelity** — precision and recall per residue, distinguishing
-  an ensemble that misses a state from one that invents one
-- **Scoring against experiment** — R<sub>g</sub>, end-to-end distance, PRE,
-  FRET and ³J, each beside a floor, because a perfect ensemble of twenty
-  conformations scores χ²_red = 0.77 and fitting that to 1.0 is fitting to noise
-- **Three distances** — Jensen–Shannon, Wasserstein-1 in the feature's own
-  units, and Kolmogorov–Smirnov, with Kuiper's on circular features
-
-Every default above was chosen by a measurement, and the measurements ship with
-the software: the false-positive rate against known ground truth, what a linear
-treatment of a torsion costs, how long a trajectory must run before a difference
-of a given size can be resolved at all, and a re-analysis of the published
-dataset the method was introduced on.
+| | |
+|---|---|
+| **Different molecules** | Mutant against wild type, or a construct against a longer one, through a sequence alignment |
+| **Weighted ensembles** | Conformer probabilities reach the density estimate, and Kish's effective sample size sizes the floor |
+| **Deposited ensembles** | `Ensemble.from_ped("PED00024")`, by accession |
+| **Whole-ensemble tests** | MMD and a classifier two-sample test, which see differences *between* residues that no per-residue metric can |
+| **Coverage and fidelity** | Precision and recall per residue, distinguishing an ensemble that misses a state from one that invents one |
+| **Scoring against experiment** | R<sub>g</sub>, end-to-end distance, PRE, FRET and ³J, each beside a floor |
+| **Three distances** | Jensen–Shannon, Wasserstein-1 in the feature's own units, and Kolmogorov–Smirnov, with Kuiper's on circular features |
+| **Nine order parameters** | Five per residue — contact numbers, backbone angles, solvent accessibility — and four for the whole chain |
 
 ## Documentation
 
@@ -152,9 +151,11 @@ All of it, in detail, at **[prothon.readthedocs.io](https://prothon.readthedocs.
 ## Install
 
 ```bash
-pip install prothon-ensembles     # the import and the command are both `prothon`
 conda install -c conda-forge prothon
 ```
+
+The import and the command are both `prothon`. Available on PyPI too — see the
+[installation guide](https://prothon.readthedocs.io/en/latest/installation.html).
 
 ## Citation
 

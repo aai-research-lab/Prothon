@@ -763,3 +763,66 @@ class TestCommandLine:
         ])
         payload = json.loads(capsys.readouterr().out)
         assert payload["cbcn"][0]["noise_floor"] >= 0
+
+
+class TestTheStudyCarriesItsOrderParameters:
+    """What a study is about belongs to the study, not to every call on it.
+
+    `Prothon(..., "cbcn")` then `study.compare()` says once what the comparison
+    is of. Passing it to `compare`, `distinguishability`, `coverage_and_fidelity`
+    and `rank` separately invites the four of them to disagree.
+    """
+
+    def test_the_declaration_sets_the_default(self, ensemble_files, topology_file):
+        from prothon import Prothon
+
+        study = Prothon(ensemble_files, topology_file, "cata", random_state=0)
+        assert list(study.compare()) == ["cata"]
+
+    def test_a_call_can_still_override_it(self, ensemble_files, topology_file):
+        from prothon import Prothon
+
+        study = Prothon(ensemble_files, topology_file, "cata", random_state=0)
+        assert list(study.compare("cbcn")) == ["cbcn"]
+        # and the study is unchanged by having been overridden once
+        assert list(study.compare()) == ["cata"]
+
+    def test_omitting_it_still_works(self, ensemble_files, topology_file):
+        """The default was `cbcn` before this existed and stays `cbcn`."""
+        from prothon import Prothon
+
+        study = Prothon(ensemble_files, topology_file, random_state=0)
+        assert list(study.compare()) == ["cbcn"]
+
+    def test_the_registry_is_not_shadowed(self, ensemble_files, topology_file):
+        """`Prothon.order_parameters()` is a registry, and an instance
+        attribute of that name would make `study.order_parameters()` raise
+        "str object is not callable". The attribute is private for that
+        reason, and this is the test that says so.
+        """
+        from prothon import Prothon
+
+        study = Prothon(ensemble_files, topology_file, "cata", random_state=0)
+        assert isinstance(study.order_parameters(), dict)
+        assert "cbcn" in study.order_parameters()
+
+
+class TestSaveConfigHasADefaultName:
+    def test_it_needs_no_argument(self, ensemble_files, topology_file, tmp_path,
+                                  monkeypatch):
+        from prothon import Prothon
+
+        monkeypatch.chdir(tmp_path)
+        study = Prothon(ensemble_files, topology_file, random_state=0)
+        path = study.save_config()
+        assert (tmp_path / "prothon.yml").exists()
+        assert path.endswith("prothon.yml")
+
+    def test_a_name_is_still_accepted(self, ensemble_files, topology_file, tmp_path,
+                                      monkeypatch):
+        from prothon import Prothon
+
+        monkeypatch.chdir(tmp_path)
+        study = Prothon(ensemble_files, topology_file, random_state=0)
+        study.save_config("elsewhere.yml")
+        assert (tmp_path / "elsewhere.yml").exists()
