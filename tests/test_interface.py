@@ -891,3 +891,73 @@ class TestTheDocumentedExamplesUseRealArguments:
             if "measure=" in page.read_text(encoding="utf-8")
         ]
         assert not offenders, f"`measure=` still in {offenders}"
+
+
+class TestTheCompatibilityShimHandlesBothImportForms:
+    """`from prothon.core import x` and `import prothon.core.x` are different.
+
+    A module `__getattr__` satisfies the first and not the second. The second
+    goes through the import system's finder, which consults `sys.modules` and
+    the path and never calls `__getattr__`, so it raises ModuleNotFoundError
+    for a name the first form resolves happily.
+
+    The shim shipped in 2.3.1 had exactly that gap. It was caught by a
+    conda-forge build whose recipe ran `import prothon.core.dissimilarity` in
+    a fresh interpreter -- against a package whose whole purpose was to keep
+    that line working.
+
+    **These tests run in subprocesses, and that is the point.** In one process
+    the first import populates `sys.modules` and every later form finds it
+    there, so a test that checks both in sequence passes against a broken
+    shim. That is how the gap survived being written.
+    """
+
+    import pytest
+
+    OLD = [
+        "correlation",
+        "dissimilarity",
+        "ensemble_metrics",
+        "metrics",
+        "plotting",
+        "precision_recall",
+        "prothon_core",
+        "representation",
+    ]
+
+    @staticmethod
+    def _in_fresh_process(statement):
+        import subprocess
+        import sys
+
+        return subprocess.run(
+            [sys.executable, "-c", f"import warnings\n"
+                                   f"warnings.simplefilter('ignore')\n"
+                                   f"{statement}"],
+            capture_output=True, text=True,
+        )
+
+    @pytest.mark.parametrize("name", OLD)
+    def test_submodule_import(self, name):
+        result = self._in_fresh_process(f"import prothon.core.{name}")
+        assert result.returncode == 0, result.stderr
+
+    @pytest.mark.parametrize("name", OLD)
+    def test_from_import(self, name):
+        result = self._in_fresh_process(f"from prothon.core import {name}")
+        assert result.returncode == 0, result.stderr
+
+    def test_the_mapping_covers_every_module_that_moved(self):
+        from prothon.core import MOVED
+
+        assert set(MOVED) == set(self.OLD)
+
+    def test_it_warns(self):
+        result = self._in_fresh_process(
+            "import warnings\n"
+            "with warnings.catch_warnings(record=True) as caught:\n"
+            "    warnings.simplefilter('always')\n"
+            "    import prothon.core\n"
+            "assert any(w.category is DeprecationWarning for w in caught), caught"
+        )
+        assert result.returncode == 0, result.stderr
