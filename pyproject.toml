@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "prothon-ensembles"
 dynamic = ["version"]
-description = "Statistically calibrated comparison of protein conformational ensembles using local order parameters"
+description = "Software for accurate comparison of protein conformational ensembles"
 readme = "README.md"
 requires-python = ">=3.9, <3.14"
 license = { text = "MIT" }

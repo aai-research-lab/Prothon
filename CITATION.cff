@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use Prothon, please cite the method paper below."
-title: "Prothon: statistically accurate comparison of protein conformational ensembles"
+title: "Prothon: software for accurate comparison of protein conformational ensembles"
 abstract: >-
   Prothon represents a protein conformational ensemble as a vector of
   probability distributions over local order parameters and quantifies the
@@ -15,7 +15,7 @@ abstract: >-
   the data cannot support one.
 type: software
 license: MIT
-version: 2.3.0
+version: 2.3.1
 repository-code: "https://github.com/aai-research-lab/Prothon"
 url: "https://prothon.readthedocs.io"
 keywords:

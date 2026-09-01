@@ -1,7 +1,6 @@
 # Prothon
 
-> Efficient comparison of protein conformational ensembles using local order
-> parameters.
+> Software for accurate comparison of protein conformational ensembles.
 
 Prothon represents each ensemble as a vector of probability distributions over
 **local order parameters** — contact numbers, virtual bond and torsion angles,

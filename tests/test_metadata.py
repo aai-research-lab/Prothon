@@ -179,3 +179,57 @@ class TestZenodoAgreesWithTheCitation:
         creator = self._zenodo()["creators"][0]
         assert creator["orcid"] == citation_orcid
         assert not creator["orcid"].startswith("http")
+
+
+class TestOneDescriptionInEveryPlaceItLives:
+    """The title lives in four files and drifted in three of them.
+
+    It began as the 2023 paper's framing. It became "statistically
+    calibrated", which is wrong -- a calibrated test matches its
+    nominal error rate, and this one returns 1.66-2.31% against a nominal 5%,
+    which the paper itself calls conservative. It is now "statistically
+    accurate", matching the manuscript.
+
+    `CITATION.cff` and `.zenodo.json` were corrected together. `pyproject.toml`
+    was missed, so 2.3.0 reached PyPI displaying the wrong summary on its front
+    page, and `docs/index.md` still carried the 2023 wording. Four places, one
+    sentence, and no test tying them together.
+    """
+
+    #: "efficient comparison" is deliberately absent from this list. It is the
+    #: title of the 2023 paper -- "A Local Order Parameter-Based Method for
+    #: Efficient Comparison of Protein Ensembles" -- which appears in every
+    #: citation block and must not change. Only the *software's own*
+    #: description is checked here.
+    WRONG = ("statistically calibrated",)
+
+    @staticmethod
+    def _pyproject_description():
+        import pathlib
+        import re
+
+        root = pathlib.Path(__file__).resolve().parent.parent
+        text = (root / "pyproject.toml").read_text(encoding="utf-8")
+        return re.search(r'^description = "([^"]+)"', text, re.M).group(1)
+
+    def test_the_package_description_matches_the_citation(self, citation):
+        """Modulo the leading "Prothon: ", which a package name would repeat."""
+        expected = citation["title"].split(": ", 1)[1]
+        assert self._pyproject_description().lower() == expected.lower()
+
+    def test_the_description_says_this_is_software(self):
+        """A tool and a paper about a method are not the same artifact."""
+        assert self._pyproject_description().lower().startswith("software for")
+
+    def test_no_superseded_wording_survives_anywhere(self):
+        import pathlib
+
+        root = pathlib.Path(__file__).resolve().parent.parent
+        offenders = []
+        for name in ("pyproject.toml", "CITATION.cff", ".zenodo.json",
+                     "README.md", "docs/index.md"):
+            text = (root / name).read_text(encoding="utf-8").lower()
+            for wrong in self.WRONG:
+                if wrong in text:
+                    offenders.append(f"{name}: {wrong!r}")
+        assert not offenders, "superseded description: " + "; ".join(offenders)
