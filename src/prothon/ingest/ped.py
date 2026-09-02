@@ -53,13 +53,27 @@ from .ensemble import Ensemble
 
 logger = get_logger("ingest.ped")
 
-__all__ = ["PED_API", "ped_entry", "ped_ensemble", "ped_ensembles"]
+__all__ = [
+    "PedUnavailable","PED_API", "ped_entry", "ped_ensemble", "ped_ensembles"]
 
 #: Base URL of the PED REST API.
 PED_API = "https://deposition.proteinensemble.org/api/v1"
 
 #: Seconds to wait on a request before giving up.
 TIMEOUT = 120.0
+
+
+class PedUnavailable(ValueError):
+    """PED could not be reached, or answered with a server error.
+
+    Separate from the ``ValueError`` raised for a bad accession because the two
+    call for opposite responses. A 404 means the identifier is wrong and will
+    still be wrong tomorrow. A 502, a timeout or a refused connection means the
+    service is down and the same request may well succeed later.
+
+    Subclasses ``ValueError`` so existing ``except ValueError`` still catches
+    it.
+    """
 
 
 def _get(url: str, timeout: float = TIMEOUT) -> bytes:
@@ -75,9 +89,15 @@ def _get(url: str, timeout: float = TIMEOUT) -> bytes:
                 f"ensemble identifier; entry PED00001 holds e001, e002 and e003, "
                 f"and identifiers are not interchangeable between entries."
             ) from error
+        if error.code >= 500:
+            raise PedUnavailable(
+                f"PED returned {error.code} for {url}. That is a server error "
+                f"rather than a bad request, so the same call may succeed "
+                f"later."
+            ) from error
         raise ValueError(f"PED returned {error.code} for {url}.") from error
     except urllib.error.URLError as error:
-        raise ValueError(
+        raise PedUnavailable(
             f"Could not reach PED at {url}: {error.reason}. This needs network "
             f"access; download the entry by hand and use "
             f"Ensemble.from_pdb_models if that is not available."

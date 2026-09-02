@@ -302,3 +302,25 @@ linearly.
 
 **Read the floor before the p-value.** The floor is measured. The p-value rests
 on assumptions, and [the statistics](statistics.md) says which ones.
+
+
+## When PED is down
+
+`ped_entry` and `ped_ensemble` raise `PedUnavailable` when the database cannot
+be reached or answers with a server error, and an ordinary `ValueError` when
+the accession is wrong. The two call for different responses, so they are
+different exceptions:
+
+```python
+from prothon.ingest.ped import PedUnavailable, ped_ensemble
+
+try:
+    ensemble = ped_ensemble("PED00024")
+except PedUnavailable:
+    ...          # the service is down; the same call may work later
+except ValueError:
+    ...          # the accession is wrong and will be wrong tomorrow
+```
+
+`PedUnavailable` subclasses `ValueError`, so code that catches only the latter
+keeps working.

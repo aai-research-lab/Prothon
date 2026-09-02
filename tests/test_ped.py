@@ -16,7 +16,13 @@ import numpy as np
 import pytest
 
 from prothon.ingest import Ensemble
-from prothon.ingest.ped import _extract_pdb, _normalise, ped_ensemble, ped_entry
+from prothon.ingest.ped import (
+    PedUnavailable,
+    _extract_pdb,
+    _normalise,
+    ped_ensemble,
+    ped_entry,
+)
 
 
 def tiny_pdb(n_models=3) -> str:
@@ -147,17 +153,34 @@ class TestLoading:
 
 @pytest.mark.network
 class TestAgainstPed:
-    """Against the database itself. Deselected by default."""
+    """Against the database itself. Deselected by default.
+
+    These skip when PED is unreachable or answers 5xx, and only then. A server
+    error is theirs and says nothing about this code; a 404, a malformed
+    archive or a count that does not match the metadata is ours and fails.
+
+    Without the distinction a PED outage turns the build red, which trains
+    everyone to ignore a red build.
+    """
+
+    @staticmethod
+    def _skip_if_ped_is_down(call, *args, **kwargs):
+        try:
+            return call(*args, **kwargs)
+        except PedUnavailable as error:
+            pytest.skip(f"PED is unavailable: {error}")
 
     def test_an_entry_lists_its_ensembles(self):
-        entry = ped_entry("PED00001")
+        entry = self._skip_if_ped_is_down(ped_entry, "PED00001")
         assert entry["entry_id"] == "PED00001"
         # Three separate determinations, which must not be merged.
         assert len(entry["ensembles"]) == 3
         assert {e["ensemble_id"] for e in entry["ensembles"]} == {"e001", "e002", "e003"}
 
     def test_a_small_entry_loads(self, tmp_path):
-        ensemble = ped_ensemble("PED00001", "e001", cache_dir=str(tmp_path))
+        ensemble = self._skip_if_ped_is_down(
+            ped_ensemble, "PED00001", "e001", cache_dir=str(tmp_path)
+        )
         assert ensemble.n_frames == 11
         assert ensemble.sequence
         assert ensemble.provenance["n_models_loaded"] == 11
@@ -167,7 +190,7 @@ class TestAgainstPed:
         because the first MODEL record shares a line with a tar header. The
         parsed count is the one to trust, and it should agree with the
         metadata."""
-        entry = ped_entry("PED00001")
+        entry = self._skip_if_ped_is_down(ped_entry, "PED00001")
         reported = entry["ensembles"][0]["models"]
         loaded = ped_ensemble("PED00001", "e001", cache_dir=str(tmp_path)).n_frames
         assert loaded == reported
@@ -175,7 +198,66 @@ class TestAgainstPed:
     def test_a_loaded_ensemble_can_be_compared(self, tmp_path):
         from prothon.represent.order_parameters import compute_representation
 
-        ensemble = ped_ensemble("PED00001", "e001", cache_dir=str(tmp_path))
+        ensemble = self._skip_if_ped_is_down(
+            ped_ensemble, "PED00001", "e001", cache_dir=str(tmp_path)
+        )
         matrix = compute_representation(ensemble.trajectory, "cacn")
         assert matrix.shape[0] == ensemble.n_frames
         assert matrix.shape[1] > 10
+
+
+class TestAnOutageIsNotABadAccession:
+    """Two failures that call for opposite responses.
+
+    A 404 means the accession is wrong and will be wrong tomorrow. A 502, a
+    timeout or a refused connection means PED is down and the same call may
+    succeed later. Both raised the same `ValueError`, so a caller could not
+    tell them apart and the live tests could not skip on one without skipping
+    on the other.
+
+    This is not hypothetical: a 502 from PED turned the build red, for a
+    service outage that says nothing about this code.
+    """
+
+    @staticmethod
+    def _raising(exc):
+        def fake(url, timeout=None):
+            raise exc
+        return fake
+
+    def test_a_server_error_is_unavailable(self, monkeypatch):
+        import urllib.error
+
+        monkeypatch.setattr(
+            "urllib.request.urlopen",
+            self._raising(urllib.error.HTTPError("u", 502, "Bad Gateway", {}, None)),
+        )
+        with pytest.raises(PedUnavailable):
+            ped_entry("PED00001")
+
+    def test_an_unreachable_host_is_unavailable(self, monkeypatch):
+        import urllib.error
+
+        monkeypatch.setattr(
+            "urllib.request.urlopen",
+            self._raising(urllib.error.URLError("no route to host")),
+        )
+        with pytest.raises(PedUnavailable):
+            ped_entry("PED00001")
+
+    def test_a_missing_entry_is_not(self, monkeypatch):
+        """A 404 must stay an ordinary ValueError, or a wrong accession would
+        skip the test that was meant to catch it."""
+        import urllib.error
+
+        monkeypatch.setattr(
+            "urllib.request.urlopen",
+            self._raising(urllib.error.HTTPError("u", 404, "Not Found", {}, None)),
+        )
+        with pytest.raises(ValueError) as caught:
+            ped_entry("PED00001")
+        assert not isinstance(caught.value, PedUnavailable)
+
+    def test_it_is_still_a_value_error(self):
+        """So `except ValueError` in existing code keeps working."""
+        assert issubclass(PedUnavailable, ValueError)
