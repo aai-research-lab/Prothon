@@ -10,7 +10,7 @@ is needed, so the cost is linear in the number of conformations rather than
 quadratic.
 
 ```bash
-pip install prothon-ensembles
+conda install -c conda-forge prothon
 prothon compare --ensembles wild_type.dcd mutant.dcd --topology topology.pdb
 ```
 

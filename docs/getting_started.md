@@ -117,6 +117,7 @@ from prothon import Prothon
 prothon = Prothon(
     ["wild_type.dcd", "mutant.dcd"],
     topology="topology.pdb",
+    order_parameters="cbcn",
     output_dir="results",
     random_state=0,
 )

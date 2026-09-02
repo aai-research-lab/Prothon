@@ -1,6 +1,13 @@
 # Installation
 
 ```bash
+conda create -n prothon -c conda-forge prothon
+conda activate prothon
+```
+
+or, if you prefer pip:
+
+```bash
 pip install prothon-ensembles
 ```
 
@@ -13,10 +20,43 @@ prothon info
 which lists the order parameters, the metrics, the sources `--ensembles`
 accepts, and the version of every backend.
 
+Prothon needs Python 3.9 or later.
+
+## Upgrading from 2.2
+
+`from prothon import Prothon` is unchanged, and so is everything reachable from
+it. If you imported a submodule directly, the paths moved in 2.3 to match the
+order a study runs in:
+
+| 2.2 | 2.3 |
+|---|---|
+| `prothon.core.representation` | `prothon.represent.order_parameters` |
+| `prothon.core.metrics` | `prothon.compare.distance` |
+| `prothon.core.dissimilarity` | `prothon.compare.dissimilarity` |
+| `prothon.core.ensemble_metrics` | `prothon.compare.joint` |
+| `prothon.core.precision_recall` | `prothon.compare.coverage` |
+| `prothon.core.correlation` | `prothon.sampling.correlation` |
+| `prothon.core.plotting` | `prothon.plot.figures` |
+| `prothon.core.prothon_core` | `prothon.study` |
+
+`prothon.core` still resolves every one of those, with a `DeprecationWarning`
+naming the replacement, and is removed in 3.0. The mapping is also available at
+runtime as `prothon.core.MOVED`.
+
+Two smaller changes, both backward compatible. The order parameters can be
+given once to the constructor rather than to each call:
+
+```python
+prothon = Prothon(["a.dcd", "b.dcd"], "top.pdb", "cbcn")
+prothon.compare()
+```
+
+and `save_config()` writes `prothon.yml` when given no argument.
+
 ## The name
 
-The distribution on PyPI is **`prothon-ensembles`**. PyPI's `prothon` was
-registered in December 2020 by an unrelated project and names there are
+The distribution on PyPI is **`prothon-ensembles`**, because PyPI's `prothon`
+was registered in December 2020 by an unrelated project and names there are
 permanent.
 
 The import name and the command are both `prothon`:
@@ -29,9 +69,9 @@ from prothon import Prothon
 prothon --version
 ```
 
-A conda-forge package named `prothon` is in review. When it lands,
-`conda install -c conda-forge prothon` will install the same software under the
-name used in the paper.
+On conda-forge the package is **`prothon`**, the name used in the paper. Both
+distributions build from the same source and install the same software; only
+the name you type to install differs.
 
 ## Requirements
 

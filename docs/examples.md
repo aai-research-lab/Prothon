@@ -18,7 +18,7 @@ prothon compare --ensembles wt.dcd mutant.dcd --topology top.pdb \
 or, the same thing more briefly:
 
 ```bash
-prothon compare -e wt.dcd,mutant.dcd -t top.pdb -p cbcn -s 0 -o results
+prothon compare -e wt.dcd mutant.dcd -t top.pdb -p cbcn -s 0 -o results
 ```
 
 ```
@@ -126,8 +126,8 @@ from prothon.ingest import Ensemble
 wt  = Ensemble.from_trajectory("wt.xtc",  "wt.pdb",  label="wild type")
 mut = Ensemble.from_trajectory("mut.xtc", "mut.pdb", label="F5G")
 
-prothon = Prothon(ensembles=[wt, mut], random_state=0)
-prothon.compare_ensembles(order_parameters="cbcn")
+prothon = Prothon(ensembles=[wt, mut], order_parameters="cbcn", random_state=0)
+prothon.compare()
 ```
 
 ```
