@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 
@@ -59,6 +60,45 @@ intersphinx_mapping = {
     "scipy": ("https://docs.scipy.org/doc/scipy/", None),
     "sklearn": ("https://scikit-learn.org/stable/", None),
 }
+
+# An unreachable inventory is a condition of somebody else's server, not a
+# defect in this documentation. The build is otherwise complete; the only loss
+# is that `numpy.ndarray` renders unlinked. Warnings are errors here, so a
+# timeout at docs.scipy.org failed the first Read the Docs build after
+# warnings-as-errors was turned on.
+#
+# `suppress_warnings` cannot help. Intersphinx emits this through a bare
+# `LOGGER.warning` with no type or subtype, so there is no name to suppress.
+# A filter on the message is the remaining option, and it is narrow: this one
+# message, from this one logger.
+#
+# Every other warning stays fatal, which is the point of turning them into
+# errors. A page missing from a toctree, a reference that does not resolve, a
+# docstring Sphinx cannot parse -- those are ours and they should stop the
+# build.
+intersphinx_timeout = 5
+
+
+class _UnreachableInventory(logging.Filter):
+    """Drop the "failed to reach any of the inventories" warning."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "failed to reach any of the inventories" not in record.getMessage()
+
+
+def setup(app):
+    """Attach the filter before intersphinx runs.
+
+    The logger is named `sphinx.sphinx.ext.intersphinx` -- Sphinx prefixes its
+    own name to the module's, and the module is `_load`, so neither the import
+    path nor the obvious guess is right. Read it from the object rather than
+    writing it out, so this keeps working if the module moves again.
+    """
+    import sphinx.ext.intersphinx._load as loader
+
+    loader.LOGGER.logger.addFilter(_UnreachableInventory())
+    return {"parallel_read_safe": True, "parallel_write_safe": True}
+
 
 source_suffix = {".rst": "restructuredtext", ".md": "markdown"}
 master_doc = "index"
