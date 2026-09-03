@@ -236,6 +236,22 @@ class TestAsymmetryAndInputs:
         )
         assert set(result.missed()) == {40, 41, 42, 43}
 
+    def test_chain_labels_reach_summaries_and_json(self):
+        reference = ensemble(seed=1)
+        collapse = ensemble(open_fraction=0.0, seed=2)
+        labels = np.array([f"A:{i}" for i in range(1, 5)] + [f"B:{i}" for i in range(1, 5)])
+        result = precision_recall(
+            reference,
+            collapse,
+            feature_index=np.arange(1, 9),
+            feature_labels=labels,
+            random_state=0,
+            **IID,
+        )
+        assert result.missed_labels().tolist() == labels[4:].tolist()
+        assert "B:1" in result.summary()
+        assert result.to_dict()["feature_labels"] == labels.tolist()
+
     def test_mismatched_features_are_refused(self):
         with pytest.raises(ValueError, match="Feature counts differ"):
             precision_recall(np.zeros((100, 3)), np.zeros((100, 4)))

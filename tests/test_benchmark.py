@@ -77,6 +77,10 @@ class TestTheTable:
         assert "margin" in payload["rows"][0]
         assert payload["settings"]["n_permutations"] == 100
         assert payload["rows"][0]["analysis_settings"] == payload["settings"]
+        assert payload["rows"][0]["feature_index"] == list(range(1, 13))
+        assert payload["rows"][0]["feature_labels"] == [
+            str(index) for index in range(1, 13)
+        ]
 
     def test_no_models_is_refused(self, reference):
         with pytest.raises(ValueError, match="No models"):

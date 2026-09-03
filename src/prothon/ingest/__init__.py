@@ -15,7 +15,14 @@ cannot ask those questions, because there is no common frame to superpose into.
 
 from .ensemble import Ensemble, EnsembleQuality
 from .ped import ped_ensemble, ped_ensembles, ped_entry
-from .reconcile import Correspondence, Substitution, feature_residues, reconcile
+from .reconcile import (
+    Correspondence,
+    Substitution,
+    feature_identity,
+    feature_residues,
+    reconcile,
+    residue_identity,
+)
 from .sequence import Alignment, align, chain_sequences, sequence_of
 from .topology import TopologyFingerprint, same_topology, topology_fingerprint
 
@@ -31,8 +38,10 @@ __all__ = [
     "ped_entry",
     "align",
     "chain_sequences",
+    "feature_identity",
     "feature_residues",
     "reconcile",
+    "residue_identity",
     "same_topology",
     "sequence_of",
     "topology_fingerprint",

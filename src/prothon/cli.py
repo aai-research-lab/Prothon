@@ -252,15 +252,26 @@ def run_validate(args) -> int:
     compute = {
         "rg": lambda t: radius_of_gyration(t)[:, None],
         "end_to_end": lambda t: end_to_end(t)[:, None],
-        "j_hn_ha": lambda t: j_coupling_hn_ha(t)[0],
-    }[args.observable]
+    }
 
     results = []
     for ensemble in ensembles:
+        feature_index = feature_labels = None
+        if args.observable == "j_hn_ha":
+            from .ingest import residue_identity
+
+            predicted, residue_indices = j_coupling_hn_ha(ensemble.trajectory)
+            feature_index, feature_labels = residue_identity(
+                ensemble.topology, residue_indices
+            )
+        else:
+            predicted = compute[args.observable](ensemble.trajectory)
         result = score_observable(
-            compute(ensemble.trajectory), measured, sigma,
+            predicted, measured, sigma,
             observable=f"{args.observable} [{ensemble.label}]",
             weights=ensemble.weights,
+            labels=feature_labels,
+            feature_index=feature_index,
             random_state=args.random_state,
         )
         results.append(result)

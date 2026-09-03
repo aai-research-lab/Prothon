@@ -96,7 +96,7 @@ shim that forwards with a `DeprecationWarning`, and is removed in 3.0.
 
 ```{eval-rst}
 .. automodule:: prothon.ingest.reconcile
-   :members: Correspondence, Substitution, reconcile, feature_residues
+   :members: Correspondence, Substitution, reconcile, feature_residues, feature_identity, residue_identity
 ```
 
 ```{eval-rst}

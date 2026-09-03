@@ -96,6 +96,20 @@ def _tick_step(maximum: float) -> int:
     return 10
 
 
+def _chain_aware_ticks(ax, positions, labels) -> bool:
+    """Use sparse chain-qualified ticks when labels carry chain identity."""
+    if labels is None:
+        return False
+    labels = np.asarray(labels, dtype=str)
+    positions = np.asarray(positions)
+    if labels.size != positions.size or not any(":" in label for label in labels):
+        return False
+    count = min(12, labels.size)
+    chosen = np.unique(np.linspace(0, labels.size - 1, count, dtype=int))
+    ax.set_xticks(positions[chosen], labels[chosen], rotation=45, ha="right")
+    return True
+
+
 def _new_axes(figsize: tuple[float, float] = (8, 6)) -> tuple[Figure, Any]:
     return plt.subplots(figsize=figsize)
 
@@ -217,6 +231,7 @@ def plot_local_dissimilarity(
     color: str = "k",
     raw_local_diss: np.ndarray | None = None,
     feature_index: np.ndarray | None = None,
+    feature_labels: np.ndarray | None = None,
 ) -> str:
     """Per-residue dissimilarity for one ensemble.
 
@@ -248,7 +263,8 @@ def plot_local_dissimilarity(
     ax.set_xlabel("Residue / feature index")
     ax.set_ylabel("Local dissimilarity")
     ax.set_title(f"{measure.upper()} local dissimilarity — ensemble {ensemble_index}")
-    ax.xaxis.set_major_locator(MultipleLocator(_tick_step(int(x[-1]))))
+    if not _chain_aware_ticks(ax, x, feature_labels):
+        ax.xaxis.set_major_locator(MultipleLocator(_tick_step(int(x[-1]))))
     if raw_local_diss is not None:
         ax.legend(frameon=False, fontsize="small")
     return _finish(
@@ -269,10 +285,14 @@ def plot_combined_local_dissimilarity(
 
     fig, ax = _new_axes()
     longest = 1
+    chain_ticks = None
     for position, comparison in enumerate(comparisons):
         values = np.asarray(comparison["local_dissimilarity"])
         index = comparison.get("feature_index")
         x = np.arange(1, len(values) + 1) if index is None else np.asarray(index)
+        labels = comparison.get("feature_labels")
+        if chain_ticks is None and labels is not None:
+            chain_ticks = (x, labels)
         longest = max(longest, int(x[-1]) if len(x) else 1)
         ax.plot(
             x, values, marker="o", markersize=3, linestyle="-",
@@ -282,7 +302,8 @@ def plot_combined_local_dissimilarity(
     ax.set_xlabel("Residue / feature index (reference numbering)")
     ax.set_ylabel("Local dissimilarity")
     ax.set_title(f"{measure.upper()} local dissimilarity vs reference")
-    ax.xaxis.set_major_locator(MultipleLocator(_tick_step(longest)))
+    if chain_ticks is None or not _chain_aware_ticks(ax, *chain_ticks):
+        ax.xaxis.set_major_locator(MultipleLocator(_tick_step(longest)))
     ax.legend(frameon=False, fontsize="small")
     return _finish(
         fig, os.path.join(out_dir, f"{measure}_combined_local_dissimilarity.png")
@@ -415,7 +436,15 @@ def replot_local_dissimilarity(
 ) -> Figure:
     """Rebuild a per-residue dissimilarity figure with custom styling."""
     values = np.asarray(local_diss)
-    x = np.arange(1, len(values) + 1)
+    feature_index = kwargs.get("feature_index")
+    feature_labels = kwargs.get("feature_labels")
+    x = (
+        np.arange(1, len(values) + 1)
+        if feature_index is None
+        else np.asarray(feature_index)
+    )
+    if x.size != values.size:
+        raise ValueError("feature_index must contain one value per feature.")
 
     fig, ax = _new_axes(kwargs.get("figsize", (8, 6)))
     ax.plot(
@@ -431,6 +460,9 @@ def replot_local_dissimilarity(
             f"{measure.upper()} local dissimilarity — ensemble {ensemble_index}",
         )
     )
-    ax.xaxis.set_major_locator(MultipleLocator(kwargs.get("tick_step", _tick_step(x[-1]))))
+    if not _chain_aware_ticks(ax, x, feature_labels):
+        ax.xaxis.set_major_locator(
+            MultipleLocator(kwargs.get("tick_step", _tick_step(x[-1])))
+        )
     fig.tight_layout()
     return fig

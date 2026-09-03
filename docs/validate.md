@@ -87,6 +87,11 @@ consequence of the ensemble rather than of somebody's regression.
 
 The Karplus relation for ³J(HN,HA) uses the Vuister and Bax (1993)
 coefficients, giving about 4 Hz in a helix and 9 Hz in a sheet.
+Because a backbone phi angle is undefined for the first residue, the first
+coupling usually belongs to residue 2. Both `Prothon.validate("j_hn_ha", ...)`
+and `prothon validate --observable j_hn_ha` preserve those residue identities:
+`AgreementResult.feature_index` uses stable one-based positions and `labels`
+adds chain identity for multichain inputs.
 
 ## What is not computed, and why
 

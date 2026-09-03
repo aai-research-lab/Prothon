@@ -5,6 +5,20 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Fixed — feature identity survives every analysis path
+
+- Every local result now carries an explicit one-based `feature_index`, even
+  when the two topologies are identical. CBCN omits glycine, so its column 2
+  is not necessarily residue 2 and an implicit `1..n` index was wrong.
+- `feature_labels` remain human-readable and become chain-qualified for
+  multichain systems, while `feature_index` remains a stable numeric key.
+  Dissimilarity, coverage/fidelity, C2ST, benchmark JSON, manifests and plots
+  all retain the same identity.
+- Python and CLI J-coupling validation now preserve the residue indices
+  returned by MDTraj. Their zero-based indices are converted to Prothon's
+  one-based convention in one shared function, so the first measured phi
+  coupling is correctly labelled residue 2 rather than residue 1.
+
 ### Fixed — topology identity is structural
 
 - The comparison fast path now requires an exact deterministic topology

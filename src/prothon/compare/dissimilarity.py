@@ -172,9 +172,12 @@ class ComparisonResult:
         mode this is the single pooled p-value broadcast across features.
     feature_index
         Where each surviving feature sits on the *reference* ensemble,
-        one-based. After reconciliation the columns are a subset of the
-        reference's, and plotting them at 1..n would silently renumber the
-        protein.
+        one-based. It is explicit even when the topologies are identical,
+        because a representation such as CBCN can omit a residue.
+    feature_labels
+        Human-readable labels for those same features. Multichain labels are
+        chain-qualified so repeated chain-local residue numbers are not
+        ambiguous.
     noise_floor
         Mean within-ensemble Jensen-Shannon distance: the smallest difference
         this much sampling could resolve. Retained as a descriptive summary;
@@ -223,11 +226,11 @@ class ComparisonResult:
     #: insufficient blocks.
     p_values_withheld: bool = False
     order_parameter: str = ""
-    #: Position of each feature on the reference ensemble, one-based. Set when
-    #: the ensembles were reconciled and the columns are a subset; ``None``
-    #: means every column is present and the index is simply 1..n.
+    #: Position of each feature on the reference ensemble, one-based.
     feature_index: np.ndarray | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    #: Display label for each feature, chain-qualified where needed.
+    feature_labels: np.ndarray | None = None
 
     @property
     def p_value(self) -> float:
@@ -313,6 +316,9 @@ class ComparisonResult:
             "p_values_withheld": bool(self.p_values_withheld),
             "feature_index": (
                 None if self.feature_index is None else self.feature_index.tolist()
+            ),
+            "feature_labels": (
+                None if self.feature_labels is None else self.feature_labels.tolist()
             ),
             **self.metadata,
         }

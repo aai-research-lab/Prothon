@@ -130,6 +130,9 @@ class EnsembleComparison:
     feature_importance
         How much each feature contributed, where the method can say. ``None``
         for MMD, which cannot.
+    feature_index, feature_labels
+        Stable one-based reference residue positions and readable labels for
+        classifier importances. Labels carry chain identity where needed.
     """
 
     method: str
@@ -144,6 +147,7 @@ class EnsembleComparison:
     feature_index: np.ndarray | None = None
     order_parameter: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    feature_labels: np.ndarray | None = None
 
     @property
     def distinguishable(self) -> bool | None:
@@ -167,6 +171,22 @@ class EnsembleComparison:
         )
         return [(int(labels[i]), float(self.feature_importance[i])) for i in order]
 
+    def leading_feature_labels(self, n: int = 5) -> list[tuple[str, float]]:
+        """Readable labels for the strongest features, largest first."""
+        if self.feature_importance is None:
+            return []
+        order = np.argsort(self.feature_importance)[::-1][:n]
+        labels = (
+            np.asarray(
+                np.arange(1, self.feature_importance.size + 1)
+                if self.feature_index is None
+                else self.feature_index
+            ).astype(str)
+            if self.feature_labels is None
+            else np.asarray(self.feature_labels, dtype=str)
+        )
+        return [(str(labels[i]), float(self.feature_importance[i])) for i in order]
+
     def summary(self) -> str:
         if self.p_value is None:
             reason = self.metadata.get(
@@ -179,7 +199,7 @@ class EnsembleComparison:
                 else f"AUC = {self.effect:.3f}"
             )
             line = f"{self.method.upper()}: {effect}, p-value withheld ({reason})"
-            leading = self.leading_features(5)
+            leading = self.leading_feature_labels(5)
             if leading:
                 named = ", ".join(f"{i}" for i, _ in leading)
                 line += f"\n  driven mostly by residues {named}"
@@ -191,7 +211,7 @@ class EnsembleComparison:
         line = f"{self.method.upper()}: {verdict} ({shown})"
         if self.effect is not None:
             line += f", AUC = {self.effect:.3f}"
-        leading = self.leading_features(5)
+        leading = self.leading_feature_labels(5)
         if leading:
             named = ", ".join(f"{i}" for i, _ in leading)
             line += f"\n  driven mostly by residues {named}"
@@ -217,6 +237,9 @@ class EnsembleComparison:
             ),
             "feature_index": (
                 None if self.feature_index is None else self.feature_index.tolist()
+            ),
+            "feature_labels": (
+                None if self.feature_labels is None else self.feature_labels.tolist()
             ),
             **self.metadata,
         }
@@ -961,6 +984,7 @@ def classifier_two_sample(
     time_stride_a: int = 1,
     time_stride_b: int = 1,
     alpha: float = MMD_ALPHA,
+    feature_labels=None,
 ) -> EnsembleComparison:
     """Train a classifier to tell the two ensembles apart, and score it fairly.
 
@@ -981,6 +1005,11 @@ def classifier_two_sample(
     """
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.metrics import roc_auc_score
+
+    if feature_index is not None and len(feature_index) != a.shape[1]:
+        raise ValueError("feature_index must contain one value per feature.")
+    if feature_labels is not None and len(feature_labels) != a.shape[1]:
+        raise ValueError("feature_labels must contain one value per feature.")
 
     integer_controls = {
         "folds": folds,
@@ -1261,6 +1290,9 @@ def classifier_two_sample(
         effective_samples=effective_units,
         feature_importance=importance,
         feature_index=None if feature_index is None else np.asarray(feature_index),
+        feature_labels=(
+            None if feature_labels is None else np.asarray(feature_labels, dtype=str)
+        ),
         order_parameter=order_parameter,
         metadata={
             "classifier": "random forest (200 trees)",
@@ -1335,10 +1367,13 @@ def distinguishability(
         raise ValueError(
             f"Unknown method {method!r}. Available: {', '.join(sorted(_METHODS))}."
         )
-    if key == "mmd" and "feature_index" in kwargs:
+    if key == "mmd" and (
+        "feature_index" in kwargs or "feature_labels" in kwargs
+    ):
         # MMD has no per-feature view; accepting the argument and discarding it
         # would suggest otherwise.
-        kwargs.pop("feature_index")
+        kwargs.pop("feature_index", None)
+        kwargs.pop("feature_labels", None)
         warnings.warn(
             "MMD reports no per-feature contribution, so feature_index has no "
             "effect. Use c2st to find out which residues carry the difference.",

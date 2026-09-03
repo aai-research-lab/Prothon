@@ -324,22 +324,34 @@ class Prothon:
         compute = {
             "rg": lambda t: radius_of_gyration(t)[:, None],
             "end_to_end": lambda t: end_to_end(t)[:, None],
-            "j_hn_ha": lambda t: j_coupling_hn_ha(t)[0],
         }
-        if observable not in compute:
+        available = (*compute, "j_hn_ha")
+        if observable not in available:
             raise ValueError(
                 f"Unknown observable {observable!r}. Available: "
-                f"{', '.join(sorted(compute))}. Predictions from an external "
+                f"{', '.join(sorted(available))}. Predictions from an external "
                 f"tool go to prothon.validate.score_observable directly."
             )
 
         ensemble = self.ensembles[index]
+        feature_index = feature_labels = None
+        if observable == "j_hn_ha":
+            from .ingest import residue_identity
+
+            predicted, residue_indices = j_coupling_hn_ha(ensemble.trajectory)
+            feature_index, feature_labels = residue_identity(
+                ensemble.topology, residue_indices
+            )
+        else:
+            predicted = compute[observable](ensemble.trajectory)
         return score_observable(
-            compute[observable](ensemble.trajectory),
+            predicted,
             np.atleast_1d(experimental),
             np.atleast_1d(uncertainty),
             observable=f"{observable} [{ensemble.label}]",
             weights=ensemble.weights,
+            labels=feature_labels,
+            feature_index=feature_index,
             random_state=self.random_state,
             **kwargs,
         )
@@ -515,7 +527,7 @@ class Prothon:
                 if index == ref:
                     continue
 
-                left, right, feature_index = self._align_columns(
+                left, right, feature_index, feature_labels = self._align_columns(
                     reference, rep, ref, index, spec.name
                 )
                 sampling_options = {
@@ -561,12 +573,14 @@ class Prothon:
                     **sampling_options,
                 )
                 result.feature_index = feature_index
+                result.feature_labels = feature_labels
                 comparisons.append(result)
                 plot_local_dissimilarity(
                     spec.name, index, result.local_dissimilarity,
                     self.output_dir, self.verbose, color="k",
                     raw_local_diss=result.raw_local_dissimilarity,
                     feature_index=feature_index,
+                    feature_labels=feature_labels,
                 )
 
             plot_combined_local_dissimilarity(
@@ -614,22 +628,36 @@ class Prothon:
         which columns survive, even when the two topologies happen to have the
         same atom count and representation width.
 
-        Returns the two matrices and the position of each surviving feature on
-        the *reference* ensemble, one-based -- which is what the per-residue
-        figures are indexed by. Numbering them 1..n after reconciliation would
+        Returns the two matrices, the stable one-based position of each
+        surviving feature on the *reference* ensemble, and a readable label.
+        Identity is explicit even on the fast path: CBCN omits glycine, so
+        column number is not a residue number. Numbering columns 1..n would
         put the label of one residue under the value of another, and the plot
         would look entirely reasonable.
         """
         reference_ensemble = self.ensembles[ref_index]
         other_ensemble = self.ensembles[other_index]
+        from .ingest import feature_identity
+
         if (
             reference_ensemble.topology_fingerprint
             == other_ensemble.topology_fingerprint
             and reference.shape[1] == other.shape[1]
         ):
-            return reference, other, None
+            feature_index, feature_labels = feature_identity(
+                reference_ensemble.topology, measure
+            )
+            if (
+                feature_index is not None
+                and feature_index.size != reference.shape[1]
+            ):
+                raise ValueError(
+                    f"The {measure} feature map has {feature_index.size} columns "
+                    f"but its representation has {reference.shape[1]}."
+                )
+            return reference, other, feature_index, feature_labels
 
-        from .ingest import feature_residues, reconcile
+        from .ingest import reconcile
 
         key = (ref_index, other_index)
         correspondence = self.correspondences.get(key)
@@ -663,10 +691,15 @@ class Prothon:
                 take_ref.size, reference.shape[1], measure, dropped,
             )
 
-        windows = feature_residues(reference_topology, measure)
-        # A window measure spans several residues; label it by its first.
-        index = np.array([windows[i][0] + 1 for i in take_ref], dtype=int)
-        return reference[:, take_ref], other[:, take_other], index
+        feature_index, feature_labels = feature_identity(
+            reference_topology, measure, take_ref
+        )
+        return (
+            reference[:, take_ref],
+            other[:, take_other],
+            feature_index,
+            feature_labels,
+        )
 
     # -- whole-ensemble comparison ----------------------------------------
 
@@ -720,12 +753,13 @@ class Prothon:
         for index, rep in enumerate(reps):
             if index == ref:
                 continue
-            left, right, feature_index = self._align_columns(
+            left, right, feature_index, feature_labels = self._align_columns(
                 reps[ref], rep, ref, index, spec.name
             )
             extra = dict(kwargs)
             if method.strip().lower() == "c2st":
                 extra["feature_index"] = feature_index
+                extra["feature_labels"] = feature_labels
             # The loader recorded whether rows came from a trajectory or
             # separate structure files. Carry that provenance into both joint
             # methods so neither folds nor a label null have to infer sampling
@@ -803,7 +837,7 @@ class Prothon:
         for index, rep in enumerate(reps):
             if index == ref:
                 continue
-            left, right, feature_index = self._align_columns(
+            left, right, feature_index, feature_labels = self._align_columns(
                 reps[ref], rep, ref, index, spec.name
             )
             result = precision_recall(
@@ -812,6 +846,7 @@ class Prothon:
                 weights=self.ensembles[index].weights,
                 circular=spec.circular,
                 feature_index=feature_index,
+                feature_labels=feature_labels,
                 random_state=self.random_state,
                 order_parameter=spec.name,
                 **kwargs,
@@ -993,4 +1028,6 @@ class Prothon:
             if kwargs.pop("raw", False)
             else match.local_dissimilarity
         )
+        kwargs.setdefault("feature_index", match.feature_index)
+        kwargs.setdefault("feature_labels", match.feature_labels)
         return replot_local_dissimilarity(measure, values, ensemble_index, **kwargs)

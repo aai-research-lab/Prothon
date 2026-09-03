@@ -165,6 +165,9 @@ information about the fold, so they are excluded.
 Glycine has no C-beta, so `cbcn` has one column per *non-glycine* residue. This
 matters when comparing ensembles whose sequences differ — see
 [comparing different molecules](different_molecules.md).
+It also matters for identical sequences: every result stores the actual
+one-based residue positions in `feature_index`, so A–G–V is labelled `[1, 3]`
+rather than silently renumbered `[1, 2]`.
 
 ## Virtual angles
 

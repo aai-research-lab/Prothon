@@ -158,6 +158,10 @@ class TestReplotting:
         study.compare_ensembles(order_parameters="cbcn", s_num=2)
         figure = study.replot_local_dissimilarity("cbcn", 1, raw=True, color="r")
         assert figure.axes[0].get_ylabel() == "Local dissimilarity"
+        np.testing.assert_array_equal(
+            figure.axes[0].lines[0].get_xdata(),
+            study.comparison_results["cbcn"][0].feature_index,
+        )
 
     def test_replot_before_running_is_refused(self, study):
         with pytest.raises(ValueError, match="Run compare_ensembles first"):
@@ -175,6 +179,18 @@ class TestReplotting:
         ]
         assert replot_global_dissimilarity("cbcn", results).axes[0].get_xticks().size
         assert replot_local_dissimilarity("cbcn", np.linspace(0, 1, 30), 1) is not None
+
+    def test_replot_uses_chain_aware_feature_identity(self):
+        figure = replot_local_dissimilarity(
+            "cacn",
+            np.array([0.1, 0.2, 0.3]),
+            1,
+            feature_index=np.array([1, 2, 3]),
+            feature_labels=np.array(["A:1", "A:2", "B:1"]),
+        )
+        assert [tick.get_text() for tick in figure.axes[0].get_xticklabels()] == [
+            "A:1", "A:2", "B:1"
+        ]
 
 
 class TestPlottingHelpers:

@@ -18,6 +18,7 @@ import pytest
 from prothon.ingest import (
     Ensemble,
     align,
+    feature_identity,
     feature_residues,
     reconcile,
     same_topology,
@@ -268,6 +269,20 @@ class TestTopologyIdentity:
         assert digest == ensemble.topology_fingerprint.hexdigest()
 
 
+class TestFeatureIdentity:
+    def test_cbcn_does_not_renumber_around_glycine(self):
+        traj = build(as_residues("AGV"), n_frames=1)
+        index, labels = feature_identity(traj.topology, "cbcn")
+        np.testing.assert_array_equal(index, [1, 3])
+        assert labels.tolist() == ["1", "3"]
+
+    def test_multichain_labels_are_unambiguous(self):
+        traj = build_chains((("A", "AC"), ("B", "DE")))
+        index, labels = feature_identity(traj.topology, "cacn")
+        np.testing.assert_array_equal(index, [1, 2, 3, 4])
+        assert labels.tolist() == ["A:1", "A:2", "B:1", "B:2"]
+
+
 class TestReconcile:
     def test_identical_ensembles_reconcile_to_themselves(self):
         a = Ensemble(build(as_residues(UBIQUITIN[:20])), label="a")
@@ -470,13 +485,31 @@ class TestStudyAcrossMolecules:
         # cannot appear, and everything after it keeps its own number.
         assert 5 not in index
         assert list(index) == [1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+        assert result.feature_labels.tolist() == [
+            "1", "2", "3", "4", "6", "7", "8", "9", "10", "11",
+            "12", "13", "14",
+        ]
 
     def test_identical_molecules_need_no_reconciliation(self, tmp_path):
         study = self._study(tmp_path, "ACDEFHIKLMNPQR", "ACDEFHIKLMNPQR")
         assert study.shares_topology
         result = study.compare_ensembles(order_parameters="cbcn", s_num=2)["cbcn"][0]
-        # Nothing was dropped, so the index stays implicit.
-        assert result.feature_index is None
+        # Identity must remain explicit: CBCN's columns are not necessarily
+        # residues 1..n because glycines do not contribute a C-beta.
+        np.testing.assert_array_equal(
+            result.feature_index, np.arange(1, len(result.local_dissimilarity) + 1)
+        )
+        assert len(result.feature_labels) == len(result.local_dissimilarity)
+
+    def test_identical_agv_fast_path_keeps_the_glycine_gap(self, tmp_path):
+        study = self._study(tmp_path, "AGV", "AGV", n=20)
+        reference = np.zeros((20, 2))
+        other = np.zeros((20, 2))
+        _, _, index, labels = study._align_columns(
+            reference, other, 0, 1, "cbcn"
+        )
+        np.testing.assert_array_equal(index, [1, 3])
+        assert labels.tolist() == ["1", "3"]
 
     def test_equal_count_mutant_does_not_take_the_fast_path(self, tmp_path):
         from prothon import Prothon
@@ -489,10 +522,13 @@ class TestStudyAcrossMolecules:
         assert not study.shares_topology
         reference = np.zeros((4, 4))
         other = np.zeros((4, 4))
-        _, _, index = study._align_columns(reference, other, 0, 1, "cacn")
+        _, _, index, labels = study._align_columns(
+            reference, other, 0, 1, "cacn"
+        )
 
         assert (0, 1) in study.correspondences
         np.testing.assert_array_equal(index, [1, 2, 3, 4])
+        assert labels.tolist() == ["1", "2", "3", "4"]
 
     def test_equal_count_different_molecules_are_reconciled_and_refused(self):
         from prothon import Prothon
@@ -516,6 +552,10 @@ class TestStudyAcrossMolecules:
         assert corr["n_aligned"] == 14
         assert corr["coverage"] == 1.0
         assert corr["alignment"][0]["reference"] == "ACDEFHIKLMNPQR"
+        assert manifest["results"][0]["feature_index"] == [
+            1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14
+        ]
+        assert manifest["results"][0]["feature_labels"][4] == "6"
 
     def test_a_truncated_construct_is_compared_on_what_it_shares(self, tmp_path):
         from prothon import Prothon
@@ -530,6 +570,8 @@ class TestStudyAcrossMolecules:
         # The construct starts at the full protein's residue 4.
         assert result.feature_index[0] == 4
         assert result.feature_index[-1] == 14
+        assert result.feature_labels[0] == "4"
+        assert result.feature_labels[-1] == "14"
 
     def test_weights_reach_the_estimator(self, tmp_path):
         """A study over a weighted ensemble must give a different answer from

@@ -419,7 +419,7 @@ def _compare_one(
             "model": {**model_sampling.metadata, "resolved": True},
         }
         study = Prothon.from_ensembles([reference, model], random_state=random_state)
-        left, right, index = study._align_columns(
+        left, right, index, labels = study._align_columns(
             reference_reps,
             study.compute_ensemble_representation(spec.name)[1],
             0, 1, spec.name,
@@ -439,12 +439,15 @@ def _compare_one(
             **sampling,
             **dissimilarity_options,
         )
+        result.feature_index = index
+        result.feature_labels = labels
         coverage = precision_recall(
             left, right,
             weights_ref=reference.weights,
             weights=model.weights,
             circular=spec.circular,
             feature_index=index,
+            feature_labels=labels,
             random_state=random_state,
             order_parameter=spec.name,
             **sampling,
@@ -479,6 +482,12 @@ def _compare_one(
         ],
         "sampling_plans": result.metadata["sampling_plans"],
         "sample_selection": result.metadata["sample_selection"],
+        "feature_index": (
+            None if result.feature_index is None else result.feature_index.tolist()
+        ),
+        "feature_labels": (
+            None if result.feature_labels is None else result.feature_labels.tolist()
+        ),
         "permutation_blocks": {
             "common_block_length": result.metadata["block_length"],
             "units": result.metadata["permutation_units"],

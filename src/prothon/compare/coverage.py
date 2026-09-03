@@ -117,6 +117,9 @@ class PrecisionRecall:
     coverage
         The level defining the support, and the value both quantities take
         under identical distributions.
+    feature_index, feature_labels
+        Stable one-based reference residue positions and readable labels for
+        the same features. Labels carry chain identity in multichain systems.
     """
 
     precision: np.ndarray
@@ -135,6 +138,7 @@ class PrecisionRecall:
     effective_samples: tuple[float, float] = (0.0, 0.0)
     order_parameter: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    feature_labels: np.ndarray | None = None
 
     @property
     def mean_precision(self) -> float:
@@ -164,6 +168,13 @@ class PrecisionRecall:
             else np.asarray(self.feature_index)
         )
 
+    def _display_labels(self) -> np.ndarray:
+        return (
+            self._labels().astype(str)
+            if self.feature_labels is None
+            else np.asarray(self.feature_labels, dtype=str)
+        )
+
     def missed(self) -> np.ndarray:
         """Features where the model fails to reach the reference's support."""
         if not self.floor_assessable:
@@ -188,6 +199,28 @@ class PrecisionRecall:
         below = self.precision < threshold
         return self._labels()[below]
 
+    def missed_labels(self) -> np.ndarray:
+        """Readable labels for missed features, preserving chain identity."""
+        if not self.floor_assessable:
+            return self._display_labels()[:0]
+        threshold = (
+            self.floor_recall - self._margin(self.floor_recall_sd)
+            if self.floor_recall_threshold is None
+            else self.floor_recall_threshold
+        )
+        return self._display_labels()[self.recall < threshold]
+
+    def invented_labels(self) -> np.ndarray:
+        """Readable labels for invented features, preserving chain identity."""
+        if not self.floor_assessable:
+            return self._display_labels()[:0]
+        threshold = (
+            self.floor_precision - self._margin(self.floor_precision_sd)
+            if self.floor_precision_threshold is None
+            else self.floor_precision_threshold
+        )
+        return self._display_labels()[self.precision < threshold]
+
     def summary(self) -> str:
         lines = [
             f"precision {self.mean_precision:.3f} (floor {self.mean_floor_precision:.3f}), "
@@ -198,17 +231,17 @@ class PrecisionRecall:
                 "  floor verdict withheld: too few independent sampling units"
             )
             return "\n".join(lines)
-        missed, invented = self.missed(), self.invented()
+        missed, invented = self.missed_labels(), self.invented_labels()
         if missed.size:
             lines.append(
                 f"  misses conformations at {missed.size} residue(s): "
-                + ", ".join(str(int(i)) for i in missed[:10])
+                + ", ".join(missed[:10])
                 + ("..." if missed.size > 10 else "")
             )
         if invented.size:
             lines.append(
                 f"  invents conformations at {invented.size} residue(s): "
-                + ", ".join(str(int(i)) for i in invented[:10])
+                + ", ".join(invented[:10])
                 + ("..." if invented.size > 10 else "")
             )
         if not missed.size and not invented.size:
@@ -260,8 +293,15 @@ class PrecisionRecall:
             "floor_assessable": bool(self.floor_assessable),
             "missed": self.missed().astype(int).tolist(),
             "invented": self.invented().astype(int).tolist(),
+            "missed_labels": self.missed_labels().tolist(),
+            "invented_labels": self.invented_labels().tolist(),
             "feature_index": (
                 None if self.feature_index is None else np.asarray(self.feature_index).tolist()
+            ),
+            "feature_labels": (
+                None
+                if self.feature_labels is None
+                else np.asarray(self.feature_labels).tolist()
             ),
             "effective_samples": list(self.effective_samples),
             **self.metadata,
@@ -334,6 +374,7 @@ def precision_recall(
     replica_labels_ref=None,
     replica_labels=None,
     n_jobs: int = 1,
+    feature_labels=None,
 ) -> PrecisionRecall:
     """Split a difference into what is missed and what is invented.
 
@@ -351,6 +392,10 @@ def precision_recall(
     floor_repeats
         Requested split-half repeats used to measure what a perfect model could
         score at this sampling. At least ten are used for the lower tail.
+    feature_index, feature_labels
+        Stable one-based residue indices and their display labels. The former
+        remain numeric for downstream analysis; the latter may carry chain
+        identity for summaries and serialisation.
     sampling_kind_ref, sampling_kind
         Sampling provenance of the reference and assessed ensemble.
         ``trajectory`` (default) estimates temporal correlation and splits
@@ -375,6 +420,10 @@ def precision_recall(
             f"Feature counts differ ({reference.shape[1]} and {other.shape[1]}); "
             f"these representations do not describe the same residues."
         )
+    if feature_index is not None and len(feature_index) != reference.shape[1]:
+        raise ValueError("feature_index must contain one value per feature.")
+    if feature_labels is not None and len(feature_labels) != reference.shape[1]:
+        raise ValueError("feature_labels must contain one value per feature.")
     if not 0.0 < coverage < 1.0:
         raise ValueError(f"coverage must lie strictly between 0 and 1; got {coverage}.")
 
@@ -521,6 +570,9 @@ def precision_recall(
         floor_assessable=floor_assessable,
         coverage=coverage,
         feature_index=None if feature_index is None else np.asarray(feature_index),
+        feature_labels=(
+            None if feature_labels is None else np.asarray(feature_labels, dtype=str)
+        ),
         effective_samples=effective_units,
         order_parameter=order_parameter,
         metadata={

@@ -73,6 +73,8 @@ class AgreementResult:
     within_floor
         Whether the agreement is already inside the sampling limit. ``None``
         when fewer than eight independent units make a verdict unsupported.
+    labels, feature_index
+        Readable measurement labels and stable one-based numeric indices.
     """
 
     observable: str
@@ -91,6 +93,7 @@ class AgreementResult:
     floor_distribution: np.ndarray | None = None
     floor_assessable: bool = True
     metadata: dict[str, Any] = field(default_factory=dict)
+    feature_index: np.ndarray | None = None
 
     @property
     def within_floor(self) -> bool | None:
@@ -104,7 +107,11 @@ class AgreementResult:
         """The points contributing most, largest first, up to five."""
         order = np.argsort(np.abs(self.residuals))[::-1][:5]
         labels = (
-            np.arange(1, self.residuals.size + 1)
+            (
+                np.arange(1, self.residuals.size + 1)
+                if self.feature_index is None
+                else self.feature_index
+            )
             if self.labels is None
             else self.labels
         )
@@ -153,6 +160,11 @@ class AgreementResult:
             "uncertainty": self.uncertainty.tolist(),
             "residuals": self.residuals.tolist(),
             "labels": None if self.labels is None else np.asarray(self.labels).tolist(),
+            "feature_index": (
+                None
+                if self.feature_index is None
+                else np.asarray(self.feature_index).tolist()
+            ),
             **self.metadata,
         }
 
@@ -175,6 +187,7 @@ def score_observable(
     correlation_time_frames: float | None = None,
     replica_labels=None,
     n_jobs: int = 1,
+    feature_index=None,
 ) -> AgreementResult:
     """Score an ensemble's predictions against measurements.
 
@@ -194,6 +207,10 @@ def score_observable(
     averaging
         ``linear``, or ``r6`` for a distance reported through an inverse
         sixth-power interaction.
+    labels, feature_index
+        Optional display labels and stable one-based numeric indices for the
+        measured points. Computed residue observables use both so multichain
+        labels remain readable without sacrificing a machine key.
     floor_repeats
         Split-half repeats behind the floor.
     sampling_kind
@@ -231,6 +248,10 @@ def score_observable(
             f"{uncertainty.size} uncertainties for {experimental.size} "
             f"measurements."
         )
+    if labels is not None and len(labels) != experimental.size:
+        raise ValueError("labels must contain one value per measurement.")
+    if feature_index is not None and len(feature_index) != experimental.size:
+        raise ValueError("feature_index must contain one value per measurement.")
     if np.any(uncertainty <= 0):
         raise ValueError(
             "Experimental uncertainties must be positive. A chi-squared "
@@ -314,6 +335,9 @@ def score_observable(
         uncertainty=uncertainty,
         residuals=(np.asarray(predicted) - experimental) / uncertainty,
         labels=None if labels is None else np.asarray(labels),
+        feature_index=(
+            None if feature_index is None else np.asarray(feature_index, dtype=int)
+        ),
         floor_threshold=floor_threshold,
         floor_distribution=floors,
         floor_assessable=plan.assessable,

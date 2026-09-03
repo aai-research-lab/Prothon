@@ -233,7 +233,10 @@ def j_coupling_hn_ha(
     Returns
     -------
     couplings, residues
-        ``(n_frames, n_angles)`` and the residue index of each angle.
+        ``(n_frames, n_angles)`` and the zero-based MDTraj residue index of
+        each angle. Public result APIs convert these once, through
+        :func:`prothon.ingest.residue_identity`, to one-based stable indices
+        and chain-aware display labels.
     """
     indices, phi = md.compute_phi(traj)
     if phi.shape[1] == 0:

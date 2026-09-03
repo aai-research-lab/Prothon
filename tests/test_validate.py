@@ -107,8 +107,29 @@ class TestObservables:
         couplings, residues = j_coupling_hn_ha(traj)
         assert couplings.shape[0] == traj.n_frames
         assert couplings.shape[1] == residues.size
+        # Phi is undefined for the first residue: the first coupling must not
+        # be silently relabelled as residue 1 downstream.
+        assert residues[0] == 1
         # The Karplus curve is bounded by its coefficients.
         assert couplings.min() >= -0.5 and couplings.max() <= 12.0
+
+    def test_j_coupling_identity_reaches_the_python_result(self, traj):
+        from prothon import Prothon
+        from prothon.ingest import Ensemble
+
+        couplings, residues = j_coupling_hn_ha(traj)
+        study = Prothon.from_ensembles(
+            [Ensemble(traj, label="first"), Ensemble(traj, label="second")],
+            random_state=0,
+        )
+        result = study.validate(
+            "j_hn_ha",
+            couplings.mean(axis=0),
+            np.full(couplings.shape[1], 0.5),
+        )
+        np.testing.assert_array_equal(result.feature_index, residues + 1)
+        assert result.feature_index[0] == 2
+        assert result.labels[0] == "2"
 
     def test_fret_efficiency_is_bounded_and_falls_with_distance(self, traj):
         efficiency = fret_efficiency(traj, "name CA and resid 0",
@@ -245,6 +266,15 @@ class TestAgreement:
         )
         assert result.worst[0][0] == 4        # one-based label of column 3
         assert "largest deviations" in result.summary()
+
+    def test_feature_identity_lengths_are_checked(self):
+        per_frame, experimental, sigma = self.perfect(100, n_points=3)
+        with pytest.raises(ValueError, match="feature_index"):
+            score_observable(
+                per_frame, experimental, sigma, feature_index=[1, 2]
+            )
+        with pytest.raises(ValueError, match="labels"):
+            score_observable(per_frame, experimental, sigma, labels=["1", "2"])
 
     def test_mismatched_lengths_are_refused(self):
         per_frame, experimental, sigma = self.perfect(100, n_points=10)

@@ -87,10 +87,15 @@ Prothon therefore maps residues first and derives columns from that map.
 
 ## Residue numbering in figures
 
-After reconciliation the surviving columns are a subset of the reference's.
-Numbering them 1..n would put the label of one residue under the value of
-another, so every result carries `feature_index` — the position of each feature
-on the **reference** ensemble — and the figures are drawn against it.
+Every local result carries two parallel identities. `feature_index` is the
+stable, one-based global position of each feature on the **reference**
+ensemble. `feature_labels` is for display; in a multichain topology it reads
+`A:1`, `A:2`, ..., `B:1` so repeated chain-local residue numbers are
+unambiguous. Figures and JSON retain both.
+
+This is explicit even when no reconciliation was needed. CBCN omits glycine,
+so an implicit 1..n column index is already wrong for an identical A–G–V pair:
+its two feature indices are `[1, 3]`, not `[1, 2]`.
 
 For the F5G example above the index reads `[1, 2, 3, 4, 6, ..., 14]`, with 5
 absent because the mutant's glycine has no C-beta to count contacts for.

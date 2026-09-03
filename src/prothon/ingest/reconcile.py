@@ -53,7 +53,14 @@ if TYPE_CHECKING:  # pragma: no cover
 
 logger = get_logger("ingest.reconcile")
 
-__all__ = ["Correspondence", "Substitution", "feature_residues", "reconcile"]
+__all__ = [
+    "Correspondence",
+    "Substitution",
+    "feature_identity",
+    "feature_residues",
+    "residue_identity",
+    "reconcile",
+]
 
 
 @dataclass(frozen=True)
@@ -99,6 +106,91 @@ def feature_residues(topology, order_parameter: str) -> list[tuple[int, ...]]:
     raise ValueError(
         f"No feature-to-residue map defined for {spec.name!r}."
     )
+
+
+def residue_identity(topology, residue_indices) -> tuple[np.ndarray, np.ndarray]:
+    """Return stable indices and readable labels for topology residues.
+
+    MDTraj residue indices are zero-based implementation details. Public
+    Prothon results use one-based *global* topology indices as their stable,
+    machine-readable key. Display labels are chain-local and chain-qualified
+    for a multichain topology, where residue 1 can legitimately occur more
+    than once.
+
+    This is the one conversion boundary used by representations and computed
+    observables alike. In particular, callers must pass the zero-based residue
+    indices returned by :func:`prothon.validate.observables.j_coupling_hn_ha`
+    here rather than adding one independently.
+    """
+    top = getattr(topology, "topology", topology)
+    residues = list(top.residues)
+    requested = np.asarray(residue_indices, dtype=int).ravel()
+    if np.any(requested < 0) or np.any(requested >= len(residues)):
+        raise ValueError(
+            f"Residue indices must be between 0 and {len(residues) - 1}."
+        )
+
+    chains = list(top.chains)
+    multichain = len(chains) > 1
+    local_position: dict[int, int] = {}
+    chain_label: dict[int, str] = {}
+    for chain in chains:
+        chain_residues = list(chain.residues)
+        identifier = (getattr(chain, "chain_id", None) or "").strip()
+        # An unnamed chain still needs an unambiguous public label.
+        identifier = identifier or str(chain.index + 1)
+        for position, residue in enumerate(chain_residues, start=1):
+            local_position[residue.index] = position
+            chain_label[residue.index] = identifier
+
+    labels = []
+    for raw_index in requested:
+        index = int(raw_index)
+        if multichain:
+            labels.append(f"{chain_label[index]}:{local_position[index]}")
+        else:
+            labels.append(str(index + 1))
+    return requested + 1, np.asarray(labels, dtype=str)
+
+
+def feature_identity(
+    topology,
+    order_parameter: str,
+    columns=None,
+) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """Return the residue index and display label behind each feature column.
+
+    Local windowed parameters are indexed by the first residue, preserving the
+    convention used by existing result files, while their display label names
+    the complete window. Global parameters have no residue identity and return
+    ``(None, None)``.
+    """
+    spec = resolve_order_parameter(order_parameter)
+    if spec.is_global:
+        return None, None
+
+    windows = feature_residues(topology, spec.name)
+    selected = np.arange(len(windows), dtype=int)
+    if columns is not None:
+        selected = np.asarray(columns, dtype=int).ravel()
+    chosen = [windows[int(column)] for column in selected]
+    starts, _ = residue_identity(topology, [window[0] for window in chosen])
+
+    labels: list[str] = []
+    for window in chosen:
+        _, parts = residue_identity(topology, window)
+        if len(parts) == 1:
+            labels.append(str(parts[0]))
+        elif all(":" not in part for part in parts):
+            labels.append(f"{parts[0]}-{parts[-1]}")
+        else:
+            first_chain = parts[0].split(":", 1)[0]
+            last_chain = parts[-1].split(":", 1)[0]
+            if first_chain == last_chain:
+                labels.append(f"{parts[0]}-{parts[-1].split(':', 1)[1]}")
+            else:
+                labels.append("/".join(parts))
+    return starts, np.asarray(labels, dtype=str)
 
 
 @dataclass

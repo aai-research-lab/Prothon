@@ -7,6 +7,7 @@ this project's did, with `--seed` on one side and `random_state` on the other.
 
 from __future__ import annotations
 
+import json
 import pathlib
 
 import numpy as np
@@ -16,7 +17,7 @@ from test_ingest import as_residues, build
 from prothon import Prothon
 from prothon.cli import build_parser, main
 from prothon.config.schema import COMMANDS, PARAMETERS, parameters_for
-from prothon.ingest import Ensemble
+from prothon.ingest import Ensemble, feature_residues
 from prothon.ingest.sources import describe_source, resolve, resolve_all
 
 SEQ = "ACDEFHIKLMNP"
@@ -349,9 +350,10 @@ class TestOneImport:
         )
         study = Prothon([reference, generated], random_state=0)
         rng = np.random.default_rng(42)
+        n_features = len(feature_residues(reference.topology, "cbcn"))
         study.ensembles_data["cbcn"] = [
-            rng.normal(size=(80, 4)),
-            rng.normal(size=(80, 4)),
+            rng.normal(size=(80, n_features)),
+            rng.normal(size=(80, n_features)),
         ]
         captured = {}
 
@@ -739,6 +741,33 @@ class TestCommandLine:
         ])
         assert code == 0
         assert "chi2_red" in capsys.readouterr().out
+
+    def test_validate_j_couplings_keeps_their_residue_indices(
+        self, files, tmp_path, capsys
+    ):
+        import mdtraj as md
+
+        from prothon.validate import j_coupling_hn_ha
+
+        traj = md.load(str(files / "a.dcd"), top=str(files / "top.pdb"))
+        couplings, residues = j_coupling_hn_ha(traj)
+        measurements = tmp_path / "j.txt"
+        np.savetxt(
+            measurements,
+            np.column_stack(
+                [couplings.mean(axis=0), np.full(couplings.shape[1], 0.5)]
+            ),
+        )
+        code = main([
+            "validate", "-e", str(files / "a.dcd"),
+            "-t", str(files / "top.pdb"), "--observable", "j_hn_ha",
+            "--experimental", str(measurements), "-s", "0", "--json",
+        ])
+        assert code == 0
+        payload = json.loads(capsys.readouterr().out)[0]
+        assert payload["feature_index"] == (residues + 1).tolist()
+        assert payload["feature_index"][0] == 2
+        assert payload["labels"][0] == "2"
 
     def test_a_closed_pipe_is_not_an_error(self, monkeypatch, capsys):
         """`prothon info | head` closes the pipe mid-write. Every Unix tool has

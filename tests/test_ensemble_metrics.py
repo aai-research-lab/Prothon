@@ -136,6 +136,21 @@ class TestClassifierExtras:
         )
         assert {i for i, _ in result.leading_features(3)} == {11, 12, 13}
 
+    def test_chain_labels_reach_the_classifier_summary(self):
+        rng = np.random.default_rng(8)
+        a, b = rng.normal(size=(400, 3)), rng.normal(1.5, 1, (400, 3))
+        labels = np.array(["A:1", "A:2", "B:1"])
+        result = distinguishability(
+            a,
+            b,
+            "c2st",
+            random_state=0,
+            feature_index=np.array([1, 2, 3]),
+            feature_labels=labels,
+        )
+        assert {label for label, _ in result.leading_feature_labels(3)} == set(labels)
+        assert result.to_dict()["feature_labels"] == labels.tolist()
+
     def test_auc_is_reported_and_bounded(self):
         rng = np.random.default_rng(9)
         a, b = rng.normal(size=(400, 4)), rng.normal(3, 1, (400, 4))
