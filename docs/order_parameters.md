@@ -50,6 +50,30 @@ prothon compare -e md.xtc PED00024 -t top.pdb -p rg,nu
 The summary says `differs` rather than counting residues, since there is one
 column and nothing to plot per position.
 
+## Molecular scope and chains
+
+Protein order parameters describe protein by default. `cbcn` and `cacn`
+select CA/CB atoms only from protein residues, so a calcium ion named `CA` is
+not a residue feature. `rg` uses all protein atoms, while `asph` uses protein
+C-alpha atoms. Water, ions, ligands, and membrane molecules do not silently
+change either value.
+
+The direct Python functions accept an explicit selection when the intended
+object really is a complex:
+
+```python
+from prothon.represent.order_parameters import compute_asph, compute_rg
+
+protein_rg = compute_rg(traj)                         # protein only
+complex_rg = compute_rg(traj, selection="not water") # deliberate complex
+complex_shape = compute_asph(traj, selection="not water and name CA")
+```
+
+`ree` and `nu` describe a chain, not a collection of chains. They accept a
+chain index or PDB chain ID through `chain=` and refuse a multichain default.
+For a complete study, selecting the chain during ingestion remains the clearest
+route: `Prothon(..., chains="A")` or `--chains A`.
+
 ### `rg` — radius of gyration
 
 The root-mean-square distance of the atoms from their centre of mass, mass
@@ -162,6 +186,11 @@ well inside the cutoff, about 0 well outside.
 Pairs closer than three residues in sequence are always in contact and carry no
 information about the fold, so they are excluded.
 
+Sequence separation exists only within one chain. Inter-chain CA/CB pairs are
+included as physical contacts, even when the residues happen to be adjacent in
+the topology's global numbering. This makes a contact profile sensitive to an
+interface without inventing a sequence distance between two molecules.
+
 Glycine has no C-beta, so `cbcn` has one column per *non-glycine* residue. This
 matters when comparing ensembles whose sequences differ — see
 [comparing different molecules](different_molecules.md).
@@ -174,6 +203,12 @@ rather than silently renumbered `[1, 2]`.
 `caba` is the angle over three consecutive alpha carbons; `cata` the torsion
 over four. They describe the local backbone geometry without reference to any
 frame.
+
+Windows are constructed independently within each protein chain. A window
+never crosses a chain boundary, a gap in residue numbering, or a missing
+peptide bond when the topology carries bond information. The result therefore
+contains only angles that actually belong to one continuous backbone; its
+feature labels are generated from exactly the same accepted windows.
 
 `cata` **wraps at ±π**, and that is not a detail. A density estimated on a
 linear grid splits a population straddling the wraparound across both ends and
@@ -197,6 +232,13 @@ et al. 2015). Useful for detecting changes in burial that
 contact numbers can miss, and the order parameter most likely to contain constant
 columns — a residue with zero exposure in every frame. Those are handled
 explicitly rather than crashing the density estimate.
+
+All atoms remain occluders, so a ligand or binding partner can shield the
+protein surface. Only protein residues become output features by default:
+waters, ions, and ligands do not appear as extra "residues" in a protein
+profile. The direct `compute_sasa(traj, report_selection=...)` function can
+deliberately choose another set of residues to report without removing the
+rest of the system as occluders.
 
 ## Which to choose
 

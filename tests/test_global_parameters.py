@@ -11,12 +11,16 @@ from __future__ import annotations
 import mdtraj as md
 import numpy as np
 import pytest
-from test_ingest import as_residues
+from test_ingest import as_residues, build_chains
 
 from prothon import Prothon
 from prothon.represent.order_parameters import (
     ORDER_PARAMETERS,
+    compute_asph,
+    compute_nu,
+    compute_ree,
     compute_representation,
+    compute_rg,
     resolve_order_parameter,
 )
 
@@ -56,6 +60,20 @@ def shaped(kind: str, n_frames: int = 300, seed: int = 0, seq: str = SEQ):
                 0, 0.02, 3
             )
     return md.Trajectory(xyz, top)
+
+
+def with_nonprotein_outliers(traj):
+    """Add distant water and calcium without changing the protein."""
+    top = md.Topology()
+    chain = top.add_chain()
+    water = top.add_residue("HOH", chain)
+    top.add_atom("O", md.element.oxygen, water)
+    calcium = top.add_residue("CAL", chain)
+    top.add_atom("CA", md.element.calcium, calcium)
+    xyz = np.empty((traj.n_frames, 2, 3), dtype=np.float32)
+    xyz[:, 0] = [50.0, 0.0, 0.0]
+    xyz[:, 1] = [-50.0, 0.0, 0.0]
+    return traj.stack(md.Trajectory(xyz, top))
 
 
 class TestTheyAreRegistered:
@@ -146,6 +164,34 @@ class TestThePhysicsIsRight:
     def test_a_chain_too_short_for_a_scaling_exponent_is_refused(self):
         with pytest.raises(ValueError, match="scaling exponent needs"):
             compute_representation(shaped("coil", 10, seed=11, seq="ACDEF"), "nu")
+
+    def test_shape_defaults_ignore_solvent_and_ions(self):
+        protein = shaped("coil", 20, seed=14)
+        mixed = with_nonprotein_outliers(protein)
+        np.testing.assert_allclose(compute_rg(mixed), compute_rg(protein))
+        np.testing.assert_allclose(compute_asph(mixed), compute_asph(protein))
+        assert compute_rg(mixed, selection="all").mean() > 3 * compute_rg(mixed).mean()
+
+    @pytest.mark.parametrize("name", ["ree", "nu"])
+    @pytest.mark.parametrize(
+        "chains",
+        [
+            [("A", SEQ[:12]), ("B", SEQ[:12])],
+            [("A", SEQ[:12]), ("B", SEQ[:13])],
+        ],
+        ids=["homomer", "heteromer"],
+    )
+    def test_chain_level_parameters_refuse_an_ambiguous_complex(self, name, chains):
+        complex_traj = build_chains(chains, n_frames=3)
+        with pytest.raises(ValueError, match="2 protein chains"):
+            compute_representation(complex_traj, name)
+
+    def test_chain_level_parameters_accept_an_explicit_chain(self):
+        complex_traj = build_chains([("A", SEQ[:12]), ("B", SEQ[:13])], n_frames=3)
+        assert compute_ree(complex_traj, chain="A").shape == (3, 1)
+        assert compute_nu(complex_traj, chain=1).shape == (3, 1)
+        with pytest.raises(ValueError, match="either selection or chain"):
+            compute_ree(complex_traj, selection="name CA", chain="A")
 
 
 class TestThroughAStudy:

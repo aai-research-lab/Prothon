@@ -5,6 +5,26 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Fixed — protein- and chain-safe representations
+
+- Default CA/CB selections now contain protein residues only. Calcium ions and
+  ligand atoms named `CA` or `CB` no longer become protein features. Radius of
+  gyration likewise excludes solvent, ions, ligands, and membrane atoms unless
+  an explicit selection requests them; asphericity uses protein C-alpha atoms.
+- Virtual bond-angle and torsion windows are built independently within each
+  chain and stop at residue-number gaps and, where bond information is
+  available, missing peptide bonds. Feature identity uses the same windows as
+  the numerical calculation.
+- Contact-number sequence separation is now chain-local. Pairs less than three
+  positions apart are excluded within a chain, while inter-chain contacts are
+  retained as physical contacts regardless of topology residue numbering.
+- End-to-end distance and the per-conformation scaling exponent refuse an
+  ambiguous multichain topology. Callers can select a chain directly, and the
+  existing study-level `chains=`/`--chains` path remains the normal workflow.
+- SASA keeps every atom as an occluder, preserving protein-ligand and partner
+  shielding, but reports only protein residues by default. `report_selection=`
+  can deliberately request another set of residue features.
+
 ### Fixed — feature identity survives every analysis path
 
 - Every local result now carries an explicit one-based `feature_index`, even

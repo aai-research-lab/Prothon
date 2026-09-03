@@ -8,8 +8,12 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from test_ingest import as_residues, build
+from test_global_parameters import with_nonprotein_outliers
+from test_ingest import as_residues, build, build_chains
+from test_representation import mixed_system
 
+from prothon import Prothon
+from prothon.ingest import Ensemble
 from prothon.validate import (
     KARPLUS_VUISTER_BAX,
     average_observable,
@@ -86,10 +90,27 @@ class TestObservables:
         compact = build(as_residues(SEQ), n_frames=20, seed=2, compact_from=2)
         assert radius_of_gyration(compact).mean() < radius_of_gyration(extended).mean()
 
+    def test_radius_defaults_to_protein_but_allows_an_explicit_complex(self, traj):
+        protein = traj[:10]
+        mixed = with_nonprotein_outliers(protein)
+        np.testing.assert_allclose(
+            radius_of_gyration(mixed), radius_of_gyration(protein)
+        )
+        assert radius_of_gyration(mixed, selection="all").mean() > 3 * (
+            radius_of_gyration(mixed).mean()
+        )
+
     def test_end_to_end_is_shorter_than_the_contour_length(self, traj):
         distance = end_to_end(traj)
         assert distance.shape == (traj.n_frames,)
         assert (distance < 0.4 * len(SEQ)).all()
+
+    def test_end_to_end_requires_one_chain_or_an_explicit_choice(self):
+        complex_traj = build_chains([("A", SEQ), ("B", SEQ[:-1])], n_frames=3)
+        with pytest.raises(ValueError, match="2 protein chains"):
+            end_to_end(complex_traj)
+        assert end_to_end(complex_traj, chain="B").shape == (3,)
+        assert end_to_end(complex_traj, selection="name CA").shape == (3,)
 
     def test_karplus_reproduces_the_textbook_values(self):
         """A helix gives about 4 Hz and a sheet about 9 Hz. If those move, the
@@ -162,6 +183,34 @@ class TestObservables:
                               "name CA and resid 11").mean(),
         )
         assert both[0] <= both[1] + 1e-9      # r6 can never exceed the mean
+
+
+class TestMixedSystemsEndToEnd:
+    def test_solvated_protein_ligand_system_reaches_comparison_and_validation(self):
+        first = mixed_system((8,), n_frames=120, extras=True)
+        second = mixed_system((8,), n_frames=120, extras=True)
+        first.xyz += np.random.default_rng(30).normal(
+            0, 0.03, first.xyz.shape
+        ).astype(np.float32)
+        second.xyz += np.random.default_rng(31).normal(
+            0, 0.03, second.xyz.shape
+        ).astype(np.float32)
+        ensembles = [
+            Ensemble(
+                trajectory,
+                label=label,
+                provenance={"kind": "pdb-models", "sampling_kind": "iid"},
+            )
+            for trajectory, label in ((first, "first"), (second, "second"))
+        ]
+        study = Prothon(ensembles, random_state=0)
+
+        comparison = study.compare("cacn", s_num=2)["cacn"][0]
+        assert comparison.local_dissimilarity.size == 8
+
+        expected = float(radius_of_gyration(first).mean())
+        agreement = study.validate("rg", [expected], [0.1], sampling_kind="iid")
+        assert agreement.within_floor
 
 
 class TestAgreement:

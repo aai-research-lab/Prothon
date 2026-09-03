@@ -47,6 +47,7 @@ from dataclasses import dataclass
 import mdtraj as md
 import numpy as np
 
+from ..represent.order_parameters import _protein_chain_atoms, _selection_indices
 from ..utils import get_logger
 
 logger = get_logger("validate.observables")
@@ -132,24 +133,46 @@ def average_observable(values, weights=None, averaging: str = "linear"):
 # ---------------------------------------------------------------------------
 # Global shape
 # ---------------------------------------------------------------------------
-def radius_of_gyration(traj: md.Trajectory, mass_weighted: bool = True) -> np.ndarray:
-    """Radius of gyration per frame, in nm.
+def radius_of_gyration(
+    traj: md.Trajectory,
+    mass_weighted: bool = True,
+    selection: str | None = None,
+) -> np.ndarray:
+    """Radius of gyration per frame, in nm, protein-only by default.
 
     Mass weighted by default, which is what a SAXS-derived Rg corresponds to.
+    Pass an explicit MDTraj selection to measure a complex or another subset.
     """
+    indices = _selection_indices(traj, selection)
+    selected = traj if indices.size == traj.n_atoms else traj.atom_slice(indices)
     return (
-        md.compute_rg(traj)
+        md.compute_rg(selected)
         if mass_weighted
-        else md.compute_rg(traj, masses=np.ones(traj.n_atoms))
+        else md.compute_rg(selected, masses=np.ones(selected.n_atoms))
     )
 
 
-def end_to_end(traj: md.Trajectory, selection: str = "name CA") -> np.ndarray:
-    """Distance between the first and last selected atom, per frame, in nm."""
-    indices = traj.topology.select(selection)
+def end_to_end(
+    traj: md.Trajectory,
+    selection: str | None = None,
+    chain=None,
+) -> np.ndarray:
+    """Distance between one protein chain's terminal alpha carbons.
+
+    A multichain default is ambiguous and refused. Pass a chain index or ID,
+    or an explicit atom selection when different endpoints are intentional.
+    """
+    if selection is not None and chain is not None:
+        raise ValueError("Pass either selection or chain, not both.")
+    indices = (
+        _protein_chain_atoms(traj.topology, "CA", chain)
+        if selection is None
+        else _selection_indices(traj, selection)
+    )
     if len(indices) < 2:
+        description = "the selected protein chain" if selection is None else repr(selection)
         raise ValueError(
-            f"End-to-end distance needs at least two atoms; {selection!r} "
+            f"End-to-end distance needs at least two atoms; {description} "
             f"matched {len(indices)}."
         )
     pair = np.array([[indices[0], indices[-1]]])
@@ -254,8 +277,10 @@ def j_coupling_hn_ha(
 
 #: Everything this module computes, with how each is averaged.
 OBSERVABLES: dict[str, Observable] = {
-    "rg": Observable("rg", "Radius of gyration", "nm", "linear"),
-    "end_to_end": Observable("end_to_end", "End-to-end distance", "nm", "linear"),
+    "rg": Observable("rg", "Protein radius of gyration", "nm", "linear"),
+    "end_to_end": Observable(
+        "end_to_end", "Single-chain end-to-end distance", "nm", "linear"
+    ),
     "distance": Observable("distance", "Distance between two atoms", "nm", "linear"),
     "pre": Observable("pre", "PRE effective distance", "nm", "r6"),
     "fret": Observable("fret", "FRET efficiency", "", "linear"),

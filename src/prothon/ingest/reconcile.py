@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ..represent.order_parameters import resolve_order_parameter
+from ..represent.order_parameters import _feature_residue_windows, resolve_order_parameter
 from ..utils import get_logger
 from .sequence import (
     MINIMUM_COVERAGE,
@@ -89,23 +89,7 @@ def feature_residues(topology, order_parameter: str) -> list[tuple[int, ...]]:
     they produce.
     """
     spec = resolve_order_parameter(order_parameter)
-    top = getattr(topology, "topology", topology)
-
-    if spec.name in ("cbcn", "cacn"):
-        atom = "CB" if spec.name == "cbcn" else "CA"
-        return [(top.atom(int(a)).residue.index,) for a in top.select(f"name {atom}")]
-
-    if spec.name in ("caba", "cata"):
-        residues = [top.atom(int(a)).residue.index for a in top.select("name CA")]
-        width = 3 if spec.name == "caba" else 4
-        return [tuple(residues[i : i + width]) for i in range(len(residues) - width + 1)]
-
-    if spec.name == "sasa":
-        return [(r.index,) for r in top.residues]
-
-    raise ValueError(
-        f"No feature-to-residue map defined for {spec.name!r}."
-    )
+    return _feature_residue_windows(topology, spec.name)
 
 
 def residue_identity(topology, residue_indices) -> tuple[np.ndarray, np.ndarray]:

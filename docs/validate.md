@@ -19,6 +19,20 @@ print(result.summary())
 Rg: chi2_red = 0.31 (floor mean 0.44, q95 0.73) — agrees to within its own sampling
 ```
 
+`radius_of_gyration` is protein-only by default, so explicit solvent, ions, a
+ligand, or a membrane cannot silently dominate a SAXS-like Rg. Pass an MDTraj
+selection when the experimental object is deliberately a larger complex:
+
+```python
+complex_rg = radius_of_gyration(traj, selection="not water")
+```
+
+`end_to_end` uses the terminal alpha carbons of one protein chain. A multichain
+topology is refused unless `chain=` names a chain (by index or PDB ID), or
+`selection=` explicitly defines the intended endpoints. In a `Prothon` study,
+selecting the chain at ingestion with `chains=` or `--chains` applies the same
+choice consistently to comparison and validation.
+
 ## A perfect ensemble does not score one
 
 A reduced chi-squared of 1 is the usual target. For an ensemble it is wrong in

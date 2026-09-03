@@ -90,8 +90,8 @@ class EnsembleQuality:
             more = "" if len(self.chain_breaks) <= 6 else f" (+{len(self.chain_breaks) - 6} more)"
             notes.append(
                 f"{len(self.chain_breaks)} chain break(s) after residue {where}{more}. "
-                f"Contact numbers and virtual angles across a break are computed "
-                f"between residues that are not bonded."
+                f"Virtual angles omit breaks recorded by residue numbering or "
+                f"bonds; verify coordinate-only discontinuities before analysis."
             )
         if self.nonstandard_residues:
             notes.append(

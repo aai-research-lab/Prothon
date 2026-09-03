@@ -163,15 +163,15 @@ def residue_letter(residue) -> str:
 def is_amino_acid(residue) -> bool:
     """Whether a residue belongs in the sequence.
 
-    Name first, then mdtraj's own judgement, then the backbone. The last test
-    is what catches a modified residue nobody has heard of -- a phosphotyrosine
-    written as PTR, a crosslink, a non-canonical amino acid in a designed
-    protein. mdtraj calls those non-protein, so a sequence built on its
-    judgement alone would drop them silently and shift every residue index
-    after the drop. A residue carrying N, CA and C is a residue in the chain.
+    Known amino-acid names are sufficient even for a coarse-grained residue.
+    An unknown name must carry the N--CA--C backbone. MDTraj's broad residue
+    table cannot be used as proof on its own: ``CAL`` is both a calcium-ion
+    residue name and an entry in its amino-acid code table. Requiring the
+    backbone preserves genuinely modified residues without turning that ion,
+    or a ligand atom named CA, into a protein feature.
     """
     name = residue.name.strip().upper()
-    if name in THREE_TO_ONE or residue.is_protein:
+    if name in THREE_TO_ONE:
         return True
     return {"N", "CA", "C"} <= {a.name for a in residue.atoms}
 

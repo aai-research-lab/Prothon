@@ -25,7 +25,7 @@ from prothon.ingest import (
     sequence_of,
     topology_fingerprint,
 )
-from prothon.ingest.sequence import THREE_TO_ONE, residue_letter
+from prothon.ingest.sequence import THREE_TO_ONE, is_amino_acid, residue_letter
 from prothon.represent.order_parameters import compute_cbcn, compute_ensemble_representation
 
 UBIQUITIN = "MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG"
@@ -99,6 +99,16 @@ class TestResidueNaming:
         sequence, indices = sequence_of(top)
         assert sequence == "AX"
         assert len(indices) == 2
+
+    def test_calcium_residue_name_collision_is_not_an_amino_acid(self):
+        top = md.Topology()
+        chain = top.add_chain()
+        calcium = top.add_residue("CAL", chain)
+        top.add_atom("CA", md.element.calcium, calcium)
+        assert not is_amino_acid(calcium)
+        sequence, indices = sequence_of(top)
+        assert sequence == ""
+        assert indices.size == 0
 
     def test_sequence_carries_residue_indices(self):
         traj = build(as_residues("ACDE"), n_frames=1)

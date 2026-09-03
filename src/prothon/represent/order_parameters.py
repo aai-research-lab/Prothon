@@ -55,10 +55,14 @@ __all__ = [
     "OrderParameter",
     "compute_ensemble_representation",
     "compute_representation",
+    "compute_asph",
     "compute_caba",
     "compute_cacn",
     "compute_cata",
     "compute_cbcn",
+    "compute_nu",
+    "compute_ree",
+    "compute_rg",
     "compute_sasa",
     "describe_order_parameter",
     "load_ensemble",
@@ -177,7 +181,7 @@ ORDER_PARAMETERS: dict[str, OrderParameter] = {
     ),
     "rg": OrderParameter(
         "rg",
-        "Radius of gyration",
+        "Protein radius of gyration",
         "nm",
         circular=False,
         per_residue=False,
@@ -185,7 +189,7 @@ ORDER_PARAMETERS: dict[str, OrderParameter] = {
     ),
     "ree": OrderParameter(
         "ree",
-        "End-to-end distance",
+        "Single-chain end-to-end distance",
         "nm",
         circular=False,
         per_residue=False,
@@ -193,7 +197,7 @@ ORDER_PARAMETERS: dict[str, OrderParameter] = {
     ),
     "asph": OrderParameter(
         "asph",
-        "Asphericity: 0 for a sphere, 1 for a rod",
+        "Protein C-alpha asphericity: 0 for a sphere, 1 for a rod",
         "",
         circular=False,
         per_residue=False,
@@ -201,7 +205,7 @@ ORDER_PARAMETERS: dict[str, OrderParameter] = {
     ),
     "nu": OrderParameter(
         "nu",
-        "Flory scaling exponent: 0.33 compact, 0.5 ideal, 0.588 expanded",
+        "Single-chain Flory exponent: 0.33 compact, 0.5 ideal, 0.588 expanded",
         "",
         circular=False,
         per_residue=False,
@@ -209,7 +213,7 @@ ORDER_PARAMETERS: dict[str, OrderParameter] = {
     ),
     "sasa": OrderParameter(
         "sasa",
-        "Per-residue solvent accessible surface area",
+        "Per-protein-residue solvent accessible surface area",
         "nm^2",
         circular=False,
         per_residue=True,
@@ -256,20 +260,192 @@ def load_ensemble(file: str, topology: str) -> md.Trajectory:
 
 
 def _selected_atoms(traj: md.Trajectory, selection: str, label: str) -> np.ndarray:
-    """Resolve an atom selection, failing with a usable message when empty.
+    """Resolve a protein atom selection, failing with a usable message when empty.
 
     A coarse-grained model with no C-beta atoms, or a topology whose atom names
     do not follow PDB convention, otherwise produces an empty array that fails
     much later inside NumPy with nothing pointing back at the cause.
     """
-    indices = traj.topology.select(selection)
+    protein = {residue.index for residue in _protein_residues(traj.topology)}
+    indices = np.asarray(
+        [
+            index
+            for index in traj.topology.select(selection)
+            if traj.topology.atom(int(index)).residue.index in protein
+        ],
+        dtype=int,
+    )
     if len(indices) == 0:
         raise ValueError(
-            f"No {label} atoms found in the topology (selection: {selection!r}). "
+            f"No {label} atoms found among protein residues in the topology "
+            f"(selection: {selection!r}). "
             f"Check that the topology uses standard PDB atom naming, or choose a "
             f"measure that does not require {label} atoms."
         )
+    return indices
+
+
+def _protein_residues(topology) -> list:
+    """Protein residues, including force-field and modified residue names."""
+    # Runtime import avoids a module-import cycle: reconciliation imports this
+    # module to resolve order parameters, while sequence handling imports no
+    # representation code at runtime.
+    from ..ingest.sequence import is_amino_acid
+
+    top = getattr(topology, "topology", topology)
+    return [residue for residue in top.residues if is_amino_acid(residue)]
+
+
+def _protein_atom_indices(topology, atom_name: str | None = None) -> np.ndarray:
+    """Indices of protein atoms, optionally restricted by atom name."""
+    indices = [
+        atom.index
+        for residue in _protein_residues(topology)
+        for atom in residue.atoms
+        if atom_name is None or atom.name == atom_name
+    ]
     return np.asarray(indices, dtype=int)
+
+
+def _residue_numbers_are_adjacent(left, right) -> bool:
+    """Whether file numbering supports a contiguous residue window."""
+    first = getattr(left, "resSeq", None)
+    second = getattr(right, "resSeq", None)
+    if first is None or second is None:
+        return True
+    difference = int(second) - int(first)
+    # Equal sequence numbers can be adjacent insertion-code residues. A jump
+    # larger than one is an unresolved segment and must break a local window.
+    return difference in (0, 1)
+
+
+def _peptide_bonds(topology) -> set[tuple[int, int]]:
+    """Directed residue pairs joined by a C--N peptide bond."""
+    top = getattr(topology, "topology", topology)
+    pairs: set[tuple[int, int]] = set()
+    for first, second in top.bonds:
+        names = (first.name, second.name)
+        if set(names) != {"C", "N"}:
+            continue
+        left, right = first.residue, second.residue
+        if left.chain.index != right.chain.index or left.index == right.index:
+            continue
+        pairs.add(tuple(sorted((left.index, right.index))))
+    return pairs
+
+
+def _protein_ca_windows(topology, width: int) -> tuple[np.ndarray, list[tuple[int, ...]]]:
+    """CA atom and residue windows that never cross a chain or chain break."""
+    top = getattr(topology, "topology", topology)
+    protein = _protein_residues(top)
+    by_chain: dict[int, list] = {}
+    for residue in protein:
+        by_chain.setdefault(residue.chain.index, []).append(residue)
+
+    peptide_bonds = _peptide_bonds(top)
+    atom_windows: list[tuple[int, ...]] = []
+    residue_windows: list[tuple[int, ...]] = []
+    for residues in by_chain.values():
+        records = []
+        for residue in residues:
+            ca = [atom.index for atom in residue.atoms if atom.name == "CA"]
+            if len(ca) == 1:
+                records.append((residue, ca[0]))
+        chain_bonds = {
+            pair
+            for pair in peptide_bonds
+            if top.residue(pair[0]).chain.index == residues[0].chain.index
+        }
+        for start in range(len(records) - width + 1):
+            window = records[start : start + width]
+            residue_window = [record[0] for record in window]
+            numbered = all(
+                _residue_numbers_are_adjacent(left, right)
+                for left, right in zip(residue_window, residue_window[1:])
+            )
+            bonded = all(
+                tuple(sorted((left.index, right.index))) in peptide_bonds
+                for left, right in zip(residue_window, residue_window[1:])
+            )
+            # Programmatically built topologies often carry no peptide bonds.
+            # When this chain has any, they are authoritative and expose a
+            # break even if residue numbering happens to remain consecutive.
+            if not numbered or (chain_bonds and not bonded):
+                continue
+            atom_windows.append(tuple(record[1] for record in window))
+            residue_windows.append(tuple(residue.index for residue in residue_window))
+    return np.asarray(atom_windows, dtype=int), residue_windows
+
+
+def _feature_residue_windows(topology, order_parameter: str) -> list[tuple[int, ...]]:
+    """Single source of truth for representation-column residue identity."""
+    top = getattr(topology, "topology", topology)
+    if order_parameter in ("cbcn", "cacn"):
+        atom_name = "CB" if order_parameter == "cbcn" else "CA"
+        return [
+            (top.atom(int(index)).residue.index,)
+            for index in _protein_atom_indices(top, atom_name)
+        ]
+    if order_parameter in ("caba", "cata"):
+        width = 3 if order_parameter == "caba" else 4
+        return _protein_ca_windows(top, width)[1]
+    if order_parameter == "sasa":
+        return [(residue.index,) for residue in _protein_residues(top)]
+    raise ValueError(f"No feature-to-residue map defined for {order_parameter!r}.")
+
+
+def _protein_chain_atoms(topology, atom_name: str, chain=None) -> np.ndarray:
+    """Atoms from one protein chain, refusing an ambiguous multichain default."""
+    top = getattr(topology, "topology", topology)
+    protein = _protein_residues(top)
+    records = []
+    for candidate in top.chains:
+        residues = [
+            residue
+            for residue in protein
+            if residue.chain.index == candidate.index
+        ]
+        if not residues:
+            continue
+        atoms = [
+            atom.index
+            for residue in residues
+            for atom in residue.atoms
+            if atom.name == atom_name
+        ]
+        records.append((candidate, np.asarray(atoms, dtype=int)))
+
+    if not records:
+        raise ValueError("No protein residues found in the topology.")
+    if chain is None:
+        if len(records) != 1:
+            raise ValueError(
+                f"This topology has {len(records)} protein chains. Select one chain "
+                f"before computing a chain-level descriptor, or pass chain=."
+            )
+        indices = records[0][1]
+        if indices.size == 0:
+            raise ValueError(f"No protein {atom_name} atoms found in the topology.")
+        return indices
+
+    if isinstance(chain, (int, np.integer)) and not isinstance(chain, (bool, np.bool_)):
+        matches = [atoms for candidate, atoms in records if candidate.index == int(chain)]
+    else:
+        requested = str(chain).strip()
+        matches = [
+            atoms
+            for candidate, atoms in records
+            if (getattr(candidate, "chain_id", None) or "").strip() == requested
+        ]
+    if len(matches) != 1:
+        available = ", ".join(
+            str(getattr(candidate, "chain_id", None) or candidate.index).strip()
+            for candidate, _ in records
+        )
+        raise ValueError(f"No unique protein chain {chain!r}; available: {available}.")
+    if matches[0].size == 0:
+        raise ValueError(f"Protein chain {chain!r} has no {atom_name} atoms.")
+    return matches[0]
 
 
 def _contact_number(
@@ -293,17 +469,37 @@ def _contact_number(
             f"Contact numbers need at least two atoms; the selection matched {n_atoms}."
         )
 
-    residues = np.array(
-        [traj.topology.atom(int(a)).residue.index for a in atom_indices], dtype=int
+    selected_residues = [
+        traj.topology.atom(int(atom)).residue for atom in atom_indices
+    ]
+    chain_indices = np.asarray(
+        [residue.chain.index for residue in selected_residues], dtype=int
+    )
+    protein_residue_indices = {
+        residue.index for residue in _protein_residues(traj.topology)
+    }
+    chain_positions: dict[int, int] = {}
+    for chain in traj.topology.chains:
+        position = 0
+        for residue in chain.residues:
+            if residue.index in protein_residue_indices:
+                chain_positions[residue.index] = position
+                position += 1
+    positions = np.asarray(
+        [chain_positions[residue.index] for residue in selected_residues], dtype=int
     )
     i_local, j_local = np.triu_indices(n_atoms, k=1)
-    keep = np.abs(residues[i_local] - residues[j_local]) >= min_separation
+    same_chain = chain_indices[i_local] == chain_indices[j_local]
+    sequence_separation = np.abs(positions[i_local] - positions[j_local])
+    # Different chains have no sequence separation. They are physical contact
+    # candidates and are retained regardless of their topology residue index.
+    keep = ~same_chain | (sequence_separation >= min_separation)
     i_local, j_local = i_local[keep], j_local[keep]
 
     if i_local.size == 0:
         raise ValueError(
-            f"No atom pairs separated by at least {min_separation} residues. "
-            f"The chain is too short for a contact-number representation."
+            f"No eligible atom pairs: within-chain pairs must be separated by "
+            f"at least {min_separation} residues, and no inter-chain pairs exist."
         )
 
     # Accumulate as (n_atoms, n_frames) so np.add.at indexes rows, then
@@ -350,14 +546,12 @@ def compute_cacn(traj: md.Trajectory, **kwargs) -> np.ndarray:
 
 def compute_caba(traj: md.Trajectory) -> np.ndarray:
     """Virtual bond angles over consecutive C-alpha triples, in radians."""
-    indices = _selected_atoms(traj, "name CA", "C-alpha")
-    if len(indices) < 3:
+    triples, _ = _protein_ca_windows(traj.topology, 3)
+    if len(triples) == 0:
         raise ValueError(
-            f"Virtual bond angles need at least 3 C-alpha atoms; found {len(indices)}."
+            "Virtual bond angles need at least 3 C-alpha atoms in one "
+            "contiguous, unbroken protein chain; no valid windows were found."
         )
-    triples = np.array(
-        [indices[i : i + 3] for i in range(len(indices) - 2)], dtype=int
-    )
     return md.compute_angles(traj, triples, periodic=False)
 
 
@@ -367,23 +561,41 @@ def compute_cata(traj: md.Trajectory) -> np.ndarray:
     Values wrap at +/- pi. Downstream density estimation must treat them as
     circular; :data:`ORDER_PARAMETERS` records that.
     """
-    indices = _selected_atoms(traj, "name CA", "C-alpha")
-    if len(indices) < 4:
+    quads, _ = _protein_ca_windows(traj.topology, 4)
+    if len(quads) == 0:
         raise ValueError(
-            f"Virtual torsions need at least 4 C-alpha atoms; found {len(indices)}."
+            "Virtual torsions need at least 4 C-alpha atoms in one contiguous, "
+            "unbroken protein chain; no valid windows were found."
         )
-    quads = np.array([indices[i : i + 4] for i in range(len(indices) - 3)], dtype=int)
     return md.compute_dihedrals(traj, quads, periodic=False)
 
 
-def _gyration_eigenvalues(traj: md.Trajectory, selection: str = "name CA"):
+def _selection_indices(
+    traj: md.Trajectory,
+    selection: str | None,
+    *,
+    atom_name: str | None = None,
+) -> np.ndarray:
+    """Resolve an explicit selection or the default protein-only atoms."""
+    if selection is None:
+        indices = _protein_atom_indices(traj.topology, atom_name)
+        description = "protein residues"
+    else:
+        indices = np.asarray(traj.topology.select(selection), dtype=int)
+        description = repr(selection)
+    if indices.size == 0:
+        raise ValueError(f"The atom selection {description} matched no atoms.")
+    return indices
+
+
+def _gyration_eigenvalues(traj: md.Trajectory, selection: str | None = None):
     """Eigenvalues of the gyration tensor per frame, ascending.
 
     Everything about a conformation's overall shape follows from these: the
     radius of gyration is the square root of their sum, and the asphericity is
     a ratio of their symmetric functions.
     """
-    indices = traj.topology.select(selection)
+    indices = _selection_indices(traj, selection, atom_name="CA")
     if indices.size < 3:
         raise ValueError(
             f"Shape needs at least three atoms; {selection!r} matched "
@@ -395,25 +607,44 @@ def _gyration_eigenvalues(traj: md.Trajectory, selection: str = "name CA"):
     return np.sort(np.linalg.eigvalsh(tensor), axis=1)
 
 
-def compute_rg(traj: md.Trajectory) -> np.ndarray:
+def compute_rg(traj: md.Trajectory, selection: str | None = None) -> np.ndarray:
     """Radius of gyration per frame, in nm. One column.
 
     Mass weighted, which is what a SAXS-derived radius of gyration
     corresponds to.
     """
-    return md.compute_rg(traj).astype(np.float64)[:, None]
+    indices = _selection_indices(traj, selection)
+    selected = traj if indices.size == traj.n_atoms else traj.atom_slice(indices)
+    return md.compute_rg(selected).astype(np.float64)[:, None]
 
 
-def compute_ree(traj: md.Trajectory) -> np.ndarray:
-    """End-to-end distance per frame, in nm. One column."""
-    indices = traj.topology.select("name CA")
+def compute_ree(
+    traj: md.Trajectory,
+    selection: str | None = None,
+    chain=None,
+) -> np.ndarray:
+    """End-to-end distance per frame, in nm. One column.
+
+    The default is one protein chain and refuses an ambiguous complex. An
+    explicit selection may deliberately define a different pair of endpoints.
+    """
+    if selection is not None and chain is not None:
+        raise ValueError("Pass either selection or chain, not both.")
+    indices = (
+        _protein_chain_atoms(traj.topology, "CA", chain)
+        if selection is None
+        else _selection_indices(traj, selection)
+    )
     if indices.size < 2:
-        raise ValueError("An end-to-end distance needs at least two alpha carbons.")
+        raise ValueError("An end-to-end distance needs at least two selected atoms.")
     pair = np.array([[indices[0], indices[-1]]])
     return md.compute_distances(traj, pair, periodic=False).astype(np.float64)
 
 
-def compute_asph(traj: md.Trajectory) -> np.ndarray:
+def compute_asph(
+    traj: md.Trajectory,
+    selection: str | None = None,
+) -> np.ndarray:
     """Asphericity per frame, dimensionless. One column.
 
     Zero for a sphere, one for a rod, a quarter for a flat disc. Built from
@@ -421,7 +652,7 @@ def compute_asph(traj: md.Trajectory) -> np.ndarray:
     rather than how much of it there is -- two conformations with the same
     radius of gyration can have very different asphericity.
     """
-    values = _gyration_eigenvalues(traj)
+    values = _gyration_eigenvalues(traj, selection)
     trace = values.sum(axis=1)
     pairs = (
         values[:, 0] * values[:, 1]
@@ -433,7 +664,11 @@ def compute_asph(traj: md.Trajectory) -> np.ndarray:
     return np.clip(np.nan_to_num(result), 0.0, 1.0)[:, None]
 
 
-def compute_nu(traj: md.Trajectory, min_separation: int = 3) -> np.ndarray:
+def compute_nu(
+    traj: md.Trajectory,
+    min_separation: int = 3,
+    chain=None,
+) -> np.ndarray:
     """Flory scaling exponent per frame, dimensionless. One column.
 
     Fitted from the internal scaling profile of each conformation: the
@@ -451,7 +686,7 @@ def compute_nu(traj: md.Trajectory, min_separation: int = 3) -> np.ndarray:
     of the fit: the spread is roughly 0.15 at thirty residues and 0.10 at a
     hundred and twenty, and it is that spread two ensembles are compared on.
     """
-    indices = traj.topology.select("name CA")
+    indices = _protein_chain_atoms(traj.topology, "CA", chain)
     n = indices.size
     if n < 2 * min_separation + 4:
         raise ValueError(
@@ -476,9 +711,36 @@ def compute_nu(traj: md.Trajectory, min_separation: int = 3) -> np.ndarray:
     return slope.astype(np.float64)[:, None]
 
 
-def compute_sasa(traj: md.Trajectory) -> np.ndarray:
-    """Solvent accessible surface area per residue, in nm^2 (Shrake-Rupley)."""
-    return md.shrake_rupley(traj, mode="residue")
+def compute_sasa(
+    traj: md.Trajectory,
+    report_selection: str | None = None,
+) -> np.ndarray:
+    """Solvent accessible area of selected residues, in nm^2.
+
+    Every atom remains an occluder, retaining shielding by ligands and binding
+    partners. Only protein residues are reported by default; an explicit atom
+    selection chooses the residues to report without changing the occluders.
+    """
+    atom_areas = np.asarray(md.shrake_rupley(traj, mode="atom"), dtype=np.float64)
+    if report_selection is None:
+        residues = _protein_residues(traj.topology)
+    else:
+        selected = _selection_indices(traj, report_selection)
+        selected_residues = {
+            traj.topology.atom(int(index)).residue.index for index in selected
+        }
+        residues = [
+            residue
+            for residue in traj.topology.residues
+            if residue.index in selected_residues
+        ]
+    if not residues:
+        raise ValueError("No residues were selected for the SASA representation.")
+    result = np.empty((traj.n_frames, len(residues)), dtype=np.float64)
+    for column, residue in enumerate(residues):
+        atoms = [atom.index for atom in residue.atoms]
+        result[:, column] = atom_areas[:, atoms].sum(axis=1)
+    return result
 
 
 _COMPUTE = {
