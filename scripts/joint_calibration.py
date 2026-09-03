@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reproduce the audited MMD correlation failure and its corrected null.
+"""Reproduce the audited joint-test failures and their corrected nulls.
 
 The fixture sizes and acceptance bands are fixed in advance. Output is JSON so
 every seed and p-value can travel with a release record instead of leaving only
@@ -24,7 +24,7 @@ import numpy as np
 import scipy
 
 from prothon import __version__ as prothon_version
-from prothon.compare.joint import maximum_mean_discrepancy
+from prothon.compare.joint import classifier_two_sample, maximum_mean_discrepancy
 
 
 def ou(n_frames, n_features, relaxation, rng, mean=0.0):
@@ -66,8 +66,293 @@ def record(permutation_seed, result, data_seeds):
     }
 
 
+def classifier_record(random_state, result, data_seeds):
+    """Complete compact record for one grouped C2ST calculation."""
+    return {
+        "random_state": random_state,
+        "data_seeds": data_seeds,
+        "auc": result.effect,
+        "cross_validated_balanced_accuracy": result.statistic,
+        "held_out_balanced_accuracy": result.metadata[
+            "evidence_balanced_accuracy"
+        ],
+        "p_value": result.p_value,
+        "null_mean": result.null_mean,
+        "null_std": result.null_std,
+        "sampling_units": result.metadata["sampling_units"],
+        "effective_sampling_units": result.metadata[
+            "effective_sampling_units"
+        ],
+        "cv_assignment_seed": result.metadata["cv_assignment_seed"],
+        "cv_forest_seeds": result.metadata["cv_forest_seeds"],
+        "inference_split_seed": result.metadata["inference_split_seed"],
+        "inference_forest_seed": result.metadata["inference_forest_seed"],
+        "permutation_seed": result.metadata["permutation_seed"],
+        "inference_train_balance": result.metadata["inference_train_balance"],
+        "inference_test_balance": result.metadata["inference_test_balance"],
+        "distinct_labelings": result.metadata["distinct_labelings"],
+        "p_value_resolution": result.metadata["p_value_resolution"],
+        "distinguishable": result.distinguishable,
+    }
+
+
+def legacy_row_c2st(a, b, random_state):
+    """The replaced shuffled-row folds and independent-row normal null."""
+    from scipy.stats import norm
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.metrics import roc_auc_score
+    from sklearn.model_selection import StratifiedKFold
+
+    rng = np.random.default_rng(random_state)
+    forest_seed = int(rng.integers(0, 2**31 - 1))
+    features = np.vstack([a, b])
+    labels = np.repeat([0, 1], [len(a), len(b)])
+    predictions = np.zeros(labels.size)
+    splitter = StratifiedKFold(5, shuffle=True, random_state=forest_seed)
+    for train, test in splitter.split(features, labels):
+        forest = RandomForestClassifier(
+            n_estimators=200,
+            random_state=forest_seed,
+            n_jobs=1,
+            min_samples_leaf=2,
+        )
+        forest.fit(features[train], labels[train])
+        predictions[test] = forest.predict_proba(features[test])[:, 1]
+    accuracy = float(np.mean((predictions >= 0.5) == labels))
+    z_score = 2.0 * np.sqrt(labels.size) * (accuracy - 0.5)
+    return {
+        "random_state": random_state,
+        "auc": float(roc_auc_score(labels, predictions)),
+        "accuracy": accuracy,
+        "p_value": float(norm.sf(z_score)),
+        "forest_seed": forest_seed,
+    }
+
+
+def run_classifier_calibration():
+    """Run every predeclared grouped-C2ST gate and return its raw record."""
+    settings = {
+        "n_permutations": 99,
+        "sample_size": 500,
+        "sampling_kind_a": "trajectory",
+        "sampling_kind_b": "trajectory",
+        "correlation_time_frames_a": 20.0,
+        "correlation_time_frames_b": 20.0,
+    }
+    grouped_null = []
+    legacy_row_null = []
+    for seed in range(20):
+        a = ou(500, 4, 10.0, np.random.default_rng(100 + seed))
+        b = ou(500, 4, 10.0, np.random.default_rng(200 + seed))
+        data_seeds = {"a": 100 + seed, "b": 200 + seed}
+        result = classifier_two_sample(a, b, random_state=seed, **settings)
+        grouped_null.append(classifier_record(seed, result, data_seeds))
+        if seed < 10:
+            legacy = legacy_row_c2st(a, b, seed)
+            legacy["data_seeds"] = data_seeds
+            legacy["distinguishable"] = legacy["p_value"] < 0.05
+            legacy_row_null.append(legacy)
+
+    shifted_power = []
+    for seed in range(10):
+        a = ou(500, 4, 10.0, np.random.default_rng(300 + seed))
+        b = ou(500, 4, 10.0, np.random.default_rng(400 + seed), mean=0.7)
+        result = classifier_two_sample(a, b, random_state=seed, **settings)
+        shifted_power.append(
+            classifier_record(
+                seed, result, {"a": 300 + seed, "b": 400 + seed}
+            )
+        )
+
+    fixed_designs = []
+
+    a = ou(500, 4, 10.0, np.random.default_rng(1))
+    b = ou(700, 4, 10.0, np.random.default_rng(2))
+    result = classifier_two_sample(
+        a,
+        b,
+        n_permutations=99,
+        sample_size=700,
+        correlation_time_frames_a=20.0,
+        correlation_time_frames_b=20.0,
+        random_state=0,
+    )
+    fixed_designs.append(
+        {
+            "design": "unequal lengths",
+            **classifier_record(0, result, {"a": 1, "b": 2}),
+        }
+    )
+
+    rng = np.random.default_rng(3)
+    a, b = rng.normal(size=(320, 4)), rng.normal(size=(470, 4))
+    result = classifier_two_sample(
+        a,
+        b,
+        weights_a=np.linspace(0.2, 2.0, 320),
+        weights_b=np.linspace(2.0, 0.2, 470) ** 2,
+        n_permutations=99,
+        sample_size=500,
+        sampling_kind_a="iid",
+        sampling_kind_b="iid",
+        random_state=0,
+    )
+    fixed_designs.append(
+        {
+            "design": "unequal weights",
+            **classifier_record(0, result, {"pooled": 3}),
+        }
+    )
+
+    rng = np.random.default_rng(4)
+    a, b = ou(500, 4, 10.0, rng), rng.normal(size=(650, 4))
+    result = classifier_two_sample(
+        a,
+        b,
+        n_permutations=99,
+        sample_size=700,
+        sampling_kind_a="trajectory",
+        sampling_kind_b="iid",
+        correlation_time_frames_a=20.0,
+        random_state=0,
+    )
+    fixed_designs.append(
+        {
+            "design": "trajectory versus IID",
+            **classifier_record(0, result, {"pooled": 4}),
+        }
+    )
+
+    labels = np.repeat(np.arange(8), 50)
+
+    def replicas(seed):
+        rng = np.random.default_rng(seed)
+        return np.vstack([ou(50, 4, 10.0, rng) for _ in range(8)])
+
+    result = classifier_two_sample(
+        replicas(33),
+        replicas(34),
+        replica_labels_a=labels,
+        replica_labels_b=labels,
+        n_permutations=99,
+        sample_size=500,
+        random_state=0,
+    )
+    fixed_designs.append(
+        {
+            "design": "independent replicas",
+            **classifier_record(0, result, {"a": 33, "b": 34}),
+        }
+    )
+
+    rng = np.random.default_rng(7)
+    a = np.pi + 0.5 * ou(500, 4, 10.0, rng)
+    b = np.pi + 0.5 * ou(500, 4, 10.0, rng)
+    a = (a + np.pi) % (2.0 * np.pi) - np.pi
+    b = (b + np.pi) % (2.0 * np.pi) - np.pi
+    result = classifier_two_sample(
+        a,
+        b,
+        circular=True,
+        n_permutations=99,
+        sample_size=500,
+        correlation_time_frames_a=20.0,
+        correlation_time_frames_b=20.0,
+        random_state=0,
+    )
+    fixed_designs.append(
+        {
+            "design": "circular trajectory",
+            **classifier_record(0, result, {"pooled": 7}),
+        }
+    )
+
+    short_a = ou(120, 3, 10.0, np.random.default_rng(53))
+    short_b = ou(120, 3, 10.0, np.random.default_rng(54))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        short = classifier_two_sample(
+            short_a,
+            short_b,
+            correlation_time_frames_a=20.0,
+            correlation_time_frames_b=20.0,
+            n_permutations=99,
+            sample_size=120,
+            random_state=0,
+        )
+
+    grouped_calls = sum(bool(row["distinguishable"]) for row in grouped_null)
+    legacy_calls = sum(
+        bool(row["distinguishable"]) for row in legacy_row_null
+    )
+    power_calls = sum(bool(row["distinguishable"]) for row in shifted_power)
+    fixed_pass = all(
+        row["p_value"] is not None and row["p_value"] >= 0.05
+        for row in fixed_designs
+    )
+    gates = {
+        "grouped_null": {
+            "observed": grouped_calls,
+            "trials": 20,
+            "acceptable_calls": [0, 3],
+            "mean_auc": float(np.mean([row["auc"] for row in grouped_null])),
+            "wilson_95": wilson(grouped_calls, 20),
+            "passed": grouped_calls <= 3,
+        },
+        "legacy_row_failure_reproduced": {
+            "observed": legacy_calls,
+            "trials": 10,
+            "auc_range": [
+                min(row["auc"] for row in legacy_row_null),
+                max(row["auc"] for row in legacy_row_null),
+            ],
+            "wilson_95": wilson(legacy_calls, 10),
+            "passed": legacy_calls == 10,
+        },
+        "shifted_power": {
+            "observed": power_calls,
+            "trials": 10,
+            "minimum_calls": 8,
+            "wilson_95": wilson(power_calls, 10),
+            "passed": power_calls >= 8,
+        },
+        "fixed_null_designs": {
+            "required": "all p-values supported and >= 0.05",
+            "passed": fixed_pass,
+        },
+        "short_trajectory": {
+            "required": "AUC retained; p-value withheld",
+            "auc": short.effect,
+            "p_value": short.p_value,
+            "sampling_units": short.metadata["sampling_units"],
+            "random_state": 0,
+            "data_seeds": {"a": 53, "b": 54},
+            "passed": short.effect is not None and short.p_value is None,
+        },
+    }
+    return {
+        "settings": settings,
+        "fixtures": {
+            "grouped_null_data_seeds": "a=100+seed, b=200+seed; seed=0..19",
+            "legacy_row_subset": "grouped-null seeds 0..9",
+            "shifted_power": {
+                "mean_shift": 0.7,
+                "data_seeds": "a=300+seed, b=400+seed; seed=0..9",
+            },
+        },
+        "gates": gates,
+        "runs": {
+            "grouped_null": grouped_null,
+            "legacy_shuffled_row_null": legacy_row_null,
+            "shifted_power": shifted_power,
+            "fixed_null_designs": fixed_designs,
+        },
+        "passed": all(gate["passed"] for gate in gates.values()),
+    }
+
+
 def run_calibration():
-    """Run every predeclared MMD gate and return its raw record."""
+    """Run every predeclared joint-test gate and return its raw record."""
     blocked_settings = {
         "n_permutations": 99,
         "sample_size": 500,
@@ -258,8 +543,10 @@ def run_calibration():
             "passed": short.statistic > 0.0 and short.p_value is None,
         },
     }
+    classifier = run_classifier_calibration()
+    mmd_passed = all(gate["passed"] for gate in gates.values())
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "software": {
             "python": platform.python_version(),
             "platform": platform.platform(),
@@ -270,10 +557,19 @@ def run_calibration():
         },
         "predeclared": {
             "alpha": 0.05,
-            "blocked_null_calls": "0-3 of 20",
-            "shifted_power_calls": "at least 8 of 10",
+            "mmd": {
+                "blocked_null_calls": "0-3 of 20",
+                "shifted_power_calls": "at least 8 of 10 at mean shift 0.5",
+            },
+            "c2st": {
+                "grouped_null_calls": "0-3 of 20",
+                "shifted_power_calls": "at least 8 of 10 at mean shift 0.7",
+            },
         },
-        "settings": blocked_settings,
+        "settings": {
+            "mmd": blocked_settings,
+            "c2st": classifier["settings"],
+        },
         "fixtures": {
             "ou": {
                 "process": "AR(1)",
@@ -296,15 +592,22 @@ def run_calibration():
                 "circular": "500 frames around pi branch cut; pooled data seed 7",
                 "underpowered": "120 frames, 3 blocks per side; data seeds 31, 32",
             },
+            "c2st": classifier["fixtures"],
         },
-        "gates": gates,
+        "gates": {
+            "mmd": gates,
+            "c2st": classifier["gates"],
+        },
         "runs": {
-            "blocked_null": blocked_null,
-            "misdeclared_iid_row_null": row_null,
-            "shifted_power": shifted_power,
-            "fixed_null_designs": fixed_designs,
+            "mmd": {
+                "blocked_null": blocked_null,
+                "misdeclared_iid_row_null": row_null,
+                "shifted_power": shifted_power,
+                "fixed_null_designs": fixed_designs,
+            },
+            "c2st": classifier["runs"],
         },
-        "passed": all(gate["passed"] for gate in gates.values()),
+        "passed": mmd_passed and classifier["passed"],
     }
 
 

@@ -70,7 +70,7 @@ prothon.distinguishability("cbcn", method="c2st")
 ```
 
 ```
-C2ST: distinguishable (p < 1e-06), AUC = 0.941
+C2ST: distinguishable (p = 0.00498), AUC = 0.941
   driven mostly by residues 34, 35, 41, 42
 ```
 
@@ -99,18 +99,24 @@ per-feature indication of where the difference is.
 
 **The classifier two-sample test** (`method="c2st"`) trains a classifier to
 tell the ensembles apart and asks whether it beats chance (Lopez-Paz and Oquab
-2017). Prothon uses a random forest scored out of fold. The area under the
-curve is a bounded, immediately readable effect size, and the classifier
-reports which residues it used. A forest rather than a linear model, because
-two ensembles differing in *spread* rather than in mean — a rigid loop against
-a mobile one — are not linearly separable.
+2017). Prothon uses a random forest scored out of fold, with each complete
+temporal block or replica confined to one fold. Adjacent correlated frames can
+therefore no longer appear in both training and test data. The area under the
+curve is the primary, bounded effect size, and the classifier reports which
+residues it used. A forest rather than a linear model, because two ensembles
+differing in *spread* rather than in mean — a rigid loop against a mobile one —
+are not linearly separable.
 
-:::{warning}
-The classifier's p-value comes from an asymptotic normal null, and its far tail
-is where that approximation is worst; the cross-validation folds also share
-training data, so the predictions are not quite independent. Prothon reports
-anything below `1e-6` as a bound. **Quote the AUC, not the p-value.**
-:::
+The p-value is separate evidence, not a transformation of the AUC. Prothon
+makes a label-blind split of the pooled sampling units, trains another forest
+without any held-out label, then permutes whole held-out unit labels against
+its fixed predictions. Probability weights stay with their conformations.
+This removes the independent-row normal approximation and avoids refitting a
+classifier after choosing a favourable split. If the held-out units or the
+requested permutations cannot make the p-value grid finer than `alpha`, AUC is
+still returned while `p_value` and `distinguishable` are `None`. The result
+records all folds, groups, seeds, class/weight balances, sampling plans and
+attainable resolution.
 
 ## Coverage and fidelity
 

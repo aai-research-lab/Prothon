@@ -253,8 +253,54 @@ complete record, including every seed, statistic, null moment, software version
 and gate, with:
 
 ```bash
-python scripts/joint_calibration.py --out mmd-calibration.json
+python scripts/joint_calibration.py --out joint-calibration.json
 ```
+
+## Whole-ensemble classifier
+
+The C2ST gate uses the same 20 correlated null pairs and a separately declared
+0.7-standard-deviation power fixture. It compares the replaced implementation
+directly: shuffled row folds let neighbouring frames from the same slow
+excursion appear in both training and test data, then an independent-row normal
+tail treats all 1000 predictions as independent. The corrected calculation
+keeps every 40-frame block in one fold and obtains evidence from whole-label
+permutations on a separate, label-blind held-out unit set.
+
+| calculation | calls | predeclared requirement | Wilson 95% CI | result |
+|---|---:|---:|---:|---|
+| grouped block null | 0/20 | 0–3/20 | 0.0–16.1% | pass |
+| replaced shuffled-row/normal null | 10/10 | diagnostic reproduction | 72.2–100% | audited failure reproduced |
+| shifted grouped alternative | 9/10 | at least 8/10 | 59.6–98.2% | pass |
+
+The old null AUCs range from 0.683 to 0.806 even though both inputs have the
+same stationary distribution. With complete blocks, the AUCs range from 0.382
+to 0.678 and average 0.501. The p-value does not reuse these grouped-CV
+predictions: it comes from the untouched unit set, while AUC remains the effect
+size.
+
+The complete grouped-null p-values were:
+
+```text
+0.29, 0.58, 0.22, 0.68, 0.73, 0.46, 0.79, 0.54, 0.67, 0.71,
+0.44, 0.20, 0.52, 0.76, 0.13, 0.25, 0.95, 0.73, 0.12, 0.18
+```
+
+The complete shifted-alternative p-values were:
+
+```text
+0.01, 0.03, 0.07, 0.01, 0.02, 0.04, 0.03, 0.02, 0.01, 0.03
+```
+
+The fixed null designs also pass: unequal lengths (`p=0.06`), unequal weights
+(`p=0.23`), trajectory versus IID (`p=0.09`), eight independent replicas per
+side (`p=0.55`), and circular trajectories (`p=0.08`). A 120-frame case has
+only three blocks per side; its AUC of 0.620 is retained, but three possible
+held-out labels give resolution only to `1/3`, so the p-value is withheld.
+
+`scripts/joint_calibration.py` emits every C2ST AUC, accuracy, p-value, null
+moment, fold/split/forest/permutation seed, unit count, effective count, and
+class/weight balance alongside the MMD record. The JSON therefore contains the
+complete run rather than only these aggregate gates.
 
 ## Reproducing
 
@@ -262,7 +308,7 @@ python scripts/joint_calibration.py --out mmd-calibration.json
 python scripts/calibration.py --quick                 # minutes
 python scripts/calibration.py --replicates 1000       # the published numbers
 python scripts/calibration.py --study correlation     # the table above
-python scripts/joint_calibration.py                    # deterministic MMD gate
+python scripts/joint_calibration.py                    # deterministic joint gates
 ```
 
 Replicates are independent, so the script parallelises across cores. A

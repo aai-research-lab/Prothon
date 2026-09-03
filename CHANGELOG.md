@@ -5,6 +5,32 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Fixed — leakage-free, sampling-unit-aware C2ST
+
+- C2ST cross-validation now assigns complete temporal blocks or independent
+  replicas to folds. A correlated unit can no longer leak adjacent frames into
+  both a forest's training set and its test set; explicitly IID inputs retain
+  row units, and mixed inputs use the same conservative unit length.
+- AUC remains the primary effect size. Significance now comes from a separate
+  label-blind split of the pooled units: a second forest never sees held-out
+  labels, and those complete unit labels are permuted against its fixed
+  predictions. This replaces the independent-row normal approximation and its
+  spuriously tiny far-tail p-values.
+- Probability weights remain attached to observations and are normalised only
+  within the candidate classes. If the held-out assignment or requested
+  permutations cannot resolve alpha, the grouped-CV AUC is retained while the
+  p-value and Boolean verdict are withheld.
+- Result metadata records sampling plans and selected ranges; every unit-fold
+  assignment and forest, split, and permutation seed; class-unit and weight
+  balance; effective unit counts; and attainable p-value resolution. Study
+  inputs now pass trajectory, stride, and replica provenance to C2ST as well as
+  MMD.
+- On the predeclared correlated OU gate, the replaced shuffled-row method
+  rejects 10/10 null controls; grouped C2ST rejects 0/20 (acceptable band
+  0–3/20) and detects 9/10 alternatives shifted by 0.7 standard deviations
+  (target at least 8/10). Fixed unequal-length, weighted, mixed-provenance,
+  replica and circular null fixtures all pass.
+
 ### Fixed — sampling-unit-aware maximum mean discrepancy
 
 - MMD now relabels complete temporal blocks or independent replicas for

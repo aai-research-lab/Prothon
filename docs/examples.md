@@ -82,15 +82,17 @@ prothon.distinguishability(order_parameter="cbcn", method="c2st")
 ```
 
 ```
-C2ST: distinguishable (p < 1e-06), AUC = 1.000
+C2ST: distinguishable (p = 0.00498), AUC = 1.000
   driven mostly by residues 8, 10, 9, 14, 12
 ```
 
 `method="mmd"` runs a kernel two-sample test instead. It reports MMD² and, when
 there are enough complete blocks, replicas or explicitly IID rows, a
 sampling-unit permutation p-value; it gives no indication of where the
-difference is. Quote the AUC rather than the C2ST p-value: the classifier's null
-is asymptotic and its far tail is not literal.
+difference is. C2ST also keeps complete sampling units together in its folds
+and derives its p-value by permuting labels of a separate, label-blind held-out
+unit set. Quote its AUC as the magnitude of the difference and its p-value as
+the evidence; they deliberately come from separate calculations.
 
 ---
 

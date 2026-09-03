@@ -652,9 +652,10 @@ class Prothon:
             Which representation to compare on.
         method
             ``c2st`` (default) trains a classifier and reports how separable
-            the ensembles are, with the features it leaned on. ``mmd`` runs a
-            kernel two-sample test, which reports MMD squared and a
-            sampling-unit permutation p-value when the inputs contain enough
+            the ensembles are, with the features it leaned on. Its folds and
+            held-out permutation null keep complete blocks or replicas intact.
+            ``mmd`` runs a kernel two-sample test, which reports MMD squared and
+            a sampling-unit permutation p-value when the inputs contain enough
             blocks, replicas or explicitly IID rows. It gives no indication of
             where the difference is.
         ref
@@ -685,34 +686,34 @@ class Prothon:
             extra = dict(kwargs)
             if method.strip().lower() == "c2st":
                 extra["feature_index"] = feature_index
-            else:
-                # The loader recorded whether rows came from a trajectory or
-                # separate structure files. Carry that provenance into MMD so
-                # its label null does not have to infer sampling from shape.
-                for suffix, ensemble in (
-                    ("a", self.ensembles[ref]),
-                    ("b", self.ensembles[index]),
-                ):
-                    provenance = ensemble.provenance
-                    kind = provenance.get("sampling_kind")
-                    if kind is None:
-                        kind = (
-                            "iid"
-                            if provenance.get("kind") == "pdb-models"
-                            else "trajectory"
-                        )
-                    extra.setdefault(f"sampling_kind_{suffix}", kind)
+            # The loader recorded whether rows came from a trajectory or
+            # separate structure files. Carry that provenance into both joint
+            # methods so neither folds nor a label null have to infer sampling
+            # structure from array shape.
+            for suffix, ensemble in (
+                ("a", self.ensembles[ref]),
+                ("b", self.ensembles[index]),
+            ):
+                provenance = ensemble.provenance
+                kind = provenance.get("sampling_kind")
+                if kind is None:
+                    kind = (
+                        "iid"
+                        if provenance.get("kind") == "pdb-models"
+                        else "trajectory"
+                    )
+                extra.setdefault(f"sampling_kind_{suffix}", kind)
 
-                    stride = provenance.get("stride")
-                    if stride is not None:
-                        extra.setdefault(f"time_stride_{suffix}", stride)
+                stride = provenance.get("stride")
+                if stride is not None:
+                    extra.setdefault(f"time_stride_{suffix}", stride)
 
-                    counts = provenance.get("frames_per_file")
-                    if counts and sum(counts) == ensemble.n_frames:
-                        extra.setdefault(
-                            f"replica_labels_{suffix}",
-                            np.repeat(np.arange(len(counts)), counts),
-                        )
+                counts = provenance.get("frames_per_file")
+                if counts and sum(counts) == ensemble.n_frames:
+                    extra.setdefault(
+                        f"replica_labels_{suffix}",
+                        np.repeat(np.arange(len(counts)), counts),
+                    )
             result = compare(
                 left, right, method,
                 weights_a=self.ensembles[ref].weights,

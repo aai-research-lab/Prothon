@@ -331,7 +331,8 @@ class TestOneImport:
         assert set(Prothon.metrics()) == {"jsd", "wasserstein", "ks"}
         assert "rg" in Prothon.observables()
 
-    def test_mmd_receives_the_sampling_provenance(self, monkeypatch):
+    @pytest.mark.parametrize("method", ["mmd", "c2st"])
+    def test_joint_methods_receive_the_sampling_provenance(self, monkeypatch, method):
         from prothon.compare.joint import EnsembleComparison
 
         reference = Ensemble(
@@ -356,10 +357,10 @@ class TestOneImport:
 
         def fake_compare(*args, **kwargs):
             captured.update(kwargs)
-            return EnsembleComparison("mmd", 0.0, 1.0)
+            return EnsembleComparison(method, 0.0, 1.0)
 
         monkeypatch.setattr("prothon.compare.joint.distinguishability", fake_compare)
-        study.distinguishability("cbcn", method="mmd")
+        study.distinguishability("cbcn", method=method)
 
         assert captured["sampling_kind_a"] == "trajectory"
         assert captured["sampling_kind_b"] == "iid"
@@ -368,6 +369,7 @@ class TestOneImport:
             captured["replica_labels_a"], np.repeat(np.arange(2), 40)
         )
         assert "replica_labels_b" not in captured
+        assert ("feature_index" in captured) == (method == "c2st")
 
     def test_one_ensemble_can_be_loaded_without_a_study(self, files):
         from prothon import Prothon

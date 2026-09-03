@@ -17,10 +17,10 @@ difference is.
 
 **The classifier two-sample test** trains a classifier to tell the two
 ensembles apart. If it cannot do better than chance, they are indistinguishable
-at this sampling; if it can, the accuracy is a bounded and immediately readable
-effect size -- "these ensembles are 97% separable" needs no scale to interpret
--- and the classifier can be asked which features it used. That last part is
-what the per-residue metrics give for free and MMD cannot give at all.
+at this sampling; if it can, out-of-fold area under the ROC curve (AUC) is a
+bounded effect size, and the classifier can be asked which features it used.
+That last part is what the per-residue metrics give for free and MMD cannot give
+at all.
 
 Three details that decide whether the numbers mean anything:
 
@@ -47,9 +47,10 @@ encoding. The encoding is still right: the statistic is the thing being
 reported, it should mean what it says, and a null cannot be relied on to
 absorb every mistake in the statistic it calibrates.
 
-**The classifier is scored out of fold.** A classifier scored on the data it
-was fitted to separates any two ensembles perfectly, including two halves of
-one ensemble.
+**The classifier is scored out of fold.** Complete blocks or replicas remain
+in exactly one fold. A separate label-blind unit split trains the evidence
+classifier without any test-unit label, so its fixed predictions can be tested
+by permuting whole held-out unit labels without repeatedly fitting the forest.
 
     Gretton, A.; Borgwardt, K. M.; Rasch, M. J.; Scholkopf, B.; Smola, A.
     A kernel two-sample test. J. Mach. Learn. Res. 2012, 13, 723-773.
@@ -66,7 +67,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from scipy.stats import norm
 
 from ..sampling.correlation import block_labels
 from ..sampling.floor import FloorPlan, plan_floor
@@ -97,12 +97,8 @@ DEFAULT_PERMUTATIONS = 200
 #: did not see it.
 DEFAULT_FOLDS = 5
 
-#: Below this, a p-value from the classifier's asymptotic null is reported as
-#: a bound rather than a number. The null is a normal approximation whose far
-#: tail is not to be taken literally -- and the folds share training data, so
-#: the out-of-fold predictions are not quite independent either. A raw value of
-#: 1e-222 is arithmetic, not evidence. The area under the curve is the number
-#: to quote.
+#: Retained for source compatibility with 2.3. C2ST no longer uses the
+#: asymptotic normal tail that made this reporting floor necessary.
 P_VALUE_FLOOR = 1e-6
 
 #: The inferential threshold used by :attr:`EnsembleComparison.distinguishable`.
@@ -121,15 +117,13 @@ class EnsembleComparison:
     Attributes
     ----------
     statistic
-        MMD squared, or classifier accuracy. Read ``interpretation`` rather
-        than the raw number for the second: accuracy has a floor of 0.5.
+        MMD squared, or classifier out-of-fold balanced accuracy. For the
+        second, 0.5 is the chance reference; ``effect`` carries the primary
+        classifier effect size.
     p_value
-        From a sampling-unit permutation null for MMD; from the asymptotic null
-        of Lopez-Paz and Oquab for the classifier. ``None`` means the MMD
-        statistic was measured but too few independent units existed to
-        resolve the requested threshold. Read the classifier's p-value as a
-        bound below :data:`P_VALUE_FLOOR`: the normal approximation's far tail
-        is not literal, and cross-validation folds share training data.
+        From a sampling-unit permutation null. ``None`` means the effect was
+        measured but the independent units or requested permutations could not
+        resolve the requested threshold.
     effect
         A bounded, readable summary. Area under the ROC curve for the
         classifier; ``None`` for MMD, which has no natural scale.
@@ -179,18 +173,21 @@ class EnsembleComparison:
                 "p_value_withheld_reason",
                 "sampling design cannot resolve alpha",
             )
-            return (
-                f"{self.method.upper()}: MMD² = {self.statistic:.4g}, "
-                f"p-value withheld ({reason})"
+            effect = (
+                f"MMD² = {self.statistic:.4g}"
+                if self.method.lower() == "mmd"
+                else f"AUC = {self.effect:.3f}"
             )
+            line = f"{self.method.upper()}: {effect}, p-value withheld ({reason})"
+            leading = self.leading_features(5)
+            if leading:
+                named = ", ".join(f"{i}" for i, _ in leading)
+                line += f"\n  driven mostly by residues {named}"
+            return line
         verdict = (
             "distinguishable" if self.distinguishable else "not distinguishable"
         )
-        shown = (
-            f"p < {P_VALUE_FLOOR:g}"
-            if self.p_value < P_VALUE_FLOOR
-            else f"p = {self.p_value:.3g}"
-        )
+        shown = f"p = {self.p_value:.3g}"
         line = f"{self.method.upper()}: {verdict} ({shown})"
         if self.effect is not None:
             line += f", AUC = {self.effect:.3f}"
@@ -249,13 +246,6 @@ def _prepare(a, b, circular):
     scale = pooled.std(axis=0)
     scale[scale < 1e-12] = 1.0
     return (x - centre) / scale, (y - centre) / scale
-
-
-def _subsample(matrix, weights, size, rng):
-    if matrix.shape[0] <= size:
-        return matrix, weights
-    keep = rng.choice(matrix.shape[0], size, replace=False)
-    return matrix[keep], (None if weights is None else weights[keep] / weights[keep].sum())
 
 
 def _check_sampling(a, b, weights_a, weights_b, labels=("first", "second")):
@@ -815,6 +805,141 @@ def maximum_mean_discrepancy(
 # ---------------------------------------------------------------------------
 # Classifier two-sample test
 # ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class _GroupedFolds:
+    """A fold for every frame and, separately, every complete unit."""
+
+    frame_folds: np.ndarray
+    unit_folds_a: tuple[int, ...]
+    unit_folds_b: tuple[int, ...]
+    n_folds: int
+
+
+def _grouped_fold_plan(
+    units_a: list[np.ndarray],
+    units_b: list[np.ndarray],
+    n_frames: int,
+    requested_folds: int,
+    rng: np.random.Generator,
+    observation_mass: np.ndarray | None = None,
+) -> _GroupedFolds:
+    """Assign whole sampling units to class-stratified folds.
+
+    Positive-mass units are distributed first. This makes every weighted test
+    fold informative and leaves positive mass from both classes in every
+    training split. Zero-mass units still receive a fold and are never split.
+    """
+    mass = (
+        np.ones(n_frames, dtype=np.float64)
+        if observation_mass is None
+        else np.asarray(observation_mass, dtype=np.float64)
+    )
+    if mass.shape != (n_frames,):
+        raise ValueError("observation_mass must contain one value per frame.")
+
+    def positive_count(units):
+        return sum(float(mass[unit].sum()) > 0.0 for unit in units)
+
+    usable_folds = min(
+        int(requested_folds),
+        positive_count(units_a),
+        positive_count(units_b),
+    )
+    if usable_folds < 2:
+        raise ValueError(
+            "Cannot cross-validate C2ST with fewer than two positive-mass "
+            "sampling units from each ensemble."
+        )
+
+    def assign(units):
+        positive = np.array(
+            [i for i, unit in enumerate(units) if mass[unit].sum() > 0.0],
+            dtype=int,
+        )
+        zero = np.array(
+            [i for i, unit in enumerate(units) if mass[unit].sum() <= 0.0],
+            dtype=int,
+        )
+        assignments = np.empty(len(units), dtype=int)
+        shuffled = rng.permutation(positive)
+        assignments[shuffled] = np.arange(shuffled.size) % usable_folds
+        if zero.size:
+            shuffled_zero = rng.permutation(zero)
+            assignments[shuffled_zero] = (
+                np.arange(shuffled_zero.size) % usable_folds
+            )
+        return assignments
+
+    assigned_a = assign(units_a)
+    assigned_b = assign(units_b)
+    frame_folds = np.full(n_frames, -1, dtype=int)
+    for units, assignments in (
+        (units_a, assigned_a),
+        (units_b, assigned_b),
+    ):
+        for unit, fold in zip(units, assignments):
+            if np.any(frame_folds[unit] != -1):
+                raise ValueError("C2ST sampling units overlap.")
+            frame_folds[unit] = fold
+    if np.any(frame_folds < 0):
+        raise ValueError("C2ST sampling units do not cover every sampled frame.")
+    return _GroupedFolds(
+        frame_folds=frame_folds,
+        unit_folds_a=tuple(int(fold) for fold in assigned_a),
+        unit_folds_b=tuple(int(fold) for fold in assigned_b),
+        n_folds=usable_folds,
+    )
+
+
+def _balanced_class_weights(
+    observation_mass: np.ndarray,
+    labels: np.ndarray,
+) -> np.ndarray:
+    """Equal class mass while retaining relative mass within each class."""
+    balanced = np.zeros(labels.size, dtype=np.float64)
+    for label in (0, 1):
+        selected = labels == label
+        total = float(observation_mass[selected].sum())
+        if total <= 0.0:
+            raise ValueError(
+                "Each C2ST class must carry positive probability mass in this split."
+            )
+        balanced[selected] = 0.5 * observation_mass[selected] / total
+    return balanced
+
+
+def _weighted_balanced_accuracy(
+    labels: np.ndarray,
+    predictions: np.ndarray,
+    observation_mass: np.ndarray,
+) -> float:
+    weights = _balanced_class_weights(observation_mass, labels)
+    return float(np.sum(weights * (predictions == labels)))
+
+
+def _unit_balance(
+    units: list[np.ndarray],
+    labels: np.ndarray,
+    observation_mass: np.ndarray,
+) -> dict[str, list[float] | list[int]]:
+    unit_labels = np.array([labels[unit[0]] for unit in units], dtype=int)
+    return {
+        "class_units": [
+            int(np.count_nonzero(unit_labels == label)) for label in (0, 1)
+        ],
+        "class_weight_mass": [
+            float(
+                sum(
+                    observation_mass[unit].sum()
+                    for unit, unit_label in zip(units, unit_labels)
+                    if unit_label == label
+                )
+            )
+            for label in (0, 1)
+        ],
+    }
+
+
 def classifier_two_sample(
     a: np.ndarray,
     b: np.ndarray,
@@ -826,6 +951,16 @@ def classifier_two_sample(
     random_state=None,
     order_parameter: str = "",
     feature_index=None,
+    n_permutations: int = DEFAULT_PERMUTATIONS,
+    sampling_kind_a: str = "trajectory",
+    sampling_kind_b: str = "trajectory",
+    correlation_time_frames_a: float | None = None,
+    correlation_time_frames_b: float | None = None,
+    replica_labels_a=None,
+    replica_labels_b=None,
+    time_stride_a: int = 1,
+    time_stride_b: int = 1,
+    alpha: float = MMD_ALPHA,
 ) -> EnsembleComparison:
     """Train a classifier to tell the two ensembles apart, and score it fairly.
 
@@ -834,71 +969,281 @@ def classifier_two_sample(
     mobile in the other -- are not linearly separable and are a difference
     anybody would want found.
 
-    The p-value uses the asymptotic null of Lopez-Paz and Oquab: under the
-    hypothesis that the ensembles are the same, out-of-fold accuracy is
-    normally distributed about one half with variance ``1 / (4 n)``. That
-    avoids refitting the classifier for every permutation, which for a forest
-    would dominate the runtime of a whole study.
+    Complete temporal blocks or replicas, rather than rows, define the
+    cross-validation folds. The out-of-fold AUC is the primary effect size.
 
-    It is an approximation, and its far tail is where approximations are worst.
-    A clearly separable pair returns something like 1e-200, which is
-    arithmetic rather than evidence -- and the folds share training data, so
-    the predictions are not quite the independent draws the null assumes.
-    :meth:`EnsembleComparison.summary` reports anything below
-    :data:`P_VALUE_FLOOR` as a bound. The area under the curve is bounded,
-    needs no scale to read, and is the number to quote.
+    Evidence is deliberately separate from effect estimation. A second forest
+    is trained on a label-blind half of the pooled units. Its fixed predictions
+    on the untouched units are compared with whole-unit label permutations.
+    This avoids both adjacent-frame leakage and the invalid independent-row
+    normal approximation. If the held-out unit assignment cannot resolve
+    ``alpha``, the AUC is retained and the p-value is withheld.
     """
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.metrics import roc_auc_score
-    from sklearn.model_selection import StratifiedKFold
+
+    integer_controls = {
+        "folds": folds,
+        "n_permutations": n_permutations,
+        "sample_size": sample_size,
+        "time_stride_a": time_stride_a,
+        "time_stride_b": time_stride_b,
+    }
+    for name, value in integer_controls.items():
+        minimum = 2 if name == "folds" else 1
+        if (
+            isinstance(value, (bool, np.bool_))
+            or not isinstance(value, (int, np.integer))
+            or value < minimum
+        ):
+            qualifier = (
+                "an integer of at least two"
+                if minimum == 2
+                else "a positive integer"
+            )
+            raise ValueError(f"{name} must be {qualifier}.")
+    folds = int(folds)
+    n_permutations = int(n_permutations)
+    sample_size = int(sample_size)
+    time_stride_a = int(time_stride_a)
+    time_stride_b = int(time_stride_b)
+    if isinstance(alpha, (bool, np.bool_)):
+        raise ValueError("alpha must lie strictly between zero and one.")
+    try:
+        alpha = float(alpha)
+    except (TypeError, ValueError) as error:
+        raise ValueError("alpha must lie strictly between zero and one.") from error
+    if not np.isfinite(alpha) or not 0.0 < alpha < 1.0:
+        raise ValueError("alpha must lie strictly between zero and one.")
+
+    raw_a = np.asarray(a, dtype=np.float64)
+    raw_b = np.asarray(b, dtype=np.float64)
+    if raw_a.ndim != 2 or raw_b.ndim != 2:
+        raise ValueError("C2ST inputs must be 2-D (frames, features) matrices.")
+    if raw_a.shape[1] != raw_b.shape[1]:
+        raise ValueError(
+            f"C2ST feature counts differ ({raw_a.shape[1]} and {raw_b.shape[1]})."
+        )
+    if not np.all(np.isfinite(raw_a)) or not np.all(np.isfinite(raw_b)):
+        raise ValueError("C2ST inputs must contain only finite values.")
 
     rng = np.random.default_rng(random_state)
-    seed = int(rng.integers(0, 2**31 - 1))
-    x, y = _prepare(a, b, circular)
-    wa = None if weights_a is None else np.asarray(weights_a, float)
-    wb = None if weights_b is None else np.asarray(weights_b, float)
-    n_eff = _check_sampling(x, y, wa, wb)
+    wa = _probability_weights(weights_a, raw_a.shape[0], "first")
+    wb = _probability_weights(weights_b, raw_b.shape[0], "second")
+    sample_a = _sample_for_joint_test(
+        raw_a, wa, sample_size, rng,
+        sampling_kind_a, correlation_time_frames_a, replica_labels_a, circular,
+    )
+    sample_b = _sample_for_joint_test(
+        raw_b, wb, sample_size, rng,
+        sampling_kind_b, correlation_time_frames_b, replica_labels_b, circular,
+    )
+    wa, wb = sample_a.weights, sample_b.weights
+    frame_weight_effective = _check_sampling(
+        sample_a.matrix, sample_b.matrix, wa, wb
+    )
+    for label, plan in (("first", sample_a.plan), ("second", sample_b.plan)):
+        if not plan.correlation_time_converged and plan.correlation_time >= 2.0:
+            warnings.warn(
+                f"The {label} C2ST correlation time is still rising with "
+                f"trajectory length. Its {plan.correlation_time:.0f}-frame "
+                f"estimate is a lower bound, so grouped folds and the unit "
+                f"null remain optimistic. Sample longer before treating its "
+                f"p-value as settled.",
+                UserWarning,
+                stacklevel=2,
+            )
 
-    x, wa = _subsample(x, wa, sample_size, rng)
-    y, wb = _subsample(y, wb, sample_size, rng)
+    x, y = _prepare(sample_a.matrix, sample_b.matrix, circular)
     m, n = x.shape[0], y.shape[0]
-
     features = np.vstack([x, y])
     labels = np.concatenate([np.zeros(m, int), np.ones(n, int)])
-    sample_weight = np.concatenate([
-        np.full(m, 1.0 / m) if wa is None else wa / wa.sum(),
-        np.full(n, 1.0 / n) if wb is None else wb / wb.sum(),
-    ])
+    wa = np.full(m, 1.0 / m) if wa is None else wa / wa.sum()
+    wb = np.full(n, 1.0 / n) if wb is None else wb / wb.sum()
+    observation_mass = np.concatenate([wa * m, wb * n])
 
-    usable_folds = int(min(folds, m, n))
-    if usable_folds < 2:
-        raise ValueError(
-            f"Cannot cross-validate with {m} and {n} conformations; at least two "
-            f"of each are needed to score a classifier out of fold."
-        )
+    common_unit_length = max(
+        _native_unit_length(sample_a),
+        _native_unit_length(sample_b),
+    )
+    units_a = _sample_units(sample_a, common_unit_length)
+    units_b = [m + unit for unit in _sample_units(sample_b, common_unit_length)]
+    units = units_a + units_b
+    effective_units = (
+        _effective_mmd_units(units_a, observation_mass),
+        _effective_mmd_units(units_b, observation_mass),
+    )
 
+    cv_assignment_seed = int(rng.integers(0, 2**31 - 1))
+    cv_plan = _grouped_fold_plan(
+        units_a,
+        units_b,
+        m + n,
+        folds,
+        np.random.default_rng(cv_assignment_seed),
+        observation_mass,
+    )
     predictions = np.zeros(m + n)
     importance = np.zeros(features.shape[1])
-    splitter = StratifiedKFold(n_splits=usable_folds, shuffle=True, random_state=seed)
-    for train, test in splitter.split(features, labels):
-        forest = RandomForestClassifier(
-            n_estimators=200, random_state=seed, n_jobs=1, min_samples_leaf=2
+    cv_forest_seeds = []
+    cv_fold_balance = []
+    for fold in range(cv_plan.n_folds):
+        test = np.flatnonzero(cv_plan.frame_folds == fold)
+        train = np.flatnonzero(cv_plan.frame_folds != fold)
+        train_weight = _balanced_class_weights(
+            observation_mass[train], labels[train]
         )
-        forest.fit(features[train], labels[train], sample_weight=sample_weight[train])
+        forest_seed = int(rng.integers(0, 2**31 - 1))
+        cv_forest_seeds.append(forest_seed)
+        forest = RandomForestClassifier(
+            n_estimators=200,
+            random_state=forest_seed,
+            n_jobs=1,
+            min_samples_leaf=2,
+        )
+        forest.fit(features[train], labels[train], sample_weight=train_weight)
         predictions[test] = forest.predict_proba(features[test])[:, 1]
-        importance += forest.feature_importances_ / usable_folds
+        importance += forest.feature_importances_ / cv_plan.n_folds
+        fold_units = [
+            unit
+            for unit, unit_fold in zip(
+                units,
+                (*cv_plan.unit_folds_a, *cv_plan.unit_folds_b),
+            )
+            if unit_fold == fold
+        ]
+        cv_fold_balance.append(
+            {
+                "fold": fold,
+                **_unit_balance(fold_units, labels, observation_mass),
+            }
+        )
 
-    accuracy = float(
-        np.sum(sample_weight * ((predictions > 0.5).astype(int) == labels))
-        / np.sum(sample_weight)
+    cv_labels = (predictions >= 0.5).astype(int)
+    accuracy = _weighted_balanced_accuracy(
+        labels, cv_labels, observation_mass
     )
-    auc = float(roc_auc_score(labels, predictions, sample_weight=sample_weight))
+    auc = float(
+        roc_auc_score(labels, predictions, sample_weight=observation_mass)
+    )
 
-    # Sized by the effective count, not the frame count: a weighted ensemble
-    # supports a smaller claim than its number of rows suggests.
-    total_effective = float(sum(n_eff))
-    z = 2.0 * np.sqrt(total_effective) * (accuracy - 0.5)
-    p_value = float(norm.sf(z))
+    # The evidence split is deliberately label-blind: select pooled units
+    # before looking at which ensemble supplied them. Only positive-mass units
+    # matter to a weighted empirical distribution.
+    evidence_units = [
+        unit for unit in units if observation_mass[unit].sum() > 0.0
+    ]
+    unit_names = [
+        ["a", local] for local in range(len(units_a))
+    ] + [
+        ["b", local] for local in range(len(units_b))
+    ]
+    evidence_names = [
+        name
+        for name, unit in zip(unit_names, units)
+        if observation_mass[unit].sum() > 0.0
+    ]
+    evidence_split_seed = int(rng.integers(0, 2**31 - 1))
+    split_rng = np.random.default_rng(evidence_split_seed)
+    split_order = split_rng.permutation(len(evidence_units))
+    n_test_units = len(evidence_units) // 2
+    test_positions = split_order[:n_test_units]
+    train_positions = split_order[n_test_units:]
+    train_units = [evidence_units[int(i)] for i in train_positions]
+    test_units = [evidence_units[int(i)] for i in test_positions]
+    train = (
+        np.concatenate(train_units)
+        if train_units
+        else np.empty(0, dtype=int)
+    )
+    test = (
+        np.concatenate(test_units)
+        if test_units
+        else np.empty(0, dtype=int)
+    )
+    evidence_forest_seed = int(rng.integers(0, 2**31 - 1))
+    permutation_seed = int(rng.integers(0, 2**31 - 1))
+    unit_test_labels = np.array(
+        [labels[unit[0]] for unit in test_units], dtype=int
+    )
+    train_has_both = train.size > 0 and np.unique(labels[train]).size == 2
+    test_has_both = test.size > 0 and np.unique(labels[test]).size == 2
+    distinct_labelings = (
+        math.comb(len(test_units), int(unit_test_labels.sum()))
+        if test_has_both
+        else 1
+    )
+    assignment_resolution = math.exp(-math.log(distinct_labelings))
+    p_value_resolution = max(
+        1.0 / (n_permutations + 1), assignment_resolution
+    )
+    p_value_supported = bool(
+        train_has_both and test_has_both and p_value_resolution < alpha
+    )
+    null = np.empty(0, dtype=np.float64)
+    evidence_accuracy = None
+    if train_has_both and test_has_both:
+        evidence_forest = RandomForestClassifier(
+            n_estimators=200,
+            random_state=evidence_forest_seed,
+            n_jobs=1,
+            min_samples_leaf=2,
+        )
+        evidence_forest.fit(
+            features[train],
+            labels[train],
+            sample_weight=_balanced_class_weights(
+                observation_mass[train], labels[train]
+            ),
+        )
+        test_predictions = (
+            evidence_forest.predict_proba(features[test])[:, 1] >= 0.5
+        ).astype(int)
+        evidence_accuracy = _weighted_balanced_accuracy(
+            labels[test], test_predictions, observation_mass[test]
+        )
+        permutation_rng = np.random.default_rng(permutation_seed)
+        null = np.empty(n_permutations, dtype=np.float64)
+        for iteration in range(n_permutations):
+            shuffled_units = permutation_rng.permutation(unit_test_labels)
+            shuffled_labels = np.empty(test.size, dtype=int)
+            offset = 0
+            for unit, unit_label in zip(test_units, shuffled_units):
+                shuffled_labels[offset:offset + unit.size] = unit_label
+                offset += unit.size
+            null[iteration] = _weighted_balanced_accuracy(
+                shuffled_labels, test_predictions, observation_mass[test]
+            )
+        measured_p = max(
+            float(
+                (1 + np.count_nonzero(null >= evidence_accuracy))
+                / (n_permutations + 1)
+            ),
+            p_value_resolution,
+        )
+        p_value = measured_p if p_value_supported else None
+    else:
+        p_value = None
+
+    withheld_reasons = []
+    if not train_has_both:
+        withheld_reasons.append("label-blind training units contain only one class")
+    if not test_has_both:
+        withheld_reasons.append("label-blind test units contain only one class")
+    if p_value_resolution >= alpha:
+        withheld_reasons.append("permutation resolution is not finer than alpha")
+    p_value_withheld_reason = "; ".join(withheld_reasons) or None
+    if not p_value_supported:
+        warnings.warn(
+            f"C2ST held out {len(test_units)} sampling units with "
+            f"{distinct_labelings} distinct labelings and attainable p-value "
+            f"resolution {p_value_resolution:.3g}, which cannot resolve "
+            f"alpha={alpha:g}. The grouped-CV AUC is retained as an effect "
+            f"measure, but the p-value and distinguishable verdict are withheld "
+            f"({p_value_withheld_reason}).",
+            UserWarning,
+            stacklevel=2,
+        )
 
     if circular:
         # Undo the (cos, sin) doubling so importances line up with features.
@@ -910,17 +1255,67 @@ def classifier_two_sample(
         statistic=accuracy,
         p_value=p_value,
         effect=auc,
-        null_mean=0.5,
-        null_std=float(1.0 / (2.0 * np.sqrt(total_effective))),
+        null_mean=float(null.mean()) if null.size else 0.5,
+        null_std=float(null.std(ddof=1)) if null.size > 1 else 0.0,
         n_samples=(m, n),
-        effective_samples=n_eff,
+        effective_samples=effective_units,
         feature_importance=importance,
         feature_index=None if feature_index is None else np.asarray(feature_index),
         order_parameter=order_parameter,
         metadata={
             "classifier": "random forest (200 trees)",
-            "folds": usable_folds,
+            "folds": cv_plan.n_folds,
             "circular_encoding": circular,
+            "alpha": alpha,
+            "n_permutations": n_permutations,
+            "sampling_plans": [
+                _plan_metadata(sample_a.plan),
+                _plan_metadata(sample_b.plan),
+            ],
+            "sample_selection": [
+                _selection_metadata(sample_a),
+                _selection_metadata(sample_b),
+            ],
+            "input_time_stride": [time_stride_a, time_stride_b],
+            "sampling_unit_length": common_unit_length,
+            "sampling_units": [len(units_a), len(units_b)],
+            "effective_sampling_units": list(effective_units),
+            "frame_weight_effective_samples": list(frame_weight_effective),
+            "sampling_unit_sizes": [
+                [int(unit.size) for unit in units_a],
+                [int(unit.size) for unit in units_b],
+            ],
+            "cv_assignment_seed": cv_assignment_seed,
+            "cv_unit_folds": [
+                list(cv_plan.unit_folds_a),
+                list(cv_plan.unit_folds_b),
+            ],
+            "cv_forest_seeds": cv_forest_seeds,
+            "cv_fold_balance": cv_fold_balance,
+            "inference_split_seed": evidence_split_seed,
+            "inference_forest_seed": evidence_forest_seed,
+            "permutation_seed": permutation_seed,
+            "inference_train_units": [
+                evidence_names[int(i)] for i in train_positions
+            ],
+            "inference_test_units": [
+                evidence_names[int(i)] for i in test_positions
+            ],
+            "inference_train_balance": (
+                _unit_balance(train_units, labels, observation_mass)
+                if train_units
+                else {"class_units": [0, 0], "class_weight_mass": [0.0, 0.0]}
+            ),
+            "inference_test_balance": (
+                _unit_balance(test_units, labels, observation_mass)
+                if test_units
+                else {"class_units": [0, 0], "class_weight_mass": [0.0, 0.0]}
+            ),
+            "evidence_balanced_accuracy": evidence_accuracy,
+            "distinct_labelings": distinct_labelings,
+            "p_value_resolution": p_value_resolution,
+            "p_value_withheld_reason": p_value_withheld_reason,
+            "weights_attached_to_observations": True,
         },
     )
 

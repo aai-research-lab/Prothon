@@ -14,10 +14,11 @@ import pytest
 from prothon.compare.dissimilarity import jsd_local
 from prothon.compare.joint import (
     MINIMUM_MMD_UNITS,
-    P_VALUE_FLOOR,
     EnsembleComparison,
+    _grouped_fold_plan,
     _mmd_signed_weights,
     _mmd_unit_assignment,
+    classifier_two_sample,
     distinguishability,
     maximum_mean_discrepancy,
 )
@@ -46,7 +47,14 @@ class TestUnderTheNull:
         flagged = 0
         for seed in range(8):
             a, b = same(seed=seed)
-            result = distinguishability(a, b, method, random_state=seed)
+            result = distinguishability(
+                a,
+                b,
+                method,
+                sampling_kind_a="iid",
+                sampling_kind_b="iid",
+                random_state=seed,
+            )
             flagged += int(result.distinguishable)
         assert flagged <= 1
 
@@ -57,7 +65,14 @@ class TestUnderTheNull:
         is scored out of fold."""
         rng = np.random.default_rng(3)
         whole = rng.normal(size=(1200, 5))
-        result = distinguishability(whole[:600], whole[600:], method, random_state=0)
+        result = distinguishability(
+            whole[:600],
+            whole[600:],
+            method,
+            sampling_kind_a="iid",
+            sampling_kind_b="iid",
+            random_state=0,
+        )
         assert not result.distinguishable
 
 
@@ -127,14 +142,153 @@ class TestClassifierExtras:
         result = distinguishability(a, b, "c2st", random_state=0)
         assert 0.9 < result.effect <= 1.0
 
-    def test_an_implausible_p_value_is_reported_as_a_bound(self):
-        """A raw 1e-200 from a normal approximation's far tail is arithmetic,
-        not evidence, and the summary should not print it as though it were."""
+    def test_permutation_p_value_has_finite_resolution(self):
         rng = np.random.default_rng(10)
         a, b = rng.normal(size=(600, 4)), rng.normal(4, 1, (600, 4))
-        result = distinguishability(a, b, "c2st", random_state=0)
-        assert result.p_value < P_VALUE_FLOOR
-        assert f"p < {P_VALUE_FLOOR:g}" in result.summary()
+        result = distinguishability(
+            a,
+            b,
+            "c2st",
+            sampling_kind_a="iid",
+            sampling_kind_b="iid",
+            random_state=0,
+        )
+        assert result.p_value == pytest.approx(1 / 201)
+        assert result.metadata["p_value_resolution"] == pytest.approx(1 / 201)
+        assert "p = 0.00498" in result.summary()
+
+
+class TestClassifierSamplingUnits:
+    def test_a_complete_unit_is_never_split_between_folds(self):
+        units_a = [np.arange(start, start + 4) for start in range(0, 24, 4)]
+        units_b = [np.arange(start, start + 5) for start in range(24, 54, 5)]
+        plan = _grouped_fold_plan(
+            units_a,
+            units_b,
+            54,
+            5,
+            np.random.default_rng(0),
+        )
+
+        for unit in units_a + units_b:
+            assert np.unique(plan.frame_folds[unit]).size == 1
+        for fold in range(plan.n_folds):
+            assert fold in plan.unit_folds_a
+            assert fold in plan.unit_folds_b
+
+    def test_complete_replicas_define_the_folds_and_null(self):
+        def replicas(seed):
+            rng = np.random.default_rng(seed)
+            return np.vstack([ou(50, 4, 10.0, rng) for _ in range(8)])
+
+        labels = np.repeat(np.arange(8), 50)
+        result = classifier_two_sample(
+            replicas(51),
+            replicas(52),
+            replica_labels_a=labels,
+            replica_labels_b=labels,
+            n_permutations=99,
+            sample_size=500,
+            random_state=0,
+        )
+
+        assert result.metadata["sampling_units"] == [8, 8]
+        assert result.metadata["sampling_unit_sizes"] == [[50] * 8, [50] * 8]
+        assert all(
+            set(side) == set(range(result.metadata["folds"]))
+            for side in result.metadata["cv_unit_folds"]
+        )
+        assert result.metadata["distinct_labelings"] >= 20
+        assert result.p_value is not None
+
+    def test_too_few_held_out_labelings_withholds_only_inference(self):
+        a = ou(120, 3, 10.0, np.random.default_rng(53))
+        b = ou(120, 3, 10.0, np.random.default_rng(54))
+        with pytest.warns(UserWarning, match="p-value.*withheld"):
+            result = classifier_two_sample(
+                a,
+                b,
+                correlation_time_frames_a=20.0,
+                correlation_time_frames_b=20.0,
+                n_permutations=99,
+                sample_size=120,
+                random_state=0,
+            )
+
+        assert result.metadata["sampling_units"] == [3, 3]
+        assert result.effect is not None
+        assert result.p_value is None
+        assert result.distinguishable is None
+        assert "AUC" in result.summary()
+
+    def test_metadata_records_folds_seeds_balance_and_provenance(self):
+        rng = np.random.default_rng(55)
+        a, b = rng.normal(size=(80, 3)), rng.normal(size=(120, 3))
+        result = classifier_two_sample(
+            a,
+            b,
+            weights_a=np.linspace(0.2, 2.0, 80),
+            weights_b=np.linspace(2.0, 0.2, 120),
+            sampling_kind_a="iid",
+            sampling_kind_b="iid",
+            time_stride_a=2,
+            time_stride_b=5,
+            n_permutations=39,
+            random_state=0,
+        )
+
+        assert result.metadata["input_time_stride"] == [2, 5]
+        assert len(result.metadata["cv_forest_seeds"]) == result.metadata["folds"]
+        assert len(result.metadata["cv_fold_balance"]) == result.metadata["folds"]
+        assert result.metadata["inference_train_balance"]["class_units"]
+        assert result.metadata["inference_test_balance"]["class_weight_mass"]
+        assert result.metadata["weights_attached_to_observations"]
+        train_units = {
+            tuple(unit) for unit in result.metadata["inference_train_units"]
+        }
+        test_units = {
+            tuple(unit) for unit in result.metadata["inference_test_units"]
+        }
+        assert train_units.isdisjoint(test_units)
+        assert len(train_units | test_units) == sum(result.metadata["sampling_units"])
+
+    def test_trajectory_subsampling_is_contiguous_and_replanned(self):
+        a = ou(1200, 3, 10.0, np.random.default_rng(57))
+        b = ou(1200, 3, 10.0, np.random.default_rng(58))
+        result = classifier_two_sample(
+            a,
+            b,
+            correlation_time_frames_a=20.0,
+            correlation_time_frames_b=20.0,
+            n_permutations=99,
+            random_state=0,
+        )
+
+        assert result.n_samples == (1000, 1000)
+        assert result.metadata["sampling_units"] == [25, 25]
+        for selection in result.metadata["sample_selection"]:
+            assert selection["sampling_strategy"] == "contiguous window"
+            assert selection["frame_range"][1] - selection["frame_range"][0] == 1000
+        assert [
+            plan["native_block_length"]
+            for plan in result.metadata["sampling_plans"]
+        ] == [40, 40]
+
+    @pytest.mark.parametrize(
+        "keyword,value,message",
+        [
+            ("folds", 1, "folds"),
+            ("sample_size", 20.5, "sample_size"),
+            ("n_permutations", True, "n_permutations"),
+            ("time_stride_b", 0, "time_stride_b"),
+            ("alpha", np.inf, "alpha"),
+        ],
+    )
+    def test_invalid_inference_controls_are_refused(self, keyword, value, message):
+        rng = np.random.default_rng(56)
+        a, b = rng.normal(size=(40, 2)), rng.normal(size=(40, 2))
+        with pytest.raises(ValueError, match=message):
+            classifier_two_sample(a, b, **{keyword: value})
 
 
 class TestMmdSpecifics:
@@ -452,6 +606,141 @@ class TestMmdCorrelatedCalibration:
         assert result.p_value is not None
         assert result.p_value >= 0.05
         assert min(result.metadata["permutation_units"]) >= MINIMUM_MMD_UNITS
+
+
+class TestClassifierCorrelatedCalibration:
+    """Predeclared calibration: null 0-3/20; power at least 8/10."""
+
+    settings = {
+        "n_permutations": 99,
+        "sample_size": 500,
+        "sampling_kind_a": "trajectory",
+        "sampling_kind_b": "trajectory",
+        "correlation_time_frames_a": 20.0,
+        "correlation_time_frames_b": 20.0,
+    }
+
+    @staticmethod
+    def _legacy_row_result(a, b, random_state):
+        """The replaced shuffled-row CV and independent-row normal null."""
+        from scipy.stats import norm
+        from sklearn.ensemble import RandomForestClassifier
+        from sklearn.metrics import roc_auc_score
+        from sklearn.model_selection import StratifiedKFold
+
+        rng = np.random.default_rng(random_state)
+        seed = int(rng.integers(0, 2**31 - 1))
+        features = np.vstack([a, b])
+        labels = np.repeat([0, 1], [len(a), len(b)])
+        predictions = np.zeros(labels.size)
+        splitter = StratifiedKFold(5, shuffle=True, random_state=seed)
+        for train, test in splitter.split(features, labels):
+            forest = RandomForestClassifier(
+                n_estimators=200,
+                random_state=seed,
+                n_jobs=1,
+                min_samples_leaf=2,
+            )
+            forest.fit(features[train], labels[train])
+            predictions[test] = forest.predict_proba(features[test])[:, 1]
+        accuracy = np.mean((predictions >= 0.5) == labels)
+        p_value = norm.sf(2.0 * np.sqrt(labels.size) * (accuracy - 0.5))
+        return float(roc_auc_score(labels, predictions)), float(p_value)
+
+    def test_grouped_folds_replace_the_reproduced_row_leakage(self):
+        grouped_calls = 0
+        grouped_auc = []
+        legacy_calls = 0
+        legacy_auc = []
+        for seed in range(20):
+            a = ou(500, 4, 10.0, np.random.default_rng(100 + seed))
+            b = ou(500, 4, 10.0, np.random.default_rng(200 + seed))
+            grouped = classifier_two_sample(
+                a, b, random_state=seed, **self.settings
+            )
+            grouped_calls += int(grouped.distinguishable)
+            grouped_auc.append(grouped.effect)
+            if seed < 10:
+                auc, p_value = self._legacy_row_result(a, b, seed)
+                legacy_auc.append(auc)
+                legacy_calls += int(p_value < 0.05)
+
+        assert legacy_calls == 10, "shuffled rows reproduce the audited failure"
+        assert min(legacy_auc) > 0.65
+        assert grouped_calls <= 3, "outside the 95% binomial null band"
+        assert 0.4 <= np.mean(grouped_auc) <= 0.6
+
+    def test_grouped_classifier_retains_power(self):
+        calls = 0
+        for seed in range(10):
+            a = ou(500, 4, 10.0, np.random.default_rng(300 + seed))
+            b = ou(
+                500,
+                4,
+                10.0,
+                np.random.default_rng(400 + seed),
+                mean=0.7,
+            )
+            result = classifier_two_sample(
+                a, b, random_state=seed, **self.settings
+            )
+            calls += int(result.distinguishable)
+        assert calls >= 8
+
+    @pytest.mark.parametrize(
+        "case",
+        ["unequal lengths", "unequal weights", "trajectory versus iid", "circular"],
+    )
+    def test_other_sampling_designs_remain_calibrated(self, case):
+        if case == "unequal lengths":
+            a = ou(500, 4, 10.0, np.random.default_rng(1))
+            b = ou(700, 4, 10.0, np.random.default_rng(2))
+            kwargs = {
+                "sample_size": 700,
+                "correlation_time_frames_a": 20.0,
+                "correlation_time_frames_b": 20.0,
+            }
+        elif case == "unequal weights":
+            rng = np.random.default_rng(3)
+            a = rng.normal(size=(320, 4))
+            b = rng.normal(size=(470, 4))
+            kwargs = {
+                "weights_a": np.linspace(0.2, 2.0, 320),
+                "weights_b": np.linspace(2.0, 0.2, 470) ** 2,
+                "sample_size": 500,
+                "sampling_kind_a": "iid",
+                "sampling_kind_b": "iid",
+            }
+        elif case == "trajectory versus iid":
+            rng = np.random.default_rng(4)
+            a = ou(500, 4, 10.0, rng)
+            b = rng.normal(size=(650, 4))
+            kwargs = {
+                "sample_size": 700,
+                "sampling_kind_a": "trajectory",
+                "sampling_kind_b": "iid",
+                "correlation_time_frames_a": 20.0,
+            }
+        else:
+            rng = np.random.default_rng(7)
+            a = np.pi + 0.5 * ou(500, 4, 10.0, rng)
+            b = np.pi + 0.5 * ou(500, 4, 10.0, rng)
+            a = (a + np.pi) % (2.0 * np.pi) - np.pi
+            b = (b + np.pi) % (2.0 * np.pi) - np.pi
+            kwargs = {
+                "circular": True,
+                "sample_size": 500,
+                "correlation_time_frames_a": 20.0,
+                "correlation_time_frames_b": 20.0,
+            }
+
+        result = classifier_two_sample(
+            a, b, n_permutations=99, random_state=0, **kwargs
+        )
+
+        assert result.p_value is not None
+        assert result.p_value >= 0.05
+        assert min(result.metadata["sampling_units"]) >= 4
 
 
 class TestCircularAndWeights:
