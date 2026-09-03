@@ -476,6 +476,15 @@ class Prothon:
             )
 
         overall: dict[str, list[ComparisonResult]] = {}
+        reference_sampling = None
+        if not legacy and block_permutation is not False:
+            # The same provenance contract used by benchmark rows belongs on
+            # the ordinary comparison path too. Otherwise ``study.compare``
+            # and ``study.rank`` can give different answers for the same two
+            # ensembles merely because only the latter knows one side is IID.
+            from .batch.benchmark import _sampling_for
+
+            reference_sampling = _sampling_for(self.ensembles[ref])
 
         for spec in specs:
             logger.info("Processing measure %s", spec.name.upper())
@@ -504,6 +513,29 @@ class Prothon:
                 left, right, feature_index = self._align_columns(
                     reference, rep, ref, index, spec.name
                 )
+                sampling_options = {
+                    "correlation_time_frames": correlation_time_frames,
+                }
+                if reference_sampling is not None:
+                    model_sampling = _sampling_for(self.ensembles[index])
+                    sampling_options = {
+                        "sampling_kind_ref": reference_sampling.kind,
+                        "sampling_kind": model_sampling.kind,
+                        "correlation_time_frames_ref": (
+                            correlation_time_frames
+                            if correlation_time_frames is not None
+                            else reference_sampling.correlation_time_frames
+                        ),
+                        "correlation_time_frames": (
+                            correlation_time_frames
+                            if correlation_time_frames is not None
+                            else model_sampling.correlation_time_frames
+                        ),
+                        "replica_labels_ref": reference_sampling.replica_labels,
+                        "replica_labels": model_sampling.replica_labels,
+                        "time_stride_ref": reference_sampling.time_stride,
+                        "time_stride": model_sampling.time_stride,
+                    }
                 result = dissimilarity(
                     left, right, grid_min, grid_max,
                     x_num=x_num, s_num=s_num,
@@ -514,7 +546,6 @@ class Prothon:
                     n_permutations=n_permutations,
                     block_permutation=block_permutation,
                     sample_size=sample_size,
-                    correlation_time_frames=correlation_time_frames,
                     n_jobs=n_jobs,
                     alpha=alpha,
                     random_state=self.random_state,
@@ -522,6 +553,7 @@ class Prothon:
                     ensemble_index=index,
                     reference_index=ref,
                     order_parameter=spec.name,
+                    **sampling_options,
                 )
                 result.feature_index = feature_index
                 comparisons.append(result)

@@ -99,7 +99,8 @@ class Ensemble:
         likely, which is right for unbiased simulation and wrong for a
         deposited ensemble that stored otherwise.
     provenance
-        Where this came from, recorded for the manifest.
+        Where this came from and whether its rows are a trajectory or IID,
+        recorded for the manifest and used to choose valid sampling units.
 
     Examples
     --------
@@ -170,6 +171,7 @@ class Ensemble:
             weights=weights,
             provenance={
                 "kind": "trajectory",
+                "sampling_kind": "trajectory",
                 "path": os.path.abspath(path),
                 "topology": os.path.abspath(topology),
                 "stride": stride,
@@ -207,6 +209,7 @@ class Ensemble:
             weights=weights,
             provenance={
                 "kind": "trajectory-set",
+                "sampling_kind": "trajectory",
                 "paths": [os.path.abspath(p) for p in paths],
                 "topology": os.path.abspath(topology),
                 "stride": stride,
@@ -262,6 +265,7 @@ class Ensemble:
             weights=weights,
             provenance={
                 "kind": "pdb-models",
+                "sampling_kind": "iid",
                 "pattern": str(pattern),
                 "n_files": len(files),
                 "files": [os.path.abspath(f) for f in files[:20]],

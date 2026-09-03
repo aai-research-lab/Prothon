@@ -5,6 +5,22 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Fixed — honest mixed-source benchmarks
+
+- Benchmark dissimilarity and precision/recall now receive both ensembles'
+  probability weights. A reweighted model can therefore change score and rank
+  instead of being silently treated as uniform.
+- The benchmark no longer forces every model through
+  `block_permutation=False`. Each reference and model retains its own
+  trajectory, IID, or replica provenance; a mixed trajectory/IID permutation
+  groups the IID observations to the trajectory's exchange-unit length while
+  each side keeps its native precision/recall floor.
+- Every row, including a refusal, records the Prothon version, complete
+  analysis settings, resolved sampling provenance, weight-only and
+  time-corrected effective sample sizes, final permutation units, native floor
+  plans, and a structured refusal reason. The same settings are stored at the
+  benchmark-result level.
+
 ### Fixed — leakage-free, sampling-unit-aware C2ST
 
 - C2ST cross-validation now assigns complete temporal blocks or independent

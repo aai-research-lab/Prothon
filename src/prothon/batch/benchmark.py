@@ -36,15 +36,24 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..compare.coverage import precision_recall
-from ..compare.dissimilarity import dissimilarity
+import numpy as np
+
+from ..compare.coverage import (
+    DEFAULT_COVERAGE,
+    DEFAULT_FLOOR_REPEATS,
+    precision_recall,
+)
+from ..compare.dissimilarity import DEFAULT_PERMUTATIONS, dissimilarity
 from ..ingest import Ensemble
 from ..represent.order_parameters import resolve_order_parameter
+from ..sampling.statistics import DEFAULT_SAMPLE_SIZE, effective_sample_size
 from ..utils import get_logger
 
 logger = get_logger("benchmark")
 
 __all__ = ["BenchmarkResult", "BenchmarkRow", "benchmark"]
+
+DEFAULT_GRID_POINTS = 100
 
 
 @dataclass
@@ -148,6 +157,7 @@ class BenchmarkResult:
     rows: list[BenchmarkRow]
     reference_label: str = "reference"
     order_parameters: tuple[str, ...] = ()
+    settings: dict[str, Any] = field(default_factory=dict)
 
     def for_model(self, model: str) -> list[BenchmarkRow]:
         return [r for r in self.rows if r.model == model]
@@ -212,6 +222,7 @@ class BenchmarkResult:
             "written_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "reference": self.reference_label,
             "order_parameters": list(self.order_parameters),
+            "settings": self.settings,
             "rows": [r.to_dict() for r in self.rows],
         }
 
@@ -230,6 +241,151 @@ class BenchmarkResult:
         return path
 
 
+@dataclass(frozen=True)
+class _EnsembleSampling:
+    kind: str
+    correlation_time_frames: float | None
+    replica_labels: np.ndarray | None
+    time_stride: int
+    metadata: dict[str, Any]
+
+
+def _sampling_for(ensemble: Ensemble) -> _EnsembleSampling:
+    """Resolve one ensemble's exchangeable units from its own provenance."""
+    provenance = ensemble.provenance
+    declared_kind = provenance.get("sampling_kind")
+    kind = str(
+        declared_kind
+        if declared_kind is not None
+        else (
+            "iid"
+            if provenance.get("kind") in {"pdb-models", "ped"}
+            else "trajectory"
+        )
+    ).strip().lower()
+    if kind not in {"trajectory", "iid"}:
+        raise ValueError(
+            f"Ensemble {ensemble.label!r} declares sampling_kind={kind!r}; "
+            "expected 'trajectory' or 'iid'."
+        )
+
+    raw_stride = provenance.get("stride")
+    stride = 1 if raw_stride is None else raw_stride
+    if (
+        isinstance(stride, (bool, np.bool_))
+        or not isinstance(stride, (int, np.integer))
+        or stride < 1
+    ):
+        raise ValueError(
+            f"Ensemble {ensemble.label!r} has an invalid stored-frame stride "
+            f"{stride!r}; expected a positive integer."
+        )
+    stride = int(stride)
+
+    raw_tau = provenance.get("correlation_time_frames")
+    tau = None if raw_tau is None else float(raw_tau)
+    if tau is not None and (not np.isfinite(tau) or tau <= 0.0):
+        raise ValueError(
+            f"Ensemble {ensemble.label!r} has an invalid correlation time "
+            f"{raw_tau!r}; expected a finite positive number of stored frames."
+        )
+
+    counts = provenance.get("frames_per_file")
+    replica_labels = None
+    replica_sizes = None
+    if counts is not None:
+        try:
+            replica_sizes = [int(count) for count in counts]
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                f"Ensemble {ensemble.label!r} has invalid frames_per_file provenance."
+            ) from error
+        if (
+            not replica_sizes
+            or any(count < 1 for count in replica_sizes)
+            or sum(replica_sizes) != ensemble.n_frames
+        ):
+            raise ValueError(
+                f"Ensemble {ensemble.label!r} has frames_per_file={replica_sizes}, "
+                f"which does not partition its {ensemble.n_frames} frames."
+            )
+        replica_labels = np.repeat(np.arange(len(replica_sizes)), replica_sizes)
+
+    metadata = {
+        "source_kind": provenance.get("kind", "unspecified"),
+        "sampling_kind": kind,
+        "time_stride": stride,
+        "correlation_time_frames": tau,
+        "replicas": None if replica_sizes is None else len(replica_sizes),
+        "frames_per_replica": replica_sizes,
+    }
+    return _EnsembleSampling(kind, tau, replica_labels, stride, metadata)
+
+
+def _sampling_kwargs(
+    reference: _EnsembleSampling,
+    model: _EnsembleSampling,
+) -> dict[str, Any]:
+    return {
+        "sampling_kind_ref": reference.kind,
+        "sampling_kind": model.kind,
+        "correlation_time_frames_ref": reference.correlation_time_frames,
+        "correlation_time_frames": model.correlation_time_frames,
+        "replica_labels_ref": reference.replica_labels,
+        "replica_labels": model.replica_labels,
+    }
+
+
+def _row_base_metadata(
+    reference: Ensemble,
+    model: Ensemble,
+    settings: dict[str, Any],
+) -> dict[str, Any]:
+    from .. import __version__
+
+    def declaration(ensemble: Ensemble) -> dict[str, Any]:
+        provenance = ensemble.provenance
+        kind = provenance.get("sampling_kind")
+        if kind is None:
+            kind = (
+                "iid"
+                if provenance.get("kind") in {"pdb-models", "ped"}
+                else "trajectory"
+            )
+        counts = provenance.get("frames_per_file")
+        if isinstance(counts, (list, tuple, np.ndarray)):
+            counts = list(counts)
+        return {
+            "source_kind": provenance.get("kind", "unspecified"),
+            "sampling_kind": kind,
+            "time_stride": provenance.get("stride", 1),
+            "correlation_time_frames": provenance.get("correlation_time_frames"),
+            "frames_per_replica": counts,
+            "resolved": False,
+        }
+
+    return {
+        "prothon_version": __version__,
+        "analysis_settings": dict(settings),
+        "sampling_provenance": {
+            "reference": declaration(reference),
+            "model": declaration(model),
+        },
+        "weighted": [reference.weights is not None, model.weights is not None],
+        "frame_weight_effective_samples": [
+            effective_sample_size(reference.weights, reference.n_frames),
+            effective_sample_size(model.weights, model.n_frames),
+        ],
+        "effective_samples": None,
+        "sampling_plans": None,
+        "sample_selection": None,
+        "permutation_blocks": None,
+        "coverage_floor": None,
+        "p_values_withheld": None,
+        "refusal_details": None,
+    }
+
+
 def _compare_one(
     reference: Ensemble,
     model: Ensemble,
@@ -237,7 +393,9 @@ def _compare_one(
     target: str,
     reference_reps,
     random_state,
-    **kwargs,
+    dissimilarity_options: dict[str, Any],
+    coverage_options: dict[str, Any],
+    settings: dict[str, Any],
 ) -> BenchmarkRow:
     """One model against the reference, catching a refusal as a result."""
     from ..study import Prothon
@@ -249,9 +407,17 @@ def _compare_one(
         order_parameter=spec.name,
         n_reference=reference.n_frames,
         n_model=model.n_frames,
+        metadata=_row_base_metadata(reference, model, settings),
     )
 
     try:
+        reference_sampling = _sampling_for(reference)
+        model_sampling = _sampling_for(model)
+        sampling = _sampling_kwargs(reference_sampling, model_sampling)
+        row.metadata["sampling_provenance"] = {
+            "reference": {**reference_sampling.metadata, "resolved": True},
+            "model": {**model_sampling.metadata, "resolved": True},
+        }
         study = Prothon.from_ensembles([reference, model], random_state=random_state)
         left, right, index = study._align_columns(
             reference_reps,
@@ -266,21 +432,30 @@ def _compare_one(
             circular=spec.circular,
             random_state=random_state,
             order_parameter=spec.name,
-            # Conformations from a generative model are independent draws, not
-            # a trajectory, so there is no correlation to block against and
-            # blocking would cost resolution for nothing.
-            block_permutation=kwargs.pop("block_permutation", False),
-            **kwargs,
+            weights_ref=reference.weights,
+            weights=model.weights,
+            time_stride_ref=reference_sampling.time_stride,
+            time_stride=model_sampling.time_stride,
+            **sampling,
+            **dissimilarity_options,
         )
         coverage = precision_recall(
             left, right,
+            weights_ref=reference.weights,
+            weights=model.weights,
             circular=spec.circular,
             feature_index=index,
             random_state=random_state,
             order_parameter=spec.name,
+            **sampling,
+            **coverage_options,
         )
     except ValueError as error:
         row.refused = str(error).split(".")[0]
+        row.metadata["refusal_details"] = {
+            "exception": type(error).__name__,
+            "reason": str(error),
+        }
         logger.warning("%s / %s: %s", target, model.label, row.refused)
         return row
 
@@ -296,11 +471,85 @@ def _compare_one(
     row.floor_recall = coverage.mean_floor_recall
     row.missed = [int(i) for i in coverage.missed()]
     row.invented = [int(i) for i in coverage.invented()]
-    row.metadata = {
+    row.metadata.update({
         "p_values_withheld": bool(result.p_values_withheld),
         "effective_samples": list(result.effective_samples),
-    }
+        "frame_weight_effective_samples": result.metadata[
+            "frame_weight_effective_samples"
+        ],
+        "sampling_plans": result.metadata["sampling_plans"],
+        "sample_selection": result.metadata["sample_selection"],
+        "permutation_blocks": {
+            "common_block_length": result.metadata["block_length"],
+            "units": result.metadata["permutation_units"],
+            "effective_units": result.metadata["effective_permutation_units"],
+            "unit_sizes": result.metadata["permutation_unit_sizes"],
+            "p_value_units": result.n_blocks,
+        },
+        "coverage_floor": {
+            "assessable": bool(coverage.floor_assessable),
+            "sampling_kind": coverage.metadata["floor_sampling_kind"],
+            "strategy": coverage.metadata["floor_strategy"],
+            "correlation_time": coverage.metadata["floor_correlation_time"],
+            "correlation_time_converged": coverage.metadata[
+                "floor_correlation_time_converged"
+            ],
+            "block_length": coverage.metadata["floor_block_length"],
+            "units": coverage.metadata["floor_units"],
+            "effective_units": coverage.metadata["floor_effective_units"],
+        },
+    })
     return row
+
+
+def _benchmark_settings(
+    random_state: int | None,
+    kwargs: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Validate public options and route them to the two measurements."""
+    options = dict(kwargs)
+    block_permutation = options.pop("block_permutation", None)
+    if block_permutation is not None:
+        raise ValueError(
+            "block_permutation cannot describe a benchmark with two sampling "
+            "provenances. Declare sampling_kind and correlation_time_frames in "
+            "each Ensemble.provenance instead."
+        )
+
+    x_num = options.pop("x_num", DEFAULT_GRID_POINTS)
+    n_jobs = options.pop("n_jobs", 1)
+    dissimilarity_options = {
+        "x_num": x_num,
+        "s_num": options.pop("s_num", 5),
+        "sample_size": options.pop("sample_size", DEFAULT_SAMPLE_SIZE),
+        "n_permutations": options.pop("n_permutations", DEFAULT_PERMUTATIONS),
+        "n_jobs": n_jobs,
+        "metric": options.pop("metric", "jsd"),
+        "alpha": options.pop("alpha", 0.05),
+        "legacy": options.pop("legacy", False),
+    }
+    coverage_options = {
+        "x_num": x_num,
+        "n_jobs": n_jobs,
+        "coverage": options.pop("coverage", DEFAULT_COVERAGE),
+        "floor_repeats": options.pop("floor_repeats", DEFAULT_FLOOR_REPEATS),
+    }
+    if options:
+        names = ", ".join(sorted(options))
+        raise TypeError(f"Unknown benchmark option(s): {names}.")
+
+    seed = (
+        int(random_state)
+        if isinstance(random_state, (int, np.integer)) and not isinstance(random_state, bool)
+        else None
+    )
+    settings = {
+        **dissimilarity_options,
+        "coverage": coverage_options["coverage"],
+        "coverage_floor_repeats": coverage_options["floor_repeats"],
+        "random_state": seed,
+    }
+    return dissimilarity_options, coverage_options, settings
 
 
 def benchmark(
@@ -341,6 +590,10 @@ def benchmark(
     if not models:
         raise ValueError("No models to compare against the reference.")
 
+    dissimilarity_options, coverage_options, settings = _benchmark_settings(
+        random_state, kwargs
+    )
+
     rows: list[BenchmarkRow] = []
     for name in names:
         spec = resolve_order_parameter(name)
@@ -355,13 +608,14 @@ def benchmark(
             rows.append(
                 _compare_one(
                     reference, model, spec.name, target,
-                    reference_reps, random_state, **dict(kwargs),
+                    reference_reps, random_state,
+                    dissimilarity_options, coverage_options, settings,
                 )
             )
 
     result = BenchmarkResult(
         rows=rows, reference_label=reference.label,
-        order_parameters=tuple(names)
+        order_parameters=tuple(names), settings=settings,
     )
     if output_dir:
         result.write(output_dir)

@@ -180,6 +180,7 @@ class TestEnsemble:
         ens = Ensemble.from_pdb_models(str(tmp_path), label="generated")
         assert ens.n_frames == 5
         assert ens.provenance["n_files"] == 5
+        assert ens.provenance["sampling_kind"] == "iid"
 
     def test_from_pdb_models_refuses_a_mismatched_model(self, tmp_path):
         build(as_residues("ACDEF"), n_frames=1)[0].save_pdb(str(tmp_path / "a.pdb"))

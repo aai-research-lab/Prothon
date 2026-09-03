@@ -28,12 +28,14 @@ import numpy as np
 
 from ..utils import get_logger
 from .correlation import block_labels, correlation_time_estimate, plan_blocks
+from .statistics import effective_sample_size
 
 __all__ = [
     "FLOOR_QUANTILE",
     "MINIMUM_FLOOR_REPEATS",
     "MINIMUM_FLOOR_UNITS",
     "FloorPlan",
+    "effective_floor_units",
     "floor_unit_count",
     "plan_floor",
     "split_half_floor",
@@ -111,6 +113,26 @@ def floor_unit_count(
     """Number of independently assignable units available to a floor."""
     units = _exchangeable_units(n_frames, block_length, replica_labels)
     return n_frames if units is None else len(units)
+
+
+def effective_floor_units(
+    n_frames: int,
+    weights=None,
+    block_length: int = 1,
+    replica_labels: np.ndarray | None = None,
+) -> float:
+    """Kish-effective independently assignable units in an ensemble."""
+    units = _exchangeable_units(n_frames, block_length, replica_labels)
+    if units is None:
+        return effective_sample_size(weights, n_frames)
+    mass = (
+        np.full(n_frames, 1.0 / n_frames)
+        if weights is None
+        else np.asarray(weights, dtype=np.float64)
+    )
+    mass = mass / mass.sum()
+    unit_mass = np.array([mass[unit].sum() for unit in units])
+    return effective_sample_size(unit_mass)
 
 
 def plan_floor(

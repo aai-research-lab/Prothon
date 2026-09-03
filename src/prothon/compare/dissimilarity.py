@@ -71,12 +71,15 @@ from typing import Any
 import numpy as np
 from scipy.stats import mannwhitneyu
 
-from ..sampling.correlation import (
-    MINIMUM_BLOCKS,
-    correlation_time_estimate,
-    plan_blocks,
+from ..sampling.correlation import MINIMUM_BLOCKS, block_labels
+from ..sampling.floor import (
+    FLOOR_QUANTILE,
+    MINIMUM_FLOOR_REPEATS,
+    MINIMUM_FLOOR_UNITS,
+    FloorPlan,
+    plan_floor,
+    split_half_floor,
 )
-from ..sampling.floor import FLOOR_QUANTILE, MINIMUM_FLOOR_REPEATS, split_half_floor
 from ..sampling.null import permutation_null, studentised_p_values
 from ..sampling.statistics import (
     DEFAULT_SAMPLE_SIZE,
@@ -200,8 +203,8 @@ class ComparisonResult:
     #: verdict. The measured values remain available but are descriptive only.
     noise_floor_assessable: bool = True
     noise_floor_distribution: np.ndarray | None = None
-    #: Kish effective sample size of each ensemble. Equal to the frame count
-    #: when unweighted; much smaller when a few conformers carry the mass.
+    #: Kish effective count of each ensemble's native frames, temporal blocks,
+    #: or replicas. Equal to the frame count only for unweighted IID input.
     effective_samples: tuple[float, float] = (0.0, 0.0)
     #: Estimated correlation time in frames, and the number of independent
     #: blocks the null was built from. A correlation time of 1.0 means the
@@ -349,31 +352,126 @@ def jsd_local(
     return distances
 
 
-def _subsample(
-    arr: np.ndarray,
-    size: int,
-    rng: np.random.Generator,
-    weights=None,
-    *,
-    preserve_order: bool = False,
-):
-    """Take at most ``size`` frames, without replacement.
+@dataclass(frozen=True)
+class _ComparisonSample:
+    matrix: np.ndarray
+    weights: np.ndarray | None
+    replica_labels: np.ndarray | None
+    frame_indices: np.ndarray
+    strategy: str
 
-    Without replacement matters: the whole point of the permutation null is
-    that the two groups are disjoint, and drawing with replacement would put
-    the same frame on both sides. A trajectory is different from an IID
-    ensemble: its row order carries its correlation structure, so it is
-    reduced to one contiguous window. Selecting scattered rows and sorting
-    them would preserve their labels but change the time step between them.
-    """
-    if arr.shape[0] <= size:
-        return arr, weights
-    if preserve_order:
-        start = int(rng.integers(0, arr.shape[0] - size + 1))
-        keep = np.arange(start, start + size)
+
+def _structured_subsample(
+    matrix: np.ndarray,
+    weights: np.ndarray | None,
+    sample_size: int,
+    rng: np.random.Generator,
+    sampling_kind: str,
+    replica_labels,
+) -> _ComparisonSample:
+    """Subsample one side without damaging its declared sampling units."""
+    labels = None if replica_labels is None else np.asarray(replica_labels)
+    if labels is not None and (labels.ndim != 1 or labels.size != matrix.shape[0]):
+        raise ValueError(
+            "Replica labels must be one-dimensional with one label per frame."
+        )
+    n_frames = matrix.shape[0]
+    if n_frames <= sample_size:
+        keep = np.arange(n_frames)
+        strategy = "all frames"
+    elif labels is not None:
+        _, inverse = np.unique(labels, return_inverse=True)
+        replicas = [
+            np.flatnonzero(inverse == label)
+            for label in range(int(inverse.max()) + 1)
+        ]
+        selected = []
+        selected_frames = 0
+        for position in rng.permutation(len(replicas)):
+            replica = replicas[int(position)]
+            if selected_frames + replica.size <= sample_size:
+                selected.append(replica)
+                selected_frames += replica.size
+        if not selected:
+            selected = [min(replicas, key=len)]
+        keep = np.sort(np.concatenate(selected))
+        strategy = "complete replicas"
+    elif sampling_kind == "trajectory":
+        start = int(rng.integers(0, n_frames - sample_size + 1))
+        keep = np.arange(start, start + sample_size)
+        strategy = "contiguous window"
     else:
-        keep = rng.choice(arr.shape[0], size, replace=False)
-    return arr[keep], (None if weights is None else weights[keep] / weights[keep].sum())
+        keep = np.sort(rng.choice(n_frames, sample_size, replace=False))
+        strategy = "uniform without replacement"
+
+    sampled_weights = None if weights is None else weights[keep]
+    if sampled_weights is not None:
+        total = float(sampled_weights.sum())
+        if total <= 0.0:
+            raise ValueError("Selected sampling units carry zero probability mass.")
+        sampled_weights = sampled_weights / total
+    return _ComparisonSample(
+        matrix=matrix[keep],
+        weights=sampled_weights,
+        replica_labels=None if labels is None else labels[keep],
+        frame_indices=keep,
+        strategy=strategy,
+    )
+
+
+def _native_unit_length(sample: _ComparisonSample, plan: FloorPlan) -> int:
+    if sample.replica_labels is not None:
+        _, counts = np.unique(sample.replica_labels, return_counts=True)
+        return max(1, int(np.median(counts)))
+    return plan.block_length if plan.sampling_kind == "trajectory" else 1
+
+
+def _comparison_units(
+    sample: _ComparisonSample,
+    common_length: int,
+) -> list[np.ndarray]:
+    if sample.replica_labels is not None:
+        _, inverse = np.unique(sample.replica_labels, return_inverse=True)
+        return [
+            np.flatnonzero(inverse == label)
+            for label in range(int(inverse.max()) + 1)
+        ]
+    labels = block_labels(sample.matrix.shape[0], common_length)
+    return [np.flatnonzero(labels == label) for label in np.unique(labels)]
+
+
+def _effective_units(
+    units: list[np.ndarray],
+    weights: np.ndarray | None,
+    n_frames: int,
+) -> float:
+    mass = np.full(n_frames, 1.0 / n_frames) if weights is None else weights
+    unit_mass = np.array([mass[unit].sum() for unit in units])
+    return effective_sample_size(unit_mass)
+
+
+def _sample_ranges(indices: np.ndarray) -> list[list[int]]:
+    breaks = np.flatnonzero(np.diff(indices) != 1) + 1
+    return [
+        [int(run[0]), int(run[-1]) + 1]
+        for run in np.split(indices, breaks)
+        if run.size
+    ]
+
+
+def _floor_plan_metadata(plan: FloorPlan) -> dict[str, Any]:
+    return {
+        "sampling_kind": plan.sampling_kind,
+        "strategy": plan.strategy,
+        "correlation_time": plan.correlation_time,
+        "correlation_time_converged": plan.correlation_time_converged,
+        "correlation_summary": plan.correlation_summary,
+        "native_block_length": plan.block_length,
+        "native_units": plan.n_units,
+        "assessable_feature_columns": list(plan.assessable_features),
+        "sampled_feature_columns": list(plan.sampled_features),
+        "slow_feature_columns": list(plan.slow_features),
+    }
 
 
 def _legacy_bootstrap(
@@ -430,6 +528,13 @@ def dissimilarity(
     metric: str = "jsd",
     block_permutation: bool | None = None,
     correlation_time_frames: float | None = None,
+    sampling_kind_ref: str | None = None,
+    sampling_kind: str | None = None,
+    correlation_time_frames_ref: float | None = None,
+    replica_labels_ref=None,
+    replica_labels=None,
+    time_stride_ref: int = 1,
+    time_stride: int = 1,
     alpha: float = 0.05,
     random_state: int | np.random.Generator | None = None,
     legacy: bool = False,
@@ -489,8 +594,22 @@ def dissimilarity(
         concatenated matrix has no correlation time, and this will silently
         find none.
     correlation_time_frames
-        Use this correlation time instead of estimating one. Useful when it is
-        known from elsewhere, and for reproducing a published analysis.
+        Correlation time for the comparison ensemble. For source compatibility,
+        when no per-ensemble sampling arguments are supplied it applies to both
+        sides as it did before 2.4.
+    sampling_kind_ref, sampling_kind
+        ``"trajectory"`` or ``"iid"`` for each ensemble. The conservative
+        default is trajectory. The older ``block_permutation=False`` maps both
+        sides to IID; new mixed designs should state each side explicitly.
+    correlation_time_frames_ref
+        Optional supplied correlation time for the reference. Otherwise it is
+        estimated from the sampled reference trajectory.
+    replica_labels_ref, replica_labels
+        One label per frame. Complete replicas replace temporal blocks as
+        indivisible permutation and floor units.
+    time_stride_ref, time_stride
+        Stored-frame strides, recorded as provenance. Correlation times remain
+        expressed in stored frames.
     alpha
         False-discovery rate for the per-feature test.
     random_state
@@ -586,60 +705,59 @@ def dissimilarity(
 
     resolve_metric(metric)  # fail here rather than inside the permutation loop
 
-    # How much of this trajectory is independent, and therefore what the null
-    # can be built from.
+    explicit_per_ensemble_sampling = any(
+        value is not None
+        for value in (
+            sampling_kind_ref,
+            sampling_kind,
+            correlation_time_frames_ref,
+            replica_labels_ref,
+            replica_labels,
+        )
+    )
+    if block_permutation is False and explicit_per_ensemble_sampling:
+        raise ValueError(
+            "block_permutation=False cannot be combined with per-ensemble "
+            "sampling provenance; declare both sampling kinds as IID instead."
+        )
+    default_kind = "iid" if block_permutation is False else "trajectory"
+    kind_ref = str(
+        default_kind if sampling_kind_ref is None else sampling_kind_ref
+    ).strip().lower()
+    kind_other = str(
+        default_kind if sampling_kind is None else sampling_kind
+    ).strip().lower()
+    if kind_ref not in {"trajectory", "iid"} or kind_other not in {
+        "trajectory",
+        "iid",
+    }:
+        raise ValueError("sampling_kind_ref and sampling_kind must be trajectory or iid.")
+    # The old single correlation-time argument described the common block plan.
+    # Preserve that contract unless the caller has opted into the new per-side
+    # provenance model, where it naturally belongs to the comparison side.
+    if block_permutation is False and not explicit_per_ensemble_sampling:
+        correlation_time_frames = None
+        correlation_time_frames_ref = None
+    elif not explicit_per_ensemble_sampling and correlation_time_frames is not None:
+        correlation_time_frames_ref = correlation_time_frames
+
+    for name, value in (
+        ("time_stride_ref", time_stride_ref),
+        ("time_stride", time_stride),
+    ):
+        if (
+            isinstance(value, (bool, np.bool_))
+            or not isinstance(value, (int, np.integer))
+            or value < 1
+        ):
+            raise ValueError(f"{name} must be a positive integer.")
+    time_stride_ref, time_stride = int(time_stride_ref), int(time_stride)
+
     tau = 1.0
     tau_converged = True
-    tau_assessable = True
     correlation_profiles: dict[str, dict[str, Any]] = {}
     block_length, n_blocks = 1, min(ref_rep.shape[0], rep.shape[0])
     use_blocks = False
-    if not legacy and block_permutation is not False:
-        if correlation_time_frames is not None:
-            # Supplied by the caller, who is responsible for it.
-            tau = float(correlation_time_frames)
-            correlation_profiles = {
-                name: {
-                    "summary": "supplied",
-                    "assessable_features": 0,
-                    "sampled_features": 0,
-                    "assessable_feature_columns": [],
-                    "sampled_feature_columns": [],
-                    "slow_feature_columns": [],
-                }
-                for name in ("reference", "comparison")
-            }
-        else:
-            # Estimated on both, and checked for having settled. A correlation
-            # time that is still rising with trajectory length is a lower
-            # bound, which makes the block count below an *upper* bound: it can
-            # clear MINIMUM_BLOCKS on a number the data does not support.
-            left = correlation_time_estimate(ref_rep, circular=use_circular)
-            right = correlation_time_estimate(rep, circular=use_circular)
-            correlation_profiles = {
-                name: {
-                    "summary": estimate.summary,
-                    "assessable_features": estimate.n_assessable_features,
-                    "sampled_features": estimate.n_sampled_features,
-                    "assessable_feature_columns": list(
-                        estimate.assessable_features
-                    ),
-                    "sampled_feature_columns": list(estimate.sampled_features),
-                    "slow_feature_columns": list(estimate.slow_features),
-                }
-                for name, estimate in (
-                    ("reference", left), ("comparison", right)
-                )
-            }
-            tau = max(left.tau, right.tau)
-            tau_converged = bool(left.converged and right.converged)
-            # A trend that could not be fitted is not a trend that was found.
-            # "Unverified" and "known to be rising" are different statements
-            # and the warning below distinguishes them.
-            tau_assessable = bool(
-                np.isfinite(left.slope) and np.isfinite(right.slope)
-            )
-        use_blocks = tau > 1.0 or block_permutation is True
     if legacy:
         raw_local = jsd_local(
             ref_rep, rep, x_min, x_max, x_num, False, weights_ref, weights, metric
@@ -657,25 +775,75 @@ def dissimilarity(
         noise_floor_assessable = True
         withheld = False
     else:
-        # Subsample once, then use the same matrices for the observed statistic
-        # and for every relabelling: the null must be built from exactly the
-        # data the observation was made on, or it calibrates the wrong thing.
-        reference_sample, w_ref = _subsample(
-            ref_rep, sample_size, rng, weights_ref, preserve_order=use_blocks
+        sample_ref = _structured_subsample(
+            ref_rep, weights_ref, sample_size, rng, kind_ref, replica_labels_ref
         )
-        other_sample, w_other = _subsample(
-            rep, sample_size, rng, weights, preserve_order=use_blocks
+        sample_other = _structured_subsample(
+            rep, weights, sample_size, rng, kind_other, replica_labels
         )
+        reference_sample, w_ref = sample_ref.matrix, sample_ref.weights
+        other_sample, w_other = sample_other.matrix, sample_other.weights
 
-        # The test can only claim the independent units that actually reached
-        # it. Planning on the original trajectory and then testing a shorter
-        # sample overstates the number of blocks and can turn a refusal into a
-        # reported p-value.
+        plans = (
+            plan_floor(
+                reference_sample,
+                sampling_kind=kind_ref,
+                correlation_time_frames=correlation_time_frames_ref,
+                replica_labels=sample_ref.replica_labels,
+                circular=use_circular,
+            ),
+            plan_floor(
+                other_sample,
+                sampling_kind=kind_other,
+                correlation_time_frames=correlation_time_frames,
+                replica_labels=sample_other.replica_labels,
+                circular=use_circular,
+            ),
+        )
+        tau = max(plan.correlation_time for plan in plans)
+        tau_converged = all(plan.correlation_time_converged for plan in plans)
+        correlation_profiles = {
+            name: {
+                "summary": plan.correlation_summary,
+                "assessable_features": plan.n_assessable_features,
+                "sampled_features": plan.n_sampled_features,
+                "assessable_feature_columns": list(plan.assessable_features),
+                "sampled_feature_columns": list(plan.sampled_features),
+                "slow_feature_columns": list(plan.slow_features),
+            }
+            for name, plan in zip(("reference", "comparison"), plans)
+        }
+        native_unit_lengths = (
+            _native_unit_length(sample_ref, plans[0]),
+            _native_unit_length(sample_other, plans[1]),
+        )
+        native_units = (
+            _comparison_units(sample_ref, native_unit_lengths[0]),
+            _comparison_units(sample_other, native_unit_lengths[1]),
+        )
+        effective_native_units = (
+            _effective_units(
+                native_units[0], w_ref, reference_sample.shape[0]
+            ),
+            _effective_units(
+                native_units[1], w_other, other_sample.shape[0]
+            ),
+        )
+        common_unit_length = max(native_unit_lengths)
+        units_ref = _comparison_units(sample_ref, common_unit_length)
+        units_other = _comparison_units(sample_other, common_unit_length)
+        use_blocks = bool(
+            common_unit_length > 1
+            or sample_ref.replica_labels is not None
+            or sample_other.replica_labels is not None
+        )
+        block_length = common_unit_length
+        n_blocks = min(len(units_ref), len(units_other))
+        effective_permutation_units = (
+            _effective_units(units_ref, w_ref, reference_sample.shape[0]),
+            _effective_units(units_other, w_other, other_sample.shape[0]),
+        )
         sampled_smaller = min(reference_sample.shape[0], other_sample.shape[0])
-        if use_blocks:
-            block_length, n_blocks = plan_blocks(sampled_smaller, tau)
-        else:
-            block_length, n_blocks = 1, sampled_smaller
 
         raw_local = jsd_local(
             reference_sample, other_sample, x_min, x_max, x_num, use_circular,
@@ -693,7 +861,9 @@ def dissimilarity(
         null = permutation_null(
             n_jobs, statistic,
             reference_sample, other_sample,
-            n_permutations, rng, w_ref, w_other, block_length,
+            n_permutations, rng, w_ref, w_other,
+            units_a=units_ref if use_blocks else None,
+            units_b=units_other if use_blocks else None,
         )
         p_values = studentised_p_values(raw_local, null)
 
@@ -707,40 +877,44 @@ def dissimilarity(
         # log-slope of a noisy estimate hovering near 1 trips easily, so
         # without this the warning fires on every small dataset -- which is how
         # a warning stops being read.
-        if not tau_converged and tau >= _WARN_ABOVE_TAU:
-            if tau_assessable:
+        for name, plan in zip(("reference", "comparison"), plans):
+            if (
+                not plan.correlation_time_converged
+                and plan.correlation_time >= _WARN_ABOVE_TAU
+            ):
                 warnings.warn(
-                    f"The correlation time is still rising with trajectory "
-                    f"length, so the estimate of about {tau:.0f} frames is a "
-                    f"lower bound rather than a value. Everything derived "
-                    f"from it is correspondingly optimistic: the {n_blocks} "
-                    f"blocks below are an upper bound, and so is the "
+                    f"The {name} correlation time is still rising with "
+                    f"trajectory length, so its estimate of about "
+                    f"{plan.correlation_time:.0f} frames is a lower bound. "
+                    f"Everything derived from it is correspondingly "
+                    f"optimistic: the independent-unit count and the "
                     f"effective sample size. Sample this system for longer "
                     f"before treating the per-residue calls as settled.",
                     UserWarning,
                     stacklevel=3,
                 )
-            else:
-                warnings.warn(
-                    f"The trajectory is too short to check whether its "
-                    f"correlation time of about {tau:.0f} frames has settled: "
-                    f"fitting the trend needs several nested prefixes and "
-                    f"there are not enough frames for them. The estimate is "
-                    f"used, and it is unverified rather than known to be "
-                    f"wrong.",
-                    UserWarning,
-                    stacklevel=3,
-                )
 
-        withheld = block_length > 1 and n_blocks < MINIMUM_BLOCKS
+        withheld = use_blocks and (
+            n_blocks < MINIMUM_BLOCKS
+            or min(effective_permutation_units) < MINIMUM_BLOCKS
+        )
         if withheld:
             # Fewer independent units than a p-value can be built from. The
             # floor is still measured and still means something; the p-value
             # would not, so it is withheld rather than printed.
             p_values = np.ones_like(p_values)
+            effective_detail = (
+                ""
+                if (
+                    min(effective_permutation_units) >= MINIMUM_BLOCKS
+                    or (w_ref is None and w_other is None)
+                )
+                else f", only {min(effective_permutation_units):.1f} effective "
+                f"after weighting"
+            )
             warnings.warn(
                 f"A correlation time of about {tau:.0f} frames leaves only "
-                f"{n_blocks} independent blocks in "
+                f"{n_blocks} independent blocks{effective_detail} in "
                 f"{sampled_smaller} sampled frames, fewer than the "
                 f"{MINIMUM_BLOCKS} a permutation p-value can be built from. No "
                 f"p-value is reported, and the split-half floor has too few "
@@ -757,7 +931,11 @@ def dissimilarity(
             max(MINIMUM_FLOOR_REPEATS, s_num),
             rng,
             weights=(w_ref, w_other),
-            block_lengths=(block_length, block_length),
+            block_lengths=tuple(plan.block_length for plan in plans),
+            replica_labels=(
+                sample_ref.replica_labels,
+                sample_other.replica_labels,
+            ),
         )
         noise_floor_distribution = np.asarray(floor_distribution, dtype=np.float64)
         global_floor_distribution = noise_floor_distribution.mean(axis=1)
@@ -765,7 +943,10 @@ def dissimilarity(
         noise_floor_threshold = float(
             np.quantile(global_floor_distribution, FLOOR_QUANTILE)
         )
-        noise_floor_assessable = not use_blocks or n_blocks >= MINIMUM_BLOCKS
+        noise_floor_assessable = bool(
+            all(plan.assessable for plan in plans)
+            and min(effective_native_units) >= MINIMUM_FLOOR_UNITS
+        )
 
     significant = p_values < alpha
     local = np.where(significant, raw_local, 0.0)
@@ -784,19 +965,45 @@ def dissimilarity(
     if legacy:
         sampled_frames = [int(ref_rep.shape[0]), int(rep.shape[0])]
         sampling_strategy = "bootstrap (2.0)"
+        sampling_strategies = [sampling_strategy, sampling_strategy]
+        sample_selection = []
+        sampling_plans = []
+        sampling_units = sampled_frames
+        native_sampling_units = sampled_frames
+        sampling_unit_sizes = []
+        effective_permutation_result = n_eff
+        effective_result = n_eff
     else:
         sampled_frames = [
             int(reference_sample.shape[0]), int(other_sample.shape[0])
         ]
-        no_subsample = sampled_frames == [
-            int(ref_rep.shape[0]), int(rep.shape[0])
+        sampling_strategies = [sample_ref.strategy, sample_other.strategy]
+        sampling_strategy = (
+            sampling_strategies[0]
+            if sampling_strategies[0] == sampling_strategies[1]
+            else "per-ensemble"
+        )
+        sample_selection = [
+            {
+                "original_frames": int(original.shape[0]),
+                "sampled_frames": int(sample.matrix.shape[0]),
+                "sampling_strategy": sample.strategy,
+                "frame_ranges": _sample_ranges(sample.frame_indices),
+            }
+            for original, sample in (
+                (ref_rep, sample_ref),
+                (rep, sample_other),
+            )
         ]
-        if no_subsample:
-            sampling_strategy = "all frames"
-        elif use_blocks:
-            sampling_strategy = "contiguous window"
-        else:
-            sampling_strategy = "uniform without replacement"
+        sampling_plans = [_floor_plan_metadata(plan) for plan in plans]
+        sampling_units = [len(units_ref), len(units_other)]
+        native_sampling_units = [len(units) for units in native_units]
+        sampling_unit_sizes = [
+            [int(unit.size) for unit in units_ref],
+            [int(unit.size) for unit in units_other],
+        ]
+        effective_permutation_result = effective_permutation_units
+        effective_result = effective_native_units
 
     return ComparisonResult(
         ensemble_index=ensemble_index,
@@ -812,7 +1019,7 @@ def dissimilarity(
         noise_floor_threshold=noise_floor_threshold,
         noise_floor_assessable=noise_floor_assessable,
         noise_floor_distribution=noise_floor_distribution,
-        effective_samples=n_eff,
+        effective_samples=effective_result,
         correlation_time=float(tau),
         correlation_time_converged=bool(tau_converged),
         n_blocks=int(n_blocks),
@@ -825,16 +1032,23 @@ def dissimilarity(
             "sample_size": sample_size,
             "sampled_frames": sampled_frames,
             "sampling_strategy": sampling_strategy,
+            "sampling_strategies": sampling_strategies,
+            "sample_selection": sample_selection,
+            "sampling_plans": sampling_plans,
+            "input_time_stride": [time_stride_ref, time_stride],
             "block_length": int(block_length),
+            "permutation_units": sampling_units,
+            "effective_permutation_units": list(effective_permutation_result),
+            "permutation_unit_sizes": sampling_unit_sizes,
+            "native_sampling_units": native_sampling_units,
             "correlation_profiles": correlation_profiles,
             "noise_floor_quantile": FLOOR_QUANTILE,
             "null": "bootstrap (2.0)" if legacy else "permutation",
             "metric": "jsd" if legacy else metric,
             "weighted": (weights_ref is not None) or (weights is not None),
-            "effective_samples": [
-                effective_sample_size(weights_ref, ref_rep.shape[0]),
-                effective_sample_size(weights, rep.shape[0]),
-            ],
+            "effective_samples": list(effective_result),
+            "frame_weight_effective_samples": list(n_eff),
+            "weights_attached_to_observations": True,
             "legacy": legacy,
         },
     )

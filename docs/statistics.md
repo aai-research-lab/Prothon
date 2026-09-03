@@ -191,9 +191,12 @@ effective sample size (Kish 1965),
 $$n_{\text{eff}} = \frac{\left(\sum_i w_i\right)^2}{\sum_i w_i^2},$$
 
 gives the number that matters: a thousand frames in which one conformer carries
-half the probability is worth **four** independent samples. Sizing a noise floor
-by the frame count instead would produce error bars for an ensemble nobody
-sampled.
+half the probability is worth **four** independent samples. For a trajectory,
+weights are first summed within each temporal block (or complete replica) and
+Kish's count is applied to those independent-unit masses. This combines weight
+concentration and time correlation instead of reporting either correction in
+isolation. Sizing a noise floor by the frame count would produce error bars for
+an ensemble nobody sampled.
 
 Prothon warns below 50 effective samples and refuses below 10.
 

@@ -147,6 +147,8 @@ class TestTheFloor:
             "temporal blocks",
             "temporal blocks",
         ]
+        assert blocked.effective_samples == pytest.approx((25.0, 25.0))
+        assert iid.effective_samples == pytest.approx((1000.0, 1000.0))
 
     def test_floor_distribution_and_lower_tail_threshold_are_recorded(self):
         reference = ensemble(seed=1)

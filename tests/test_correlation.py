@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from prothon.compare.dissimilarity import _subsample, dissimilarity
+from prothon.compare.dissimilarity import _structured_subsample, dissimilarity
 from prothon.sampling.correlation import (
     MINIMUM_BLOCKS,
     block_labels,
@@ -37,21 +37,22 @@ def ou(n_frames, n_features, tau, rng, mean=0.0):
 class TestTrajectorySubsampling:
     def test_a_trajectory_is_reduced_to_one_contiguous_window(self):
         data = np.arange(5000, dtype=float)[:, None]
-        sampled, _ = _subsample(
-            data, 1000, np.random.default_rng(0), preserve_order=True
+        sample = _structured_subsample(
+            data, None, 1000, np.random.default_rng(0), "trajectory", None
         )
-        assert sampled.shape == (1000, 1)
-        np.testing.assert_array_equal(np.diff(sampled[:, 0]), np.ones(999))
+        assert sample.matrix.shape == (1000, 1)
+        np.testing.assert_array_equal(np.diff(sample.matrix[:, 0]), np.ones(999))
+        assert sample.strategy == "contiguous window"
 
     def test_weights_stay_attached_to_the_contiguous_frames(self):
         data = np.arange(100, dtype=float)[:, None]
         weights = np.arange(1, 101, dtype=float)
-        sampled, sampled_weights = _subsample(
-            data, 20, np.random.default_rng(3), weights, preserve_order=True
+        sample = _structured_subsample(
+            data, weights, 20, np.random.default_rng(3), "trajectory", None
         )
-        indices = sampled[:, 0].astype(int)
+        indices = sample.matrix[:, 0].astype(int)
         expected = weights[indices] / weights[indices].sum()
-        np.testing.assert_allclose(sampled_weights, expected)
+        np.testing.assert_allclose(sample.weights, expected)
 
 
 class TestCorrelationTime:
@@ -342,6 +343,104 @@ class TestWholeBlockPermutation:
             2, *arguments, rng=np.random.default_rng(7), block_length=4
         )
         np.testing.assert_array_equal(serial, parallel)
+
+    def test_asymmetric_units_are_never_split(self):
+        labels_ref = np.repeat([0.0, 1.0], [4, 6])
+        labels_other = np.repeat([2.0, 3.0, 4.0], [3, 3, 4])
+        reference = np.column_stack([labels_ref, labels_ref])
+        other = np.column_stack([labels_other, labels_other])
+        units_ref = [np.arange(4), np.arange(4, 10)]
+        units_other = [np.arange(3), np.arange(3, 6), np.arange(6, 10)]
+
+        null = permutation_null(
+            1,
+            self._split_count_and_left_size,
+            reference,
+            other,
+            n_permutations=100,
+            rng=np.random.default_rng(4),
+            units_a=units_ref,
+            units_b=units_other,
+        )
+
+        np.testing.assert_array_equal(null[:, 0], np.zeros(100))
+        assert np.unique(null[:, 1]).size > 1
+
+    def test_sparse_unit_weights_never_make_an_empty_candidate(self):
+        reference, other = self._labelled_ensembles()
+        units = [np.arange(4), np.arange(4, 10)]
+        weights_ref = np.r_[np.full(4, 0.25), np.zeros(6)]
+        weights_other = np.r_[np.full(4, 0.25), np.zeros(6)]
+
+        def weighted_difference(left, right, weights_left, weights_right):
+            difference = np.average(left[:, 0], weights=weights_left) - np.average(
+                right[:, 0], weights=weights_right
+            )
+            return np.array([difference, difference])
+
+        null = permutation_null(
+            1,
+            weighted_difference,
+            reference,
+            other,
+            n_permutations=100,
+            rng=np.random.default_rng(6),
+            weights_a=weights_ref,
+            weights_b=weights_other,
+            units_a=units,
+            units_b=units,
+        )
+
+        assert np.isfinite(null).all()
+
+
+class TestPerEnsembleSampling:
+    def test_a_trajectory_and_iid_model_keep_different_native_plans(self):
+        rng = np.random.default_rng(123)
+        reference = ou(900, 4, 10.0, rng)
+        model = rng.normal(size=(900, 4))
+
+        result = dissimilarity(
+            reference,
+            model,
+            -5,
+            5,
+            x_num=25,
+            s_num=3,
+            n_permutations=20,
+            sample_size=600,
+            random_state=0,
+            sampling_kind_ref="trajectory",
+            sampling_kind="iid",
+            correlation_time_frames_ref=10.0,
+        )
+
+        plans = result.metadata["sampling_plans"]
+        assert [plan["sampling_kind"] for plan in plans] == ["trajectory", "iid"]
+        assert [plan["native_block_length"] for plan in plans] == [20, 1]
+        assert result.metadata["sampling_strategies"] == [
+            "contiguous window",
+            "uniform without replacement",
+        ]
+        # The null uses equal-sized exchange units without pretending the IID
+        # model itself has temporal autocorrelation. Its native floor remains
+        # frame based.
+        assert result.metadata["permutation_units"] == [30, 30]
+        assert result.metadata["noise_floor_quantile"] == 0.95
+
+    def test_the_old_false_boolean_cannot_override_explicit_provenance(self):
+        rng = np.random.default_rng(124)
+        a, b = rng.normal(size=(100, 2)), rng.normal(size=(100, 2))
+        with pytest.raises(ValueError, match="cannot be combined"):
+            dissimilarity(
+                a,
+                b,
+                -4,
+                4,
+                block_permutation=False,
+                sampling_kind_ref="trajectory",
+                sampling_kind="iid",
+            )
 
 
 class TestCorrelationAwareFloor:

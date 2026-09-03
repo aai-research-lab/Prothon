@@ -371,6 +371,35 @@ class TestOneImport:
         assert "replica_labels_b" not in captured
         assert ("feature_index" in captured) == (method == "c2st")
 
+    def test_per_residue_comparison_receives_the_sampling_provenance(self):
+        reference = Ensemble(
+            build(as_residues(SEQ), n_frames=80, seed=42),
+            provenance={
+                "kind": "trajectory-set",
+                "sampling_kind": "trajectory",
+                "frames_per_file": [40, 40],
+                "stride": 5,
+            },
+        )
+        generated = Ensemble(
+            build(as_residues(SEQ), n_frames=80, seed=43),
+            provenance={"kind": "pdb-models", "sampling_kind": "iid"},
+        )
+        study = Prothon([reference, generated], random_state=0)
+
+        with pytest.warns(UserWarning, match="independent blocks"):
+            result = study.compare_ensembles(
+                "cbcn", s_num=2, n_permutations=5
+            )["cbcn"][0]
+
+        assert [
+            plan["sampling_kind"] for plan in result.metadata["sampling_plans"]
+        ] == ["trajectory", "iid"]
+        assert result.metadata["sampling_plans"][0]["strategy"] == (
+            "independent replicas"
+        )
+        assert result.metadata["input_time_stride"] == [5, 1]
+
     def test_one_ensemble_can_be_loaded_without_a_study(self, files):
         from prothon import Prothon
 
@@ -449,6 +478,9 @@ class TestNothingIsUnreachable:
             "reference", "other", "ref_rep", "rep", "x_min", "x_max",
             "circular", "weights", "weights_ref", "ensemble_index",
             "reference_index", "order_parameter", "random_state",
+            "sampling_kind", "sampling_kind_ref", "replica_labels",
+            "replica_labels_ref", "correlation_time_frames_ref",
+            "time_stride", "time_stride_ref",
         }
         estimator = set(inspect.signature(dissimilarity).parameters) - internal
         study = set(inspect.signature(Prothon.compare_ensembles).parameters)

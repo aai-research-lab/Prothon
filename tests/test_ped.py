@@ -108,6 +108,7 @@ class TestLoading:
         ensemble = ped_ensemble("PED99999", cache_dir=str(tmp_path))
         assert ensemble.n_frames == 4
         assert ensemble.provenance["kind"] == "ped"
+        assert ensemble.provenance["sampling_kind"] == "iid"
         assert ensemble.provenance["accession"] == "PED99999"
 
     def test_a_download_is_cached(self, tmp_path, monkeypatch):

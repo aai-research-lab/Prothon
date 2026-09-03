@@ -53,6 +53,8 @@ import numpy as np
 from ..sampling.floor import (
     FLOOR_QUANTILE,
     MINIMUM_FLOOR_REPEATS,
+    MINIMUM_FLOOR_UNITS,
+    effective_floor_units,
     plan_floor,
     split_half_floor,
 )
@@ -109,6 +111,9 @@ class PrecisionRecall:
         False when fewer than eight independent frames, temporal blocks, or
         replicas were available. Floor values remain descriptive, while
         missed and invented calls are withheld.
+    effective_samples
+        Kish effective count after weights have been aggregated within each
+        ensemble's native frames, temporal blocks, or replicas.
     coverage
         The level defining the support, and the value both quantities take
         under identical distributions.
@@ -425,6 +430,20 @@ def precision_recall(
             circular=circular,
         ),
     )
+    effective_units = tuple(
+        effective_floor_units(
+            matrix.shape[0],
+            ensemble_weights,
+            plan.block_length,
+            labels,
+        )
+        for matrix, ensemble_weights, plan, labels in zip(
+            (reference, other),
+            (weights_ref, weights),
+            plans,
+            (replica_labels_ref, replica_labels),
+        )
+    )
     for name, plan in zip(("reference", "comparison"), plans):
         if not plan.correlation_time_converged and plan.correlation_time >= 2.0:
             warnings.warn(
@@ -467,11 +486,17 @@ def precision_recall(
         np.quantile(floor_r, lower_tail, axis=0) - FLOOR_MARGIN_MIN, 0.0, 1.0
     )
 
-    floor_assessable = all(plan.assessable for plan in plans)
+    floor_assessable = bool(
+        all(plan.assessable for plan in plans)
+        and min(effective_units) >= MINIMUM_FLOOR_UNITS
+    )
     if not floor_assessable:
         detail = ", ".join(
-            f"{name}: {plan.n_units} {plan.strategy}"
-            for name, plan in zip(("reference", "comparison"), plans)
+            f"{name}: {plan.n_units} {plan.strategy}, {effective:.1f} "
+            f"weight-effective"
+            for name, plan, effective in zip(
+                ("reference", "comparison"), plans, effective_units
+            )
         )
         warnings.warn(
             f"Too few independent units are available for the "
@@ -496,7 +521,7 @@ def precision_recall(
         floor_assessable=floor_assessable,
         coverage=coverage,
         feature_index=None if feature_index is None else np.asarray(feature_index),
-        effective_samples=n_eff,
+        effective_samples=effective_units,
         order_parameter=order_parameter,
         metadata={
             "grid_points": x_num,
@@ -528,6 +553,8 @@ def precision_recall(
             ],
             "floor_block_length": [plan.block_length for plan in plans],
             "floor_units": [plan.n_units for plan in plans],
+            "floor_effective_units": list(effective_units),
+            "frame_weight_effective_samples": list(n_eff),
         },
     )
     logger.info("%s", result.summary().replace("\n", "; "))

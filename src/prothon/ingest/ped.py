@@ -235,6 +235,7 @@ def ped_ensemble(
         label=label or f"{identifier}/{ensemble_id}",
         provenance={
             "kind": "ped",
+            "sampling_kind": "iid",
             "accession": identifier,
             "ensemble_id": ensemble_id,
             "api": PED_API,

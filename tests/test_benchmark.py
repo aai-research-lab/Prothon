@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 
+import mdtraj as md
+import numpy as np
 import pytest
 from test_ingest import as_residues, build
 
@@ -22,6 +24,7 @@ def ensemble(n, seed, label, compact=None):
     return Ensemble(
         build(as_residues(SEQ), n_frames=n, seed=seed, compact_from=compact),
         label=label,
+        provenance={"kind": "synthetic", "sampling_kind": "iid"},
     )
 
 
@@ -72,6 +75,8 @@ class TestTheTable:
         assert payload["reference"] == "MD"
         assert payload["rows"][0]["model"] == "m"
         assert "margin" in payload["rows"][0]
+        assert payload["settings"]["n_permutations"] == 100
+        assert payload["rows"][0]["analysis_settings"] == payload["settings"]
 
     def test_no_models_is_refused(self, reference):
         with pytest.raises(ValueError, match="No models"):
@@ -132,6 +137,10 @@ class TestSamplingIsPartOfTheResult:
         assert rows["tiny"].refused
         assert rows["tiny"].dissimilarity is None
         assert rows["tiny"].verdict == "refused"
+        assert rows["tiny"].metadata["prothon_version"]
+        assert rows["tiny"].metadata["analysis_settings"]
+        assert rows["tiny"].metadata["effective_samples"] is None
+        assert rows["tiny"].metadata["refusal_details"]["reason"]
         assert rows["fine"].dissimilarity is not None   # the others survive
 
     def test_a_refused_row_renders(self, reference):
@@ -150,3 +159,83 @@ class TestAsymmetry:
         forward = benchmark(reference, [model], order_parameters="cbcn", random_state=0).rows[0]
         backward = benchmark(model, [reference], order_parameters="cbcn", random_state=0).rows[0]
         assert forward.recall == pytest.approx(backward.precision, abs=0.05)
+
+
+class TestSamplingProvenanceAndWeights:
+    def test_a_trajectory_reference_and_iid_model_keep_separate_plans(self, reference):
+        trajectory_reference = Ensemble(
+            reference.trajectory,
+            label="MD trajectory",
+            provenance={
+                "kind": "trajectory",
+                "sampling_kind": "trajectory",
+                "correlation_time_frames": 10.0,
+                "stride": 5,
+            },
+        )
+        model = ensemble(800, 20, "generated")
+        row = benchmark(
+            trajectory_reference,
+            [model],
+            order_parameters="cbcn",
+            random_state=0,
+            x_num=30,
+            n_permutations=10,
+        ).rows[0]
+
+        provenance = row.metadata["sampling_provenance"]
+        assert provenance["reference"]["sampling_kind"] == "trajectory"
+        assert provenance["reference"]["time_stride"] == 5
+        assert provenance["model"]["sampling_kind"] == "iid"
+        assert [plan["sampling_kind"] for plan in row.metadata["sampling_plans"]] == [
+            "trajectory",
+            "iid",
+        ]
+        assert row.metadata["permutation_blocks"]["common_block_length"] == 20
+        assert row.metadata["coverage_floor"]["block_length"] == [20, 1]
+        assert row.metadata["effective_samples"][0] < row.n_reference
+        assert row.metadata["effective_samples"][1] == pytest.approx(row.n_model)
+        assert row.metadata["permutation_blocks"]["effective_units"][1] < row.n_model
+
+    def test_reweighting_changes_the_rank(self, reference):
+        matching = ensemble(600, 21, "matching")
+        collapsed = ensemble(600, 22, "collapsed", compact=6)
+        mixed = md.join([matching.trajectory, collapsed.trajectory])
+        weights = np.r_[np.full(600, 0.99 / 600), np.full(600, 0.01 / 600)]
+        models = [
+            Ensemble(
+                mixed,
+                label="unweighted",
+                provenance={"kind": "synthetic", "sampling_kind": "iid"},
+            ),
+            Ensemble(
+                mixed,
+                label="reweighted",
+                weights=weights,
+                provenance={"kind": "synthetic", "sampling_kind": "iid"},
+            ),
+        ]
+
+        result = benchmark(
+            reference,
+            models,
+            order_parameters="cbcn",
+            random_state=0,
+            x_num=30,
+            n_permutations=10,
+        )
+        rows = {row.model: row for row in result.rows}
+
+        assert rows["reweighted"].margin < rows["unweighted"].margin
+        assert result.table().index("unweighted") < result.table().index("reweighted")
+        assert rows["reweighted"].metadata["weighted"] == [False, True]
+        assert rows["reweighted"].metadata["frame_weight_effective_samples"][1] < 700
+        assert rows["reweighted"].metadata["coverage_floor"]["effective_units"][1] < 700
+
+    def test_one_boolean_cannot_override_two_sampling_provenances(self, reference):
+        with pytest.raises(ValueError, match="cannot describe a benchmark"):
+            benchmark(
+                reference,
+                [ensemble(100, 23, "generated")],
+                block_permutation=False,
+            )

@@ -68,18 +68,34 @@ def _one_permutation(
     run agree.
     """
     rng = np.random.default_rng(seeds[k])
-    if blocks is None:
-        order = rng.permutation(total)
-        left, right = order[:n_reference], order[n_reference:]
+    for _attempt in range(128):
+        if blocks is None:
+            order = rng.permutation(total)
+            left, right = order[:n_reference], order[n_reference:]
+        else:
+            # Blocks are the observations in this design. Preserve the number
+            # assigned to each ensemble, but allow frame counts to vary when
+            # the complete units have unequal sizes. Cutting at ``n_reference``
+            # would keep the frame count exact only by splitting a unit.
+            shuffled = rng.permutation(len(blocks))
+            left = np.concatenate([
+                blocks[i] for i in shuffled[:n_reference_blocks]
+            ])
+            right = np.concatenate([
+                blocks[i] for i in shuffled[n_reference_blocks:]
+            ])
+        if not weighted or (pooled_w[left].sum() > 0 and pooled_w[right].sum() > 0):
+            break
     else:
-        # Blocks are the observations in this design. Preserve the number of
-        # blocks assigned to each ensemble, but allow their frame counts to
-        # vary when a trailing stub made some blocks longer than others.
-        # Cutting the concatenated blocks at ``n_reference`` would keep the
-        # frame count exact only by splitting whichever block crosses it.
-        shuffled = rng.permutation(len(blocks))
-        left = np.concatenate([blocks[i] for i in shuffled[:n_reference_blocks]])
-        right = np.concatenate([blocks[i] for i in shuffled[n_reference_blocks:]])
+        # Valid original weights guarantee this assignment has mass on both
+        # sides. It is a deterministic last resort for extremely sparse
+        # weights, where blind random relabellings can repeatedly make an
+        # empty-probability candidate class.
+        if blocks is None:
+            left, right = np.arange(n_reference), np.arange(n_reference, total)
+        else:
+            left = np.concatenate(blocks[:n_reference_blocks])
+            right = np.concatenate(blocks[n_reference_blocks:])
     wl = wr = None
     if weighted:
         wl, wr = pooled_w[left], pooled_w[right]
@@ -135,6 +151,8 @@ def permutation_null(
     weights_a=None,
     weights_b=None,
     block_length: int = 1,
+    units_a=None,
+    units_b=None,
 ) -> np.ndarray:
     """Distances between two groups formed by relabelling the pooled frames.
 
@@ -142,6 +160,11 @@ def permutation_null(
     labels carry no information, so any relabelling is as likely as the one
     observed. The distances obtained from many relabellings are the null
     distribution of the statistic, and no assumption about its shape is needed.
+
+    ``units_a`` and ``units_b`` may supply complete local-frame index arrays
+    for asymmetric sampling designs, such as temporal blocks against grouped
+    IID observations or complete replicas. Both must be supplied together;
+    they take precedence over ``block_length``.
 
     Returns ``(n_permutations, n_features)``.
     """
@@ -162,10 +185,33 @@ def permutation_null(
         if weighted else None
     )
 
+    def checked_units(raw_units, n_frames, label):
+        checked = [np.asarray(unit, dtype=int).ravel() for unit in raw_units]
+        if not checked or any(unit.size == 0 for unit in checked):
+            raise ValueError(f"{label} permutation units must be non-empty.")
+        joined = np.concatenate(checked)
+        if (
+            np.any(joined < 0)
+            or np.any(joined >= n_frames)
+            or np.unique(joined).size != joined.size
+            or np.unique(joined).size != n_frames
+        ):
+            raise ValueError(
+                f"{label} permutation units must cover every frame exactly once."
+            )
+        return checked
+
+    if (units_a is None) != (units_b is None):
+        raise ValueError("Supply permutation units for both ensembles or neither.")
+    if units_a is not None:
+        local_a = checked_units(units_a, n_reference, "Reference")
+        local_b = checked_units(units_b, total - n_reference, "Comparison")
+        blocks = local_a + [n_reference + unit for unit in local_b]
+        n_reference_blocks = len(local_a)
     # Blocks of consecutive frames are the exchangeable unit, not frames. Each
     # ensemble is blocked separately, because they are separate trajectories
     # and a block must not straddle the join between them.
-    if block_length > 1:
+    elif block_length > 1:
         labels_a = block_labels(n_reference, block_length)
         labels_b = block_labels(total - n_reference, block_length) + labels_a[-1] + 1
         labels = np.concatenate([labels_a, labels_b])

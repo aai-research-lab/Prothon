@@ -68,11 +68,13 @@ Both are reported per residue, so the answer names positions rather than
 scoring a whole ensemble: *misses states at 8 residues* is something a model
 developer can act on.
 
-Each carries its own floor, measured by assigning complete temporal blocks of
-the reference to two halves. That floor is per residue — a rigid residue and a
-mobile one are not equally easy to cover. Missed and invented calls use the
-lower tail of the stored split distribution rather than its mean, and are
-withheld when fewer than eight independent units are available.
+Each carries its own floor, measured by splitting both ensembles into their
+own independent units: complete temporal blocks for a trajectory, complete
+replicas where those are declared, and individual structures for IID output.
+That floor is per residue — a rigid residue and a mobile one are not equally
+easy to cover. Missed and invented calls use the lower tail of the stored split
+distribution rather than its mean, and are withheld when either side has fewer
+than eight independent units.
 
 ## Refusals are results
 
@@ -86,15 +88,26 @@ produces a row saying so, rather than a number:
 The other models in the run are unaffected. A benchmark that raises on one
 model loses the rest; a benchmark that invents a number for it is worse.
 
-## Conformations from a model are not a trajectory
+## Each ensemble keeps its own sampling provenance
 
-Samples from a generative model are independent draws, so there is no time
-correlation to block against and blocking would cost resolution for nothing.
-The benchmark passes `block_permutation=False` for this reason.
+Samples loaded from separate model PDBs are independent draws; a molecular
+dynamics reference is a correlated trajectory. One `block_permutation`
+Boolean cannot describe both. The benchmark therefore resolves the provenance
+of each ensemble separately and never labels every model IID by assumption:
 
-If a "model" being compared is itself a molecular dynamics trajectory — one
-force field against another, say — pass `block_permutation=None` to let the
-correlation time be estimated. See [the statistics](statistics.md).
+- `Ensemble.from_trajectory` is a trajectory and has its correlation time
+  estimated unless one was supplied in `provenance`.
+- `Ensemble.from_pdb_models` is IID.
+- `Ensemble.from_files` preserves complete files as independent replica units.
+- A directly constructed `Ensemble` defaults conservatively to trajectory
+  sampling. Set `provenance={"sampling_kind": "iid"}` only when its rows truly
+  are independent.
+
+For a mixed trajectory/IID comparison, the permutation null groups IID rows to
+the trajectory's block length so unlike units are not exchanged. This grouping
+does not invent autocorrelation in the model: its precision/recall floor still
+uses individual IID rows. Probability weights remain attached to their
+conformations throughout both calculations. See [the statistics](statistics.md).
 
 ## From Python
 
@@ -114,7 +127,9 @@ result.write("results/")
 ```
 
 `benchmark.json` carries every number, including the per-residue lists of
-missed and invented states.
+missed and invented states. It also records the Prothon version, all analysis
+settings, input provenance, weight-only and time-corrected effective sample
+sizes, the final block or replica plans, and any refusal reason in every row.
 
 ## Across many targets
 
