@@ -331,6 +331,44 @@ class TestOneImport:
         assert set(Prothon.metrics()) == {"jsd", "wasserstein", "ks"}
         assert "rg" in Prothon.observables()
 
+    def test_mmd_receives_the_sampling_provenance(self, monkeypatch):
+        from prothon.compare.joint import EnsembleComparison
+
+        reference = Ensemble(
+            build(as_residues(SEQ), n_frames=80, seed=40),
+            provenance={
+                "kind": "trajectory-set",
+                "frames_per_file": [40, 40],
+                "stride": 5,
+            },
+        )
+        generated = Ensemble(
+            build(as_residues(SEQ), n_frames=80, seed=41),
+            provenance={"kind": "pdb-models"},
+        )
+        study = Prothon([reference, generated], random_state=0)
+        rng = np.random.default_rng(42)
+        study.ensembles_data["cbcn"] = [
+            rng.normal(size=(80, 4)),
+            rng.normal(size=(80, 4)),
+        ]
+        captured = {}
+
+        def fake_compare(*args, **kwargs):
+            captured.update(kwargs)
+            return EnsembleComparison("mmd", 0.0, 1.0)
+
+        monkeypatch.setattr("prothon.compare.joint.distinguishability", fake_compare)
+        study.distinguishability("cbcn", method="mmd")
+
+        assert captured["sampling_kind_a"] == "trajectory"
+        assert captured["sampling_kind_b"] == "iid"
+        assert captured["time_stride_a"] == 5
+        np.testing.assert_array_equal(
+            captured["replica_labels_a"], np.repeat(np.arange(2), 40)
+        )
+        assert "replica_labels_b" not in captured
+
     def test_one_ensemble_can_be_loaded_without_a_study(self, files):
         from prothon import Prothon
 

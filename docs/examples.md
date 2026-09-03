@@ -86,10 +86,11 @@ C2ST: distinguishable (p < 1e-06), AUC = 1.000
   driven mostly by residues 8, 10, 9, 14, 12
 ```
 
-`method="mmd"` runs a kernel two-sample test instead, which gives a calibrated
-p-value and no indication of where the difference is. Quote the AUC rather than
-the p-value: the classifier's null is asymptotic and its far tail is not
-literal.
+`method="mmd"` runs a kernel two-sample test instead. It reports MMD² and, when
+there are enough complete blocks, replicas or explicitly IID rows, a
+sampling-unit permutation p-value; it gives no indication of where the
+difference is. Quote the AUC rather than the C2ST p-value: the classifier's null
+is asymptotic and its far tail is not literal.
 
 ---
 

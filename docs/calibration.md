@@ -204,12 +204,65 @@ Correlation between features raises the rate slightly and then stops mattering:
 is the failure mode that does **not** occur — unlike correlation between
 frames, which is catastrophic.
 
+## Whole-ensemble MMD
+
+The MMD gate was declared before running the corrected implementation: a
+stationary correlated null may reject 0–3 of 20 pairs, and a
+0.5-standard-deviation shift must be detected in at least 8 of 10 pairs. Each trajectory has
+500 frames and four features from an AR(1) process with relaxation time 10. The
+test is supplied the corresponding 20-frame integrated correlation time, uses
+40-frame blocks, 99 relabellings and `alpha=0.05`.
+
+| calculation | calls | predeclared requirement | Wilson 95% CI | result |
+|---|---:|---:|---:|---|
+| corrected block null | 1/20 | 0–3/20 | 0.9–23.6% | pass |
+| deliberately misdeclared IID-row null | 8/8 | diagnostic reproduction | 67.6–100% | audited failure reproduced |
+| shifted block alternative | 10/10 | at least 8/10 | 72.2–100% | pass |
+
+The intervals are deliberately shown even though this is a compact CI gate,
+not a high-precision estimate of the error rate. The important comparisons are
+with the bounds fixed before the run, not with selected seeds after it.
+
+The complete corrected-null p-values were:
+
+```text
+0.53, 0.24, 0.58, 0.35, 0.91, 0.89, 0.85, 0.10, 0.44, 0.47,
+0.17, 0.81, 0.35, 0.32, 0.08, 0.59, 0.36, 0.79, 0.01, 0.18
+```
+
+The complete shifted-alternative p-values were:
+
+```text
+0.01, 0.02, 0.01, 0.01, 0.01, 0.01, 0.02, 0.03, 0.04, 0.03
+```
+
+The same deterministic run exercises the remaining sampling designs under
+their null:
+
+| design | p-value | units per side | effective units per side |
+|---|---:|---:|---:|
+| unequal lengths, 500 versus 700 frames | 0.11 | 12, 17 | 11.79, 16.78 |
+| unequal probability weights, 320 versus 470 IID rows | 0.92 | 320, 470 | 261.32, 289.23 |
+| trajectory versus IID, 500 versus 650 frames | 0.88 | 12, 16 | 11.79, 15.94 |
+| eight independent replicas per side | 0.73 | 8, 8 | 8.00, 8.00 |
+| circular trajectories crossing -pi/+pi | 0.15 | 12, 12 | 11.79, 11.79 |
+
+A final 120-frame case supplies only three 40-frame blocks per side. Its MMD²
+is 0.1492, but its p-value and verdict are withheld as required. Reproduce the
+complete record, including every seed, statistic, null moment, software version
+and gate, with:
+
+```bash
+python scripts/joint_calibration.py --out mmd-calibration.json
+```
+
 ## Reproducing
 
 ```bash
 python scripts/calibration.py --quick                 # minutes
 python scripts/calibration.py --replicates 1000       # the published numbers
 python scripts/calibration.py --study correlation     # the table above
+python scripts/joint_calibration.py                    # deterministic MMD gate
 ```
 
 Replicates are independent, so the script parallelises across cores. A

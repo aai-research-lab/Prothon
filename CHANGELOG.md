@@ -5,6 +5,29 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Fixed — sampling-unit-aware maximum mean discrepancy
+
+- MMD now relabels complete temporal blocks or independent replicas for
+  trajectories and individual rows only for explicitly IID ensembles. Mixed
+  trajectory/IID comparisons group IID observations to the trajectory's block
+  length so unlike sampling units are not exchanged.
+- Probability weights remain attached to their observations during every
+  relabelling. Each candidate group is renormalised only after whole units have
+  been assigned, and unequal input lengths no longer leave the original label
+  encoded in the pooled weight scale.
+- MMD² remains available as an effect measure when inference is underpowered.
+  With fewer than four actual or weight-effective units per side, or too few
+  distinct assignments or requested relabellings to resolve alpha, the p-value
+  and Boolean verdict are explicitly withheld.
+- Result metadata records the two sampling plans, selected frame ranges,
+  input time stride, block/replica sizes, actual and effective unit counts,
+  distinct labelings and attainable p-value resolution. A deterministic JSON
+  calibration runner preserves every seed and result.
+- On the predeclared correlated OU gate, the old IID-row null rejects 8/8
+  controls; the block null rejects 1/20 (acceptable band 0–3/20) and detects
+  10/10 shifted alternatives (target at least 8/10). Fixed unequal-length,
+  weighted, mixed-provenance, replica and circular null fixtures all pass.
+
 ### Fixed — slow features below the upper quartile
 
 - Correlation planning no longer relies on q75 alone. A distinct slow group
@@ -163,10 +186,10 @@ All notable changes to Prothon are recorded here. This project follows
   constructed case with identical marginals, the largest per-residue
   Jensen-Shannon distance is 0.06 — correctly, since each feature really does
   have the same distribution — and both methods here find the difference.
-- **Maximum mean discrepancy** with a permutation null. The squared MMD is a
-  quadratic form in a signed weight vector, so a relabelling is a permutation
-  of that vector rather than a rebuild of the kernel: 200 permutations over a
-  thousand conformations a side take under a tenth of a second.
+- **Maximum mean discrepancy** with a sampling-unit permutation null. The
+  squared MMD is a quadratic form in a signed weight vector; the kernel is
+  built once, then whole blocks, replicas or IID observations are relabelled
+  while probability weights remain attached to their conformations.
 - **Classifier two-sample test**, reporting how separable the ensembles are
   and which features the classifier used — the interpretability MMD cannot
   offer. A random forest rather than a linear model, because two ensembles

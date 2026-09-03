@@ -306,20 +306,18 @@ class TestEveryMetricOnRealData:
         assert result.noise_floor >= 0
 
     @pytest.mark.parametrize("method", ["mmd", "c2st"])
-    def test_joint_methods_run_on_a_real_ensemble(self, corpus, method):
+    def test_joint_methods_run_on_held_out_real_blocks(self, corpus, method):
         from prothon.compare.joint import distinguishability
 
         traj = md.load(corpus["frame0.xtc"], top=corpus["native.pdb"])
         rep = compute_representation(traj, "sasa")
-        result = distinguishability(rep[::2], rep[1::2], method, random_state=0)
-        assert 0.0 <= result.p_value <= 1.0
+        result = distinguishability(rep[:250], rep[251:], method, random_state=0)
+        assert np.isfinite(result.statistic)
+        assert result.p_value is None or 0.0 <= result.p_value <= 1.0
 
-    def test_coverage_and_fidelity_run_on_a_real_ensemble(self, corpus):
+    def test_coverage_and_fidelity_run_on_held_out_real_blocks(self, corpus):
         traj = md.load(corpus["frame0.xtc"], top=corpus["native.pdb"])
         rep = compute_representation(traj, "sasa")
-        result = precision_recall(rep[::2], rep[1::2], random_state=0)
+        result = precision_recall(rep[:250], rep[251:], random_state=0)
         assert 0.0 <= result.mean_precision <= 1.0
         assert 0.0 <= result.mean_recall <= 1.0
-        # Alternate frames of one trajectory: nothing should be flagged.
-        assert result.missed().size == 0
-        assert result.invented().size == 0

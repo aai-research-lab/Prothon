@@ -79,8 +79,23 @@ reproducing kernel Hilbert space and measures the distance between the mean
 embeddings (Gretton et al. 2012). With a characteristic kernel it is zero only
 when the distributions are equal, so it detects any difference given enough
 samples. Prothon uses a Gaussian kernel with the median heuristic bandwidth and
-a permutation null. It gives a calibrated p-value and no indication of where
-the difference is.
+a sampling-unit permutation null. For trajectories it moves complete temporal
+blocks; supplied independent replicas remain complete; only explicitly IID
+ensembles move one row at a time. In a mixed trajectory/IID comparison, IID
+rows are conservatively grouped to the trajectory's block length rather than
+exchanged as though one correlated block and one independent row were
+equivalent.
+
+Probability weights stay attached to their conformations while group labels
+move, and each relabelled group is then renormalised to probability one. MMD²
+is always returned as the magnitude of the difference. If fewer than four
+actual or weight-effective units exist on either side, `p_value` and
+`distinguishable` are `None`: that sampling can measure an effect but cannot
+resolve a 5% permutation decision. The same applies if too few relabellings
+were requested to make the Monte Carlo p-value grid finer than 5%. The result
+records the correlation plans, selected frame ranges, unit sizes, withholding
+reason, input time stride and attainable p-value resolution. MMD gives no
+per-feature indication of where the difference is.
 
 **The classifier two-sample test** (`method="c2st"`) trains a classifier to
 tell the ensembles apart and asks whether it beats chance (Lopez-Paz and Oquab

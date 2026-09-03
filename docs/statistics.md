@@ -145,6 +145,35 @@ allows, falling to about 1.2 times at 200 — roughly 6% instead of 5%. Raise
 `n_permutations` for a result going into a paper. See the
 [calibration page](calibration.md).
 
+### The whole-ensemble MMD null
+
+MMD uses the same exchangeability rule, but makes one joint decision rather
+than one decision per feature. Its null therefore relabels the independent
+units from both inputs: complete temporal blocks for a trajectory, complete
+replicas when labels are supplied, and individual rows only when an ensemble
+is explicitly declared IID. The larger native unit length controls a mixed
+design, so IID rows are grouped conservatively rather than exchanged one at a
+time against whole trajectory blocks.
+
+Weights are properties of conformations, not labels. Prothon first puts the
+two inputs on a common mean-one mass scale, then moves group labels while each
+weight stays with its observation. The positive and negative sides of the MMD
+quadratic form are renormalised to unit mass after every admissible whole-unit
+assignment. This matters for both unequal probability weights and unequal
+ensemble lengths: directly permuting the old signed vector detached weights,
+while pooling separately normalised `1/m` and `1/n` masses would reveal which
+input an observation came from whenever `m != n`.
+
+Four units on each side give 35 distinct balanced MMD values after equivalent
+complementary labels are identified; three give only ten and cannot resolve a
+5% threshold. Prothon also computes Kish's effective count from the probability
+mass collected by each block or replica. If either the actual or effective
+count is below four, or the distinct assignments cannot resolve `alpha`, MMD²
+remains available but `p_value` and `distinguishable` are `None`. The requested
+number of Monte Carlo relabellings must also provide resolution finer than
+`alpha`; repeatedly drawing a small assignment set cannot manufacture finer
+evidence than the exact design contains.
+
 ## Multiple testing
 
 A 300-residue protein tested at $\alpha = 0.05$ produces fifteen false
@@ -183,7 +212,7 @@ A feature that never varies — a buried residue with zero solvent exposure in
 every frame — has no density in the usual sense and is handled explicitly
 rather than failing.
 
-## What is not corrected for
+## Time correlation and exchangeability
 
 **Frames from a single continuous trajectory are correlated in time**, and a
 null that relabels individual frames assumes they are not. The consequence was
