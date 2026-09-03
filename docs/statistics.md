@@ -20,6 +20,13 @@ is not a decision threshold: `ComparisonResult.resolved` clears only the 95th
 percentile of the measured floor distribution. The mean, threshold and full
 distribution are all recorded.
 
+The same engine supplies the per-feature precision/recall floor and the
+experimental-agreement floor. Their APIs default to trajectory sampling because
+a bare array carries no provenance. Independently generated structures must opt
+into `sampling_kind="iid"` (and `sampling_kind_ref="iid"` for a
+precision/recall reference); a supplied correlation time greater than one frame
+alongside an IID claim is rejected as contradictory.
+
 Halves of one ensemble are used because they are the only pair of samples
 guaranteed to come from the same distribution without assuming what that
 distribution is. A bootstrap assumes the sample is the population; a parametric

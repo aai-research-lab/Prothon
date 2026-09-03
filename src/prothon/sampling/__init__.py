@@ -17,7 +17,15 @@ from .correlation import (
     effective_frames,
     plan_blocks,
 )
-from .floor import FLOOR_QUANTILE, MINIMUM_FLOOR_REPEATS, split_half_floor
+from .floor import (
+    FLOOR_QUANTILE,
+    MINIMUM_FLOOR_REPEATS,
+    MINIMUM_FLOOR_UNITS,
+    FloorPlan,
+    floor_unit_count,
+    plan_floor,
+    split_half_floor,
+)
 from .null import permutation_null, studentised_p_values
 from .statistics import (
     benjamini_hochberg,
@@ -29,8 +37,11 @@ __all__ = [
     "MINIMUM_BLOCKS",
     "FLOOR_QUANTILE",
     "MINIMUM_FLOOR_REPEATS",
+    "MINIMUM_FLOOR_UNITS",
+    "FloorPlan",
     "benjamini_hochberg",
     "effective_sample_size",
+    "floor_unit_count",
     "permutation_null",
     "random_sample",
     "split_half_floor",
@@ -41,4 +52,5 @@ __all__ = [
     "correlation_time_estimate",
     "effective_frames",
     "plan_blocks",
+    "plan_floor",
 ]

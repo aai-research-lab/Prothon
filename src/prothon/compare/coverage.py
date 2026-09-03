@@ -25,12 +25,13 @@ approximate: if two ensembles are drawn from the same distribution, both
 precision and recall are the coverage level itself, by construction. A number
 below it means something, and how far below is measurable.
 
-**And it carries a floor.** Two halves of one ensemble do not reach each
-other's support perfectly either, because a finite sample never covers a
-continuous distribution. Prothon measures that self-precision and
-self-recall and reports both beside the result, for the same reason it reports
-a noise floor beside a dissimilarity: a model cannot be asked to do better than
-the reference can do against itself.
+**And it carries a floor.** Two independently assignable halves of one
+ensemble do not reach each other's support perfectly either, because a finite
+sample never covers a continuous distribution. For trajectories those halves
+contain complete temporal blocks, not interleaved frames. Prothon measures
+that self-precision and self-recall and reports both beside the result, for the
+same reason it reports a noise floor beside a dissimilarity: a model cannot be
+asked to do better than the reference can do against itself.
 
     Sajjadi, M. S. M.; Bachem, O.; Lucic, M.; Bousquet, O.; Gelly, S.
     Assessing generative models via precision and recall. Advances in Neural
@@ -43,11 +44,18 @@ the reference can do against itself.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 
+from ..sampling.floor import (
+    FLOOR_QUANTILE,
+    MINIMUM_FLOOR_REPEATS,
+    plan_floor,
+    split_half_floor,
+)
 from ..utils import get_logger
 from .dissimilarity import MINIMUM_EFFECTIVE_SAMPLES, effective_sample_size, estimate_pdf
 
@@ -63,15 +71,12 @@ DEFAULT_COVERAGE = 0.95
 #: Grid points per density.
 DEFAULT_GRID = 200
 
-#: Repeats of the split-half self-comparison that establishes the floor. Enough
-#: to get a spread as well as a level, since the spread is what separates a
-#: residue that genuinely falls short from one that is merely sampled.
-DEFAULT_FLOOR_REPEATS = 5
+#: Repeats of the split-half self-comparison that establishes the floor. Ten
+#: give the lower tail enough support not to be merely the observed minimum.
+DEFAULT_FLOOR_REPEATS = 10
 
-#: A residue must fall this many standard deviations below its own floor to be
-#: called. The floor varies from residue to residue -- a rigid one is easy to
-#: cover and a mobile one is not -- so a single averaged threshold flags about
-#: half of the unchanged residues in a protein by construction.
+#: Compatibility fallback for results constructed without the stored lower-
+#: tail threshold introduced in 3.0.
 FLOOR_MARGIN_SD = 2.0
 
 #: And at least this far, so that a residue whose floor happens to be very
@@ -93,11 +98,17 @@ class PrecisionRecall:
         Fraction of the reference's mass inside the model's support, per
         feature. Below the floor means conformations the model never reaches.
     floor_precision, floor_recall
-        The same quantities measured between two halves of the reference, per
-        feature. The best a perfect model could score at this sampling. Per
-        feature rather than averaged: a rigid residue is easy to cover and a
-        mobile one is not, and one threshold for both calls about half the
-        unchanged residues in a protein.
+        The same quantities measured between two halves of each ensemble and
+        pooled, per feature. The best a perfect model could score at this
+        sampling. Per feature rather than averaged: a rigid residue is easy to
+        cover and a mobile one is not.
+    floor_precision_threshold, floor_recall_threshold
+        Lower-tail split-half quantiles, with a small numerical margin. These,
+        rather than the mean floors, decide missed and invented calls.
+    floor_assessable
+        False when fewer than eight independent frames, temporal blocks, or
+        replicas were available. Floor values remain descriptive, while
+        missed and invented calls are withheld.
     coverage
         The level defining the support, and the value both quantities take
         under identical distributions.
@@ -109,6 +120,11 @@ class PrecisionRecall:
     floor_recall: np.ndarray
     floor_precision_sd: np.ndarray | None = None
     floor_recall_sd: np.ndarray | None = None
+    floor_precision_threshold: np.ndarray | None = None
+    floor_recall_threshold: np.ndarray | None = None
+    floor_precision_distribution: np.ndarray | None = None
+    floor_recall_distribution: np.ndarray | None = None
+    floor_assessable: bool = True
     coverage: float = DEFAULT_COVERAGE
     feature_index: np.ndarray | None = None
     effective_samples: tuple[float, float] = (0.0, 0.0)
@@ -145,14 +161,26 @@ class PrecisionRecall:
 
     def missed(self) -> np.ndarray:
         """Features where the model fails to reach the reference's support."""
-        below = self.recall < self.floor_recall - self._margin(self.floor_recall_sd)
+        if not self.floor_assessable:
+            return self._labels()[:0]
+        threshold = (
+            self.floor_recall - self._margin(self.floor_recall_sd)
+            if self.floor_recall_threshold is None
+            else self.floor_recall_threshold
+        )
+        below = self.recall < threshold
         return self._labels()[below]
 
     def invented(self) -> np.ndarray:
         """Features where the model puts mass the reference does not have."""
-        below = (
-            self.precision < self.floor_precision - self._margin(self.floor_precision_sd)
+        if not self.floor_assessable:
+            return self._labels()[:0]
+        threshold = (
+            self.floor_precision - self._margin(self.floor_precision_sd)
+            if self.floor_precision_threshold is None
+            else self.floor_precision_threshold
         )
+        below = self.precision < threshold
         return self._labels()[below]
 
     def summary(self) -> str:
@@ -160,6 +188,11 @@ class PrecisionRecall:
             f"precision {self.mean_precision:.3f} (floor {self.mean_floor_precision:.3f}), "
             f"recall {self.mean_recall:.3f} (floor {self.mean_floor_recall:.3f})"
         ]
+        if not self.floor_assessable:
+            lines.append(
+                "  floor verdict withheld: too few independent sampling units"
+            )
+            return "\n".join(lines)
         missed, invented = self.missed(), self.invented()
         if missed.size:
             lines.append(
@@ -187,8 +220,39 @@ class PrecisionRecall:
             "mean_recall": self.mean_recall,
             "floor_precision": self.floor_precision.tolist(),
             "floor_recall": self.floor_recall.tolist(),
+            "floor_precision_sd": (
+                None
+                if self.floor_precision_sd is None
+                else np.asarray(self.floor_precision_sd).tolist()
+            ),
+            "floor_recall_sd": (
+                None
+                if self.floor_recall_sd is None
+                else np.asarray(self.floor_recall_sd).tolist()
+            ),
             "mean_floor_precision": self.mean_floor_precision,
             "mean_floor_recall": self.mean_floor_recall,
+            "floor_precision_threshold": (
+                None
+                if self.floor_precision_threshold is None
+                else np.asarray(self.floor_precision_threshold).tolist()
+            ),
+            "floor_recall_threshold": (
+                None
+                if self.floor_recall_threshold is None
+                else np.asarray(self.floor_recall_threshold).tolist()
+            ),
+            "floor_precision_distribution": (
+                None
+                if self.floor_precision_distribution is None
+                else np.asarray(self.floor_precision_distribution).tolist()
+            ),
+            "floor_recall_distribution": (
+                None
+                if self.floor_recall_distribution is None
+                else np.asarray(self.floor_recall_distribution).tolist()
+            ),
+            "floor_assessable": bool(self.floor_assessable),
             "missed": self.missed().astype(int).tolist(),
             "invented": self.invented().astype(int).tolist(),
             "feature_index": (
@@ -258,6 +322,13 @@ def precision_recall(
     random_state=None,
     feature_index=None,
     order_parameter: str = "",
+    sampling_kind_ref: str = "trajectory",
+    sampling_kind: str = "trajectory",
+    correlation_time_frames_ref: float | None = None,
+    correlation_time_frames: float | None = None,
+    replica_labels_ref=None,
+    replica_labels=None,
+    n_jobs: int = 1,
 ) -> PrecisionRecall:
     """Split a difference into what is missed and what is invented.
 
@@ -273,8 +344,20 @@ def precision_recall(
         quantities take when the ensembles are drawn from the same
         distribution.
     floor_repeats
-        Split-half repeats used to measure what a perfect model could score at
-        this sampling.
+        Requested split-half repeats used to measure what a perfect model could
+        score at this sampling. At least ten are used for the lower tail.
+    sampling_kind_ref, sampling_kind
+        Sampling provenance of the reference and assessed ensemble.
+        ``trajectory`` (default) estimates temporal correlation and splits
+        complete blocks. Use ``iid`` only for independently generated
+        structures. Supplying a nontrivial correlation time with ``iid`` is
+        refused.
+    correlation_time_frames_ref, correlation_time_frames
+        Known correlation time for each trajectory, or ``None`` to estimate
+        it.
+    replica_labels_ref, replica_labels
+        Optional label per frame on each side. Complete independent replicas
+        then replace temporal blocks as the split units.
 
     Returns
     -------
@@ -323,22 +406,79 @@ def precision_recall(
             x_min, x_max, x_num, circular, coverage,
         )
 
-    # The floor: two halves of the reference, which is the best a model could
-    # score against this much sampling of it.
-    repeats = max(2, floor_repeats)
-    floor_p = np.zeros((repeats, n_features))
-    floor_r = np.zeros((repeats, n_features))
-    half = reference.shape[0] // 2
-    for k in range(repeats):
-        order = rng.permutation(reference.shape[0])
-        left, right = order[:half], order[half : 2 * half]
-        wl = None if weights_ref is None else weights_ref[left]
-        wr = None if weights_ref is None else weights_ref[right]
+    # The floor: independently assignable halves of both ensembles. Pooling
+    # them makes the worse-sampled side part of the resolution limit rather
+    # than pretending that only the reference contributes uncertainty.
+    plans = (
+        plan_floor(
+            reference,
+            sampling_kind=sampling_kind_ref,
+            correlation_time_frames=correlation_time_frames_ref,
+            replica_labels=replica_labels_ref,
+        ),
+        plan_floor(
+            other,
+            sampling_kind=sampling_kind,
+            correlation_time_frames=correlation_time_frames,
+            replica_labels=replica_labels,
+        ),
+    )
+    for name, plan in zip(("reference", "comparison"), plans):
+        if not plan.correlation_time_converged and plan.correlation_time >= 2.0:
+            warnings.warn(
+                f"The {name} correlation time is still rising with trajectory "
+                f"length. Its {plan.correlation_time:.0f}-frame estimate is a "
+                f"lower bound, so the precision/recall floor remains optimistic. "
+                f"Sample longer before treating coverage verdicts as settled.",
+                UserWarning,
+                stacklevel=2,
+            )
+    repeats = max(MINIMUM_FLOOR_REPEATS, floor_repeats)
+
+    def floor_statistic(left, right, wl, wr):
+        values = np.zeros(2 * n_features)
         for i in range(n_features):
-            floor_p[k, i], floor_r[k, i] = _one_feature(
-                reference[left, i], reference[right, i], wl, wr,
+            values[i], values[n_features + i] = _one_feature(
+                left[:, i], right[:, i], wl, wr,
                 x_min, x_max, x_num, circular, coverage,
             )
+        return values
+
+    floor_distribution = split_half_floor(
+        n_jobs,
+        floor_statistic,
+        (reference, other),
+        repeats,
+        rng,
+        weights=(weights_ref, weights),
+        block_lengths=tuple(plan.block_length for plan in plans),
+        replica_labels=(replica_labels_ref, replica_labels),
+        output_size=2 * n_features,
+    )
+    floor_p = floor_distribution[:, :n_features]
+    floor_r = floor_distribution[:, n_features:]
+    lower_tail = 1.0 - FLOOR_QUANTILE
+    floor_p_threshold = np.clip(
+        np.quantile(floor_p, lower_tail, axis=0) - FLOOR_MARGIN_MIN, 0.0, 1.0
+    )
+    floor_r_threshold = np.clip(
+        np.quantile(floor_r, lower_tail, axis=0) - FLOOR_MARGIN_MIN, 0.0, 1.0
+    )
+
+    floor_assessable = all(plan.assessable for plan in plans)
+    if not floor_assessable:
+        detail = ", ".join(
+            f"{name}: {plan.n_units} {plan.strategy}"
+            for name, plan in zip(("reference", "comparison"), plans)
+        )
+        warnings.warn(
+            f"Too few independent units are available for the "
+            f"precision/recall floor ({detail}; at least 8 per side are "
+            f"required). Floor values are "
+            f"reported descriptively, but missed/invented verdicts are withheld.",
+            UserWarning,
+            stacklevel=2,
+        )
 
     result = PrecisionRecall(
         precision=precision,
@@ -347,11 +487,28 @@ def precision_recall(
         floor_recall=floor_r.mean(axis=0),
         floor_precision_sd=floor_p.std(axis=0, ddof=1),
         floor_recall_sd=floor_r.std(axis=0, ddof=1),
+        floor_precision_threshold=floor_p_threshold,
+        floor_recall_threshold=floor_r_threshold,
+        floor_precision_distribution=floor_p,
+        floor_recall_distribution=floor_r,
+        floor_assessable=floor_assessable,
         coverage=coverage,
         feature_index=None if feature_index is None else np.asarray(feature_index),
         effective_samples=n_eff,
         order_parameter=order_parameter,
-        metadata={"grid_points": x_num, "floor_repeats": floor_repeats},
+        metadata={
+            "grid_points": x_num,
+            "floor_repeats": repeats,
+            "floor_quantile": lower_tail,
+            "floor_sampling_kind": [plan.sampling_kind for plan in plans],
+            "floor_strategy": [plan.strategy for plan in plans],
+            "floor_correlation_time": [plan.correlation_time for plan in plans],
+            "floor_correlation_time_converged": [
+                plan.correlation_time_converged for plan in plans
+            ],
+            "floor_block_length": [plan.block_length for plan in plans],
+            "floor_units": [plan.n_units for plan in plans],
+        },
     )
     logger.info("%s", result.summary().replace("\n", "; "))
     return result

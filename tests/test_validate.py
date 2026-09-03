@@ -184,6 +184,59 @@ class TestAgreement:
         ]
         assert floors[0] > floors[1] > floors[2]
 
+    def test_floor_distribution_and_upper_tail_threshold_are_recorded(self):
+        result = score_observable(
+            *self.perfect(500), sampling_kind="iid", random_state=0
+        )
+        assert result.floor_distribution.shape == (20,)
+        assert result.floor_threshold == pytest.approx(
+            np.quantile(result.floor_distribution, 0.95)
+        )
+        assert result.floor_assessable
+
+    def test_trajectory_blocks_replace_random_rows(self):
+        rng = np.random.default_rng(17)
+        tau = 20.0
+        phi = np.exp(-1.0 / tau)
+        per_frame = np.empty((1000, 4))
+        per_frame[0] = rng.normal(size=4)
+        noise = rng.normal(size=(1000, 4)) * np.sqrt(1.0 - phi**2)
+        for frame in range(1, 1000):
+            per_frame[frame] = phi * per_frame[frame - 1] + noise[frame]
+        experimental = per_frame.mean(axis=0)
+        uncertainty = np.ones(4)
+
+        iid = score_observable(
+            per_frame,
+            experimental,
+            uncertainty,
+            sampling_kind="iid",
+            random_state=0,
+        )
+        blocked = score_observable(
+            per_frame,
+            experimental,
+            uncertainty,
+            correlation_time_frames=20.0,
+            random_state=0,
+        )
+        assert blocked.floor > 10.0 * iid.floor
+        assert blocked.metadata["floor_strategy"] == "temporal blocks"
+
+    def test_too_few_blocks_withhold_the_within_floor_verdict(self):
+        per_frame, experimental, uncertainty = self.perfect(100)
+        with pytest.warns(UserWarning, match="verdicts are withheld"):
+            result = score_observable(
+                per_frame,
+                experimental,
+                uncertainty,
+                correlation_time_frames=20.0,
+                random_state=0,
+            )
+        assert not result.floor_assessable
+        assert result.within_floor is None
+        assert "verdict withheld" in result.summary()
+
     def test_it_names_the_worst_points(self):
         per_frame, experimental, sigma = self.perfect(500, n_points=10, seed=4)
         per_frame[:, 3] += 5.0

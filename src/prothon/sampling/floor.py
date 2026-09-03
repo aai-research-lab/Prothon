@@ -22,12 +22,22 @@ a floor is does not depend on which distance is being floored.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 
 from ..utils import get_logger
-from .correlation import block_labels
+from .correlation import block_labels, correlation_time_estimate, plan_blocks
 
-__all__ = ["FLOOR_QUANTILE", "MINIMUM_FLOOR_REPEATS", "split_half_floor"]
+__all__ = [
+    "FLOOR_QUANTILE",
+    "MINIMUM_FLOOR_REPEATS",
+    "MINIMUM_FLOOR_UNITS",
+    "FloorPlan",
+    "floor_unit_count",
+    "plan_floor",
+    "split_half_floor",
+]
 
 logger = get_logger("floor")
 
@@ -40,6 +50,126 @@ FLOOR_QUANTILE = 0.95
 #: a comparison floor, enough for the upper tail not to be merely its maximum.
 MINIMUM_FLOOR_REPEATS = 10
 
+#: Eight balanced units have 35 unique two-half partitions after mirror images
+#: are identified. Below that, even an exact split distribution cannot resolve
+#: a 5% tail reliably enough to issue a verdict.
+MINIMUM_FLOOR_UNITS = 8
+
+
+@dataclass(frozen=True)
+class FloorPlan:
+    """How an ensemble may honestly be divided for a sampling floor."""
+
+    sampling_kind: str
+    strategy: str
+    correlation_time: float
+    correlation_time_converged: bool
+    block_length: int
+    n_units: int
+    assessable: bool
+
+
+def _exchangeable_units(
+    n_frames: int,
+    block_length: int = 1,
+    replica_labels: np.ndarray | None = None,
+) -> list[np.ndarray] | None:
+    if replica_labels is not None:
+        replicas = np.asarray(replica_labels)
+        if replicas.ndim != 1 or replicas.size != n_frames:
+            raise ValueError(
+                "Replica labels must be one-dimensional with one label per frame."
+            )
+        _, inverse = np.unique(replicas, return_inverse=True)
+        return [
+            np.flatnonzero(inverse == label)
+            for label in range(int(inverse.max()) + 1)
+        ]
+    if block_length > 1:
+        labels = block_labels(n_frames, block_length)
+        return [np.flatnonzero(labels == label) for label in np.unique(labels)]
+    return None
+
+
+def floor_unit_count(
+    n_frames: int,
+    block_length: int = 1,
+    replica_labels: np.ndarray | None = None,
+) -> int:
+    """Number of independently assignable units available to a floor."""
+    units = _exchangeable_units(n_frames, block_length, replica_labels)
+    return n_frames if units is None else len(units)
+
+
+def plan_floor(
+    matrix: np.ndarray,
+    sampling_kind: str = "trajectory",
+    correlation_time_frames: float | None = None,
+    replica_labels: np.ndarray | None = None,
+) -> FloorPlan:
+    """Choose independent frames, temporal blocks, or complete replicas.
+
+    ``trajectory`` is the conservative default because an array does not carry
+    provenance. Callers with genuinely independent generated structures must
+    say ``iid`` explicitly; combining that claim with a nontrivial correlation
+    time is refused as internally inconsistent metadata.
+    """
+    matrix = np.asarray(matrix)
+    if matrix.ndim != 2:
+        raise ValueError("A floor plan requires a 2-D (frames, features) matrix.")
+    if matrix.shape[0] == 0 or matrix.shape[1] == 0:
+        raise ValueError("A floor plan requires at least one frame and one feature.")
+    kind = str(sampling_kind).strip().lower()
+    if kind not in {"trajectory", "iid"}:
+        raise ValueError("sampling_kind must be 'trajectory' or 'iid'.")
+
+    if correlation_time_frames is not None:
+        tau = float(correlation_time_frames)
+        if not np.isfinite(tau) or tau <= 0:
+            raise ValueError("correlation_time_frames must be finite and positive.")
+        if kind == "iid" and tau > 1.0:
+            raise ValueError(
+                "IID sampling cannot have a correlation time greater than one frame."
+            )
+    else:
+        tau = 1.0
+
+    if replica_labels is not None:
+        n_units = floor_unit_count(matrix.shape[0], 1, replica_labels)
+        return FloorPlan(
+            sampling_kind=kind,
+            strategy="independent replicas",
+            correlation_time=tau,
+            correlation_time_converged=True,
+            block_length=1,
+            n_units=n_units,
+            assessable=n_units >= MINIMUM_FLOOR_UNITS,
+        )
+
+    converged = True
+    if kind == "trajectory":
+        if correlation_time_frames is None:
+            estimate = correlation_time_estimate(matrix)
+            tau = float(estimate.tau)
+            converged = bool(estimate.converged)
+        block_length, _ = plan_blocks(matrix.shape[0], tau)
+        strategy = "temporal blocks" if block_length > 1 else "uncorrelated frames"
+    else:
+        tau = 1.0
+        block_length = 1
+        strategy = "IID frames"
+
+    n_units = floor_unit_count(matrix.shape[0], block_length)
+    return FloorPlan(
+        sampling_kind=kind,
+        strategy=strategy,
+        correlation_time=tau,
+        correlation_time_converged=converged,
+        block_length=block_length,
+        n_units=n_units,
+        assessable=n_units >= MINIMUM_FLOOR_UNITS,
+    )
+
 
 def split_half_floor(
     n_jobs: int,
@@ -50,6 +180,7 @@ def split_half_floor(
     weights: tuple | None = None,
     block_lengths: int | tuple[int, ...] = 1,
     replica_labels: tuple[np.ndarray | None, ...] | np.ndarray | None = None,
+    output_size: int | None = None,
 ) -> np.ndarray:
     """Distance between two disjoint halves of each ensemble.
 
@@ -79,6 +210,10 @@ def split_half_floor(
     supplied, complete replicas are the units instead and blocks never cross a
     replica boundary. The original random disjoint split is retained only when
     the block length is one and no replica labels are supplied.
+
+    ``output_size`` is needed only when the statistic does not return one value
+    per input feature. It lets an unsplittable floor return a correctly shaped
+    row of missing values rather than inventing zeros.
     """
     if not ensembles:
         raise ValueError("At least one ensemble is required to measure a floor.")
@@ -87,7 +222,12 @@ def split_half_floor(
     ensembles = tuple(np.asarray(ensemble) for ensemble in ensembles)
     if any(ensemble.ndim != 2 for ensemble in ensembles):
         raise ValueError("Floor ensembles must be 2-D (frames, features) matrices.")
+    if any(ensemble.shape[0] == 0 or ensemble.shape[1] == 0 for ensemble in ensembles):
+        raise ValueError("Floor ensembles must contain frames and features.")
     n_features = ensembles[0].shape[1]
+    output_size = n_features if output_size is None else int(output_size)
+    if output_size < 1:
+        raise ValueError("output_size must be a positive integer.")
     if any(ensemble.shape[1] != n_features for ensemble in ensembles):
         raise ValueError("Every floor ensemble must have the same feature count.")
 
@@ -127,24 +267,6 @@ def split_half_floor(
             f"got {len(replica_labels)}."
         )
 
-    def units_for(ensemble, block_length, replicas):
-        n_frames = ensemble.shape[0]
-        if replicas is not None:
-            replicas = np.asarray(replicas)
-            if replicas.ndim != 1 or replicas.size != n_frames:
-                raise ValueError(
-                    "Replica labels must be one-dimensional with one label per frame."
-                )
-            _, inverse = np.unique(replicas, return_inverse=True)
-            return [
-                np.flatnonzero(inverse == label)
-                for label in range(int(inverse.max()) + 1)
-            ]
-        if block_length > 1:
-            labels = block_labels(n_frames, block_length)
-            return [np.flatnonzero(labels == label) for label in np.unique(labels)]
-        return None
-
     def one_split(ensemble, w, seed, units):
         local_rng = np.random.default_rng(seed)
         if units is None:
@@ -172,7 +294,7 @@ def split_half_floor(
     ):
         if ensemble.shape[0] // 2 < 2:
             continue
-        units = units_for(ensemble, block_length, replicas)
+        units = _exchangeable_units(ensemble.shape[0], block_length, replicas)
         if units is not None and len(units) < 2:
             continue
         for seed in rng.integers(0, 2**63 - 1, size=repeats):
@@ -192,10 +314,10 @@ def split_half_floor(
         )
         values = [row for group in batched for row in group if row is not None]
         if not values:
-            return np.zeros((1, n_features))
+            return np.full((1, output_size), np.nan)
         return np.stack(values, axis=0)
 
     values = [value for job in jobs if (value := one_split(*job)) is not None]
     if not values:
-        return np.zeros((1, n_features))
+        return np.full((1, output_size), np.nan)
     return np.stack(values, axis=0)

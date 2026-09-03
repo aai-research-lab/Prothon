@@ -16,7 +16,7 @@ print(result.summary())
 ```
 
 ```
-Rg: chi2_red = 0.31 (floor 0.44 +/- 0.19) — agrees to within its own sampling
+Rg: chi2_red = 0.31 (floor mean 0.44, q95 0.73) — agrees to within its own sampling
 ```
 
 ## A perfect ensemble does not score one
@@ -39,11 +39,17 @@ of five thousand scores 0.00. Fitting either to 1.0 is fitting to noise: the
 first is being asked to reproduce experimental scatter it cannot know about,
 and the second to reproduce scatter it has already averaged away.
 
-So every score is reported beside a **floor**, obtained by splitting the
-ensemble in half and scoring one half's prediction against the other's. That is
-what the sampling contributes on its own, and `within_floor` says whether the
-agreement is already inside it. When it is, the ensemble cannot be improved by
-drawing more conformations of the same kind.
+So every score is reported beside a **floor**. Independent generated structures
+split random frames; trajectories split complete temporal blocks; supplied
+replica labels split complete independent replicas. One half's prediction is
+scored against the other's. The mean describes what sampling contributes and
+the 95th percentile decides `within_floor`. When fewer than eight independent
+units are available, `within_floor` is `None` rather than an invented verdict.
+
+`score_observable` defaults to `sampling_kind="trajectory"` because a numeric
+matrix does not carry its provenance. Pass `sampling_kind="iid"` for genuinely
+independent generated conformations, or `replica_labels=` when the rows contain
+several independent runs.
 
 ## Averaging is not always over the value
 

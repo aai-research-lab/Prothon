@@ -22,10 +22,11 @@ noise: in the first case the ensemble is being asked to reproduce experimental
 scatter it cannot know about, and in the second it is being asked to reproduce
 scatter it has already averaged away.
 
-So a chi-squared is reported here beside a **floor**, obtained by splitting the
-ensemble in half and scoring one half's prediction against the other's. That is
-what the sampling alone contributes, and an ensemble already inside it cannot
-be improved by more conformations of the same kind.
+So a chi-squared is reported here beside a **floor**, obtained by assigning
+independent frames, complete temporal blocks, or complete replicas to two
+halves and scoring one half's prediction against the other's. The mean
+describes what sampling contributes; the 95th percentile decides whether the
+experimental disagreement clears it.
 
     Bottaro, S.; Lindorff-Larsen, K. Biophysical experiments and biomolecular
     simulations: a perfect match? Science 2018, 361, 355-360.
@@ -33,12 +34,19 @@ be improved by more conformations of the same kind.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 
 from ..compare.dissimilarity import MINIMUM_EFFECTIVE_SAMPLES, effective_sample_size
+from ..sampling.floor import (
+    FLOOR_QUANTILE,
+    MINIMUM_FLOOR_REPEATS,
+    plan_floor,
+    split_half_floor,
+)
 from ..utils import get_logger
 
 logger = get_logger("validate.score")
@@ -59,12 +67,12 @@ class AgreementResult:
         Mean squared deviation in units of the experimental uncertainty.
     floor
         The same quantity between two halves of this ensemble: what the
-        sampling contributes on its own. A value at or below the floor is as
-        good as this much sampling permits.
+        sampling contributes on its own, reported as a descriptive mean.
+    floor_threshold
+        The 95th percentile of the floor distribution used for the verdict.
     within_floor
-        Whether the agreement is already inside the sampling limit. When true,
-        the ensemble cannot be improved by drawing more conformations of the
-        same kind, and a smaller chi-squared would mean overfitting.
+        Whether the agreement is already inside the sampling limit. ``None``
+        when fewer than eight independent units make a verdict unsupported.
     """
 
     observable: str
@@ -79,11 +87,17 @@ class AgreementResult:
     uncertainty: np.ndarray
     residuals: np.ndarray
     labels: np.ndarray | None = None
+    floor_threshold: float | None = None
+    floor_distribution: np.ndarray | None = None
+    floor_assessable: bool = True
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
-    def within_floor(self) -> bool:
-        return bool(self.chi2_reduced <= self.floor)
+    def within_floor(self) -> bool | None:
+        if not self.floor_assessable:
+            return None
+        threshold = self.floor if self.floor_threshold is None else self.floor_threshold
+        return bool(self.chi2_reduced <= threshold)
 
     @property
     def worst(self) -> list[tuple[Any, float]]:
@@ -97,16 +111,18 @@ class AgreementResult:
         return [(labels[i], float(self.residuals[i])) for i in order]
 
     def summary(self) -> str:
-        verdict = (
-            "agrees to within its own sampling"
-            if self.within_floor
-            else "disagrees beyond what the sampling explains"
-        )
+        if self.within_floor is None:
+            verdict = "floor verdict withheld: too few independent sampling units"
+        elif self.within_floor:
+            verdict = "agrees to within its own sampling"
+        else:
+            verdict = "disagrees beyond what the sampling explains"
+        threshold = self.floor if self.floor_threshold is None else self.floor_threshold
         lines = [
             f"{self.observable}: chi2_red = {self.chi2_reduced:.2f} "
-            f"(floor {self.floor:.2f} +/- {self.floor_sd:.2f}) — {verdict}"
+            f"(floor mean {self.floor:.2f}, q95 {threshold:.2f}) — {verdict}"
         ]
-        if not self.within_floor:
+        if self.within_floor is False:
             worst = ", ".join(f"{label} ({r:+.1f}σ)" for label, r in self.worst[:3])
             lines.append(f"  largest deviations: {worst}")
         return "\n".join(lines)
@@ -117,6 +133,17 @@ class AgreementResult:
             "chi2_reduced": float(self.chi2_reduced),
             "floor": float(self.floor),
             "floor_sd": float(self.floor_sd),
+            "floor_threshold": (
+                float(self.floor)
+                if self.floor_threshold is None
+                else float(self.floor_threshold)
+            ),
+            "floor_distribution": (
+                None
+                if self.floor_distribution is None
+                else np.asarray(self.floor_distribution).tolist()
+            ),
+            "floor_assessable": bool(self.floor_assessable),
             "within_floor": self.within_floor,
             "n_points": self.n_points,
             "n_frames": self.n_frames,
@@ -144,6 +171,10 @@ def score_observable(
     labels=None,
     floor_repeats: int = DEFAULT_FLOOR_REPEATS,
     random_state=None,
+    sampling_kind: str = "trajectory",
+    correlation_time_frames: float | None = None,
+    replica_labels=None,
+    n_jobs: int = 1,
 ) -> AgreementResult:
     """Score an ensemble's predictions against measurements.
 
@@ -165,6 +196,15 @@ def score_observable(
         sixth-power interaction.
     floor_repeats
         Split-half repeats behind the floor.
+    sampling_kind
+        ``trajectory`` (default) estimates temporal correlation and splits
+        complete blocks. Use ``iid`` only for independently generated
+        structures.
+    correlation_time_frames
+        Known trajectory correlation time, or ``None`` to estimate it.
+    replica_labels
+        Optional label per frame. Complete independent replicas then replace
+        temporal blocks as the split units.
 
     Returns
     -------
@@ -211,23 +251,55 @@ def score_observable(
     predicted = average_observable(per_frame, weights, averaging)
     chi2 = _chi2_reduced(predicted, experimental, uncertainty)
 
-    # The floor: one half's prediction scored against the other's. Not against
-    # the experiment -- the question is what the sampling alone contributes,
-    # and the experiment is common to both halves.
+    # The floor: one independently assignable half's prediction scored against
+    # the other's. Not against the experiment -- the question is what the
+    # sampling alone contributes, and the experiment is common to both halves.
     rng = np.random.default_rng(random_state)
-    half = n_frames // 2
-    floors = []
-    if half >= 2:
-        for _ in range(max(2, floor_repeats)):
-            order = rng.permutation(n_frames)
-            left, right = order[:half], order[half : 2 * half]
-            wl = None if weights is None else np.asarray(weights)[left]
-            wr = None if weights is None else np.asarray(weights)[right]
-            a = average_observable(per_frame[left], wl, averaging)
-            b = average_observable(per_frame[right], wr, averaging)
-            floors.append(_chi2_reduced(a, b, uncertainty))
-    floor = float(np.mean(floors)) if floors else 0.0
-    floor_sd = float(np.std(floors, ddof=1)) if len(floors) > 1 else 0.0
+    plan = plan_floor(
+        per_frame,
+        sampling_kind=sampling_kind,
+        correlation_time_frames=correlation_time_frames,
+        replica_labels=replica_labels,
+    )
+    if not plan.correlation_time_converged and plan.correlation_time >= 2.0:
+        warnings.warn(
+            f"The correlation time is still rising with trajectory length. Its "
+            f"{plan.correlation_time:.0f}-frame estimate is a lower bound, so "
+            f"the experimental-agreement floor remains optimistic. Sample "
+            f"longer before treating the verdict as settled.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    def floor_statistic(left, right, wl, wr):
+        a = average_observable(left, wl, averaging)
+        b = average_observable(right, wr, averaging)
+        return np.array([_chi2_reduced(a, b, uncertainty)])
+
+    repeats = max(MINIMUM_FLOOR_REPEATS, floor_repeats)
+    floors = split_half_floor(
+        n_jobs,
+        floor_statistic,
+        (per_frame,),
+        repeats,
+        rng,
+        weights=(None if weights is None else np.asarray(weights),),
+        block_lengths=plan.block_length,
+        replica_labels=(replica_labels,),
+        output_size=1,
+    ).ravel()
+    floor = float(np.mean(floors))
+    floor_sd = float(np.std(floors, ddof=1)) if floors.size > 1 else 0.0
+    floor_threshold = float(np.quantile(floors, FLOOR_QUANTILE))
+
+    if not plan.assessable:
+        warnings.warn(
+            f"Only {plan.n_units} independent {plan.strategy} are available "
+            f"for the experimental-agreement floor, fewer than 8. Floor values "
+            f"are reported descriptively, but within-floor verdicts are withheld.",
+            UserWarning,
+            stacklevel=2,
+        )
 
     result = AgreementResult(
         observable=observable,
@@ -242,7 +314,20 @@ def score_observable(
         uncertainty=uncertainty,
         residuals=(np.asarray(predicted) - experimental) / uncertainty,
         labels=None if labels is None else np.asarray(labels),
-        metadata={"averaging": averaging, "floor_repeats": floor_repeats},
+        floor_threshold=floor_threshold,
+        floor_distribution=floors,
+        floor_assessable=plan.assessable,
+        metadata={
+            "averaging": averaging,
+            "floor_repeats": repeats,
+            "floor_quantile": FLOOR_QUANTILE,
+            "floor_sampling_kind": plan.sampling_kind,
+            "floor_strategy": plan.strategy,
+            "floor_correlation_time": plan.correlation_time,
+            "floor_correlation_time_converged": plan.correlation_time_converged,
+            "floor_block_length": plan.block_length,
+            "floor_units": plan.n_units,
+        },
     )
     logger.info("%s", result.summary().replace("\n", "; "))
     return result

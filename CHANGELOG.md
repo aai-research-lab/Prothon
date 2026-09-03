@@ -5,6 +5,21 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Fixed — one sampling-aware floor across every analysis
+
+- Precision/recall and experimental validation now use the same split-half
+  engine as dissimilarity. Trajectories split complete temporal blocks,
+  explicitly IID structures split random frames, and supplied replica labels
+  split complete independent replicas.
+- Both APIs record the full floor distribution, its decision quantile, the
+  correlation plan, block length and independent-unit count. Precision/recall
+  calls use a conservative lower-tail threshold; experimental agreement uses
+  the upper 95th percentile rather than the mean.
+- Fewer than eight independent floor units now withhold missed/invented and
+  within-floor verdicts instead of silently classifying under-sampled data.
+- Contradictory sampling metadata, such as `sampling_kind="iid"` with a
+  correlation time greater than one frame, is rejected.
+
 ### Fixed — correlation-aware noise floors
 
 - Split-half floors now assign complete temporal blocks to each half instead

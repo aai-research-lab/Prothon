@@ -68,9 +68,11 @@ Both are reported per residue, so the answer names positions rather than
 scoring a whole ensemble: *misses states at 8 residues* is something a model
 developer can act on.
 
-Each carries its own floor, measured by splitting the reference in half, and
-that floor is per residue — a rigid residue and a mobile one are not equally
-easy to cover.
+Each carries its own floor, measured by assigning complete temporal blocks of
+the reference to two halves. That floor is per residue — a rigid residue and a
+mobile one are not equally easy to cover. Missed and invented calls use the
+lower tail of the stored split distribution rather than its mean, and are
+withheld when fewer than eight independent units are available.
 
 ## Refusals are results
 
