@@ -18,8 +18,8 @@ from prothon.cli import main
 from prothon.ingest import Ensemble
 
 
-def complex_traj(n_frames=200, seed=0, chains=(("A", "ACDEFHIKLMNP"), ("B", "QRSTVWYACDEF"))):
-    """A two-chain system with labelled chains."""
+def complex_traj(n_frames=200, seed=0, chains=(("A", "ACDEFHIKLMNP"), ("B", "ACDEFHIKLMNQ"))):
+    """A two-chain system whose labelled protomers are homologous."""
     rng = np.random.default_rng(seed)
     top = md.Topology()
     for chain_id, seq in chains:
@@ -128,6 +128,7 @@ class TestThroughAStudy:
         )
         assert study.ensembles[0].provenance["chains"] == [0]
         assert study.ensembles[1].provenance["chains"] == [1]
+        assert not study.shares_topology
 
     def test_a_comparison_runs_on_one_chain(self, files):
         study = Prothon(
