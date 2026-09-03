@@ -415,12 +415,14 @@ def precision_recall(
             sampling_kind=sampling_kind_ref,
             correlation_time_frames=correlation_time_frames_ref,
             replica_labels=replica_labels_ref,
+            circular=circular,
         ),
         plan_floor(
             other,
             sampling_kind=sampling_kind,
             correlation_time_frames=correlation_time_frames,
             replica_labels=replica_labels,
+            circular=circular,
         ),
     )
     for name, plan in zip(("reference", "comparison"), plans):
@@ -505,6 +507,24 @@ def precision_recall(
             "floor_correlation_time": [plan.correlation_time for plan in plans],
             "floor_correlation_time_converged": [
                 plan.correlation_time_converged for plan in plans
+            ],
+            "floor_correlation_summary": [
+                plan.correlation_summary for plan in plans
+            ],
+            "floor_assessable_features": [
+                plan.n_assessable_features for plan in plans
+            ],
+            "floor_sampled_features": [
+                plan.n_sampled_features for plan in plans
+            ],
+            "floor_assessable_feature_columns": [
+                list(plan.assessable_features) for plan in plans
+            ],
+            "floor_sampled_feature_columns": [
+                list(plan.sampled_features) for plan in plans
+            ],
+            "floor_slow_feature_columns": [
+                list(plan.slow_features) for plan in plans
             ],
             "floor_block_length": [plan.block_length for plan in plans],
             "floor_units": [plan.n_units for plan in plans],

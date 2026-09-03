@@ -67,6 +67,18 @@ class FloorPlan:
     block_length: int
     n_units: int
     assessable: bool
+    correlation_summary: str = "supplied"
+    assessable_features: tuple[int, ...] = ()
+    sampled_features: tuple[int, ...] = ()
+    slow_features: tuple[int, ...] = ()
+
+    @property
+    def n_assessable_features(self) -> int:
+        return len(self.assessable_features)
+
+    @property
+    def n_sampled_features(self) -> int:
+        return len(self.sampled_features)
 
 
 def _exchangeable_units(
@@ -106,6 +118,7 @@ def plan_floor(
     sampling_kind: str = "trajectory",
     correlation_time_frames: float | None = None,
     replica_labels: np.ndarray | None = None,
+    circular: bool = False,
 ) -> FloorPlan:
     """Choose independent frames, temporal blocks, or complete replicas.
 
@@ -144,14 +157,25 @@ def plan_floor(
             block_length=1,
             n_units=n_units,
             assessable=n_units >= MINIMUM_FLOOR_UNITS,
+            correlation_summary="not required (replica labels)",
         )
 
     converged = True
+    correlation_summary = (
+        "supplied" if correlation_time_frames is not None else "not estimated"
+    )
+    assessable_features: tuple[int, ...] = ()
+    sampled_features: tuple[int, ...] = ()
+    slow_features: tuple[int, ...] = ()
     if kind == "trajectory":
         if correlation_time_frames is None:
-            estimate = correlation_time_estimate(matrix)
+            estimate = correlation_time_estimate(matrix, circular=circular)
             tau = float(estimate.tau)
             converged = bool(estimate.converged)
+            correlation_summary = estimate.summary
+            assessable_features = estimate.assessable_features
+            sampled_features = estimate.sampled_features
+            slow_features = estimate.slow_features
         block_length, _ = plan_blocks(matrix.shape[0], tau)
         strategy = "temporal blocks" if block_length > 1 else "uncorrelated frames"
     else:
@@ -168,6 +192,10 @@ def plan_floor(
         block_length=block_length,
         n_units=n_units,
         assessable=n_units >= MINIMUM_FLOOR_UNITS,
+        correlation_summary=correlation_summary,
+        assessable_features=assessable_features,
+        sampled_features=sampled_features,
+        slow_features=slow_features,
     )
 
 

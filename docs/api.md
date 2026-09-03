@@ -84,7 +84,7 @@ shim that forwards with a `DeprecationWarning`, and is removed in 3.0.
 
 ```{eval-rst}
 .. automodule:: prothon.sampling.correlation
-   :members: correlation_time, effective_frames, plan_blocks, block_labels, MINIMUM_BLOCKS
+   :members: correlation_profile, correlation_time, effective_frames, plan_blocks, block_labels, MINIMUM_BLOCKS
 ```
 
 ## Ingest and reconciliation

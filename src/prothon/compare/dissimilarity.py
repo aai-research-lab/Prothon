@@ -591,19 +591,46 @@ def dissimilarity(
     tau = 1.0
     tau_converged = True
     tau_assessable = True
+    correlation_profiles: dict[str, dict[str, Any]] = {}
     block_length, n_blocks = 1, min(ref_rep.shape[0], rep.shape[0])
     use_blocks = False
     if not legacy and block_permutation is not False:
         if correlation_time_frames is not None:
             # Supplied by the caller, who is responsible for it.
             tau = float(correlation_time_frames)
+            correlation_profiles = {
+                name: {
+                    "summary": "supplied",
+                    "assessable_features": 0,
+                    "sampled_features": 0,
+                    "assessable_feature_columns": [],
+                    "sampled_feature_columns": [],
+                    "slow_feature_columns": [],
+                }
+                for name in ("reference", "comparison")
+            }
         else:
             # Estimated on both, and checked for having settled. A correlation
             # time that is still rising with trajectory length is a lower
             # bound, which makes the block count below an *upper* bound: it can
             # clear MINIMUM_BLOCKS on a number the data does not support.
-            left = correlation_time_estimate(ref_rep)
-            right = correlation_time_estimate(rep)
+            left = correlation_time_estimate(ref_rep, circular=use_circular)
+            right = correlation_time_estimate(rep, circular=use_circular)
+            correlation_profiles = {
+                name: {
+                    "summary": estimate.summary,
+                    "assessable_features": estimate.n_assessable_features,
+                    "sampled_features": estimate.n_sampled_features,
+                    "assessable_feature_columns": list(
+                        estimate.assessable_features
+                    ),
+                    "sampled_feature_columns": list(estimate.sampled_features),
+                    "slow_feature_columns": list(estimate.slow_features),
+                }
+                for name, estimate in (
+                    ("reference", left), ("comparison", right)
+                )
+            }
             tau = max(left.tau, right.tau)
             tau_converged = bool(left.converged and right.converged)
             # A trend that could not be fitted is not a trend that was found.
@@ -799,6 +826,7 @@ def dissimilarity(
             "sampled_frames": sampled_frames,
             "sampling_strategy": sampling_strategy,
             "block_length": int(block_length),
+            "correlation_profiles": correlation_profiles,
             "noise_floor_quantile": FLOOR_QUANTILE,
             "null": "bootstrap (2.0)" if legacy else "permutation",
             "metric": "jsd" if legacy else metric,

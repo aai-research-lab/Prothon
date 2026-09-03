@@ -5,6 +5,23 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Fixed — slow features below the upper quartile
+
+- Correlation planning no longer relies on q75 alone. A distinct slow group
+  smaller than 25% of the representation now sets the block length from its
+  median when at least two features agree; one unstable high estimate still
+  cannot make every block unusably long.
+- Constant and non-finite features are removed before the 200-feature limit is
+  applied, so inert columns neither vote the summary down nor crowd dynamic
+  columns out of the estimate.
+- Circular correlation is estimated on sine/cosine coordinates, so a slow
+  torsion crossing -pi/+pi is not mistaken for a sequence of decorrelating
+  jumps.
+- Dissimilarity, precision/recall and validation metadata now record the
+  correlation summary, assessable and sampled feature counts, and zero-based
+  slow-feature columns. A mixed fast/slow correlated null is regression-tested
+  with enough blocks to issue a real verdict rather than merely withholding it.
+
 ### Fixed — one sampling-aware floor across every analysis
 
 - Precision/recall and experimental validation now use the same split-half

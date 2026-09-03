@@ -13,6 +13,7 @@ from prothon.compare.dissimilarity import _subsample, dissimilarity
 from prothon.sampling.correlation import (
     MINIMUM_BLOCKS,
     block_labels,
+    correlation_profile,
     correlation_time,
     effective_frames,
     plan_blocks,
@@ -95,6 +96,159 @@ class TestCorrelationTime:
         assert correlation_time(series) > 10
         shuffled = series[rng.permutation(series.shape[0])]
         assert correlation_time(shuffled) < 3
+
+    def test_the_reproduced_iid_slow_mixture_defeats_q75(self):
+        """The audit reproduction: q75 ~1.05, slow median ~71.96."""
+        rng = np.random.default_rng(27)
+        iid = rng.normal(size=(4000, 80))
+        slow = ou(4000, 20, 45.0, rng)
+
+        profile = correlation_profile(np.column_stack((iid, slow)))
+        slow_median = float(np.median(profile.feature_times[-20:]))
+
+        assert profile.quantile_tau == pytest.approx(1.05, abs=0.1)
+        assert slow_median == pytest.approx(71.96, abs=1.0)
+        assert profile.tau == slow_median
+        assert profile.summary == "coherent slow-feature median"
+        assert set(profile.slow_features) == set(range(80, 100))
+
+    def test_one_slow_loop_cannot_hide_below_the_upper_quartile(self):
+        """Eight slow columns are invisible to q75 among 100 columns.
+
+        They are nevertheless a coherent region and need blocks long enough
+        for their own dynamics. The slow-group median protects them without
+        using the noisiest individual estimate.
+        """
+        rng = np.random.default_rng(77)
+        fast = ou(3000, 92, 2.0, rng)
+        slow = ou(3000, 8, 20.0, rng)
+
+        profile = correlation_profile(np.column_stack((fast, slow)))
+
+        assert profile.quantile_tau < 8.0, "q75 reproduces the old failure"
+        assert profile.summary == "coherent slow-feature median"
+        assert profile.tau > 20.0
+        assert set(profile.slow_features) == set(range(92, 100))
+
+    def test_separate_slow_groups_are_combined_conservatively(self):
+        rng = np.random.default_rng(80)
+        matrix = np.column_stack((
+            ou(2500, 30, 2.0, rng),
+            ou(2500, 4, 20.0, rng),
+            ou(2500, 30, 2.0, rng),
+            ou(2500, 4, 20.0, rng),
+            ou(2500, 32, 2.0, rng),
+        ))
+
+        profile = correlation_profile(matrix)
+
+        expected = set(range(30, 34)) | set(range(64, 68))
+        assert set(profile.slow_features) == expected
+        assert profile.tau > 20.0
+
+    def test_circular_slow_features_are_estimated_across_the_branch_cut(self):
+        rng = np.random.default_rng(90)
+        iid_angles = rng.uniform(-np.pi, np.pi, size=(3000, 92))
+        slow_angles = np.pi + 0.5 * ou(3000, 8, 20.0, rng)
+        slow_angles = (slow_angles + np.pi) % (2.0 * np.pi) - np.pi
+        matrix = np.column_stack((iid_angles, slow_angles))
+
+        linear = correlation_profile(matrix)
+        circular = correlation_profile(matrix, circular=True)
+
+        assert set(circular.slow_features) == set(range(92, 100))
+        assert circular.tau > 30.0
+        assert circular.tau > 1.5 * linear.tau
+
+    def test_one_noisy_column_does_not_set_the_global_block_plan(self):
+        rng = np.random.default_rng(78)
+        fast = ou(3000, 99, 2.0, rng)
+        lone_slow = ou(3000, 1, 20.0, rng)
+
+        profile = correlation_profile(np.column_stack((fast, lone_slow)))
+
+        assert profile.summary == "upper quartile"
+        assert profile.slow_features == ()
+        assert profile.tau == profile.quantile_tau
+
+    def test_a_homogeneous_system_keeps_the_stable_summary(self):
+        profile = correlation_profile(
+            ou(3000, 100, 20.0, np.random.default_rng(4))
+        )
+        phi = np.exp(-1.0 / 20.0)
+        expected = (1 + phi) / (1 - phi)
+
+        assert profile.summary == "upper quartile"
+        assert profile.tau == pytest.approx(expected, rel=0.3)
+        assert profile.tau < np.quantile(profile.feature_times, 0.95)
+
+    def test_constants_are_removed_before_feature_subsampling(self):
+        rng = np.random.default_rng(79)
+        constants = np.ones((2000, 240))
+        dynamic = ou(2000, 10, 2.0, rng)
+        dynamic[:, 0] = np.nan
+
+        profile = correlation_profile(
+            np.column_stack((constants, dynamic)), max_features=5
+        )
+
+        assert profile.n_assessable_features == 9
+        assert profile.n_sampled_features == 5
+        assert all(column >= 241 for column in profile.sampled_features)
+
+    def test_profile_parameters_are_validated(self):
+        matrix = np.arange(100.0)[:, None]
+        with pytest.raises(ValueError, match="max_features"):
+            correlation_profile(matrix, max_features=0)
+        with pytest.raises(ValueError, match="quantile"):
+            correlation_profile(matrix, quantile=1.1)
+
+
+class TestMixedRateCalibration:
+    def test_the_slow_region_is_protected_without_withholding_the_null(self):
+        """A mixed fast/slow correlated null remains an actual test.
+
+        Both ensembles have 18 fast and two slow columns and are drawn from
+        the same stationary distribution. The old q75 plan used the fast time;
+        the profile uses the two-column slow group, leaves enough complete
+        blocks to test, and makes no false call for this fixed calibration.
+        """
+
+        def mixed(seed, slow_shift=0.0):
+            rng = np.random.default_rng(seed)
+            return np.column_stack((
+                ou(2000, 18, 2.0, rng),
+                ou(2000, 2, 20.0, rng, mean=slow_shift),
+            ))
+
+        with pytest.warns(UserWarning, match="still rising"):
+            result = dissimilarity(
+                mixed(100), mixed(200), -5.0, 5.0,
+                x_num=20, s_num=5, n_permutations=40,
+                sample_size=2000, random_state=0,
+            )
+
+        assert result.correlation_time > 20.0
+        assert not result.correlation_time_converged
+        assert result.n_blocks == 33
+        assert result.n_blocks >= MINIMUM_BLOCKS
+        assert not result.p_values_withheld
+        assert result.n_significant == 0
+        profiles = result.metadata["correlation_profiles"]
+        assert profiles["reference"]["assessable_feature_columns"] == list(range(20))
+        assert profiles["reference"]["slow_feature_columns"] == [18, 19]
+        assert profiles["comparison"]["slow_feature_columns"] == [18, 19]
+
+        with pytest.warns(UserWarning, match="still rising"):
+            shifted = dissimilarity(
+                mixed(100), mixed(200, slow_shift=1.0), -6.0, 6.0,
+                x_num=20, s_num=5, n_permutations=40,
+                sample_size=2000, random_state=0,
+            )
+        np.testing.assert_array_equal(
+            shifted.significant,
+            np.array([False] * 18 + [True, True]),
+        )
 
 
 class TestBlockPlanning:

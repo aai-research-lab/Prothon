@@ -60,7 +60,9 @@ __all__ = [
     "PLATEAU_PREFIXES",
     "PLATEAU_SLOPE",
     "CorrelationEstimate",
+    "CorrelationProfile",
     "block_labels",
+    "correlation_profile",
     "correlation_time",
     "correlation_time_estimate",
     "effective_frames",
@@ -109,6 +111,52 @@ _PLATEAU_MINIMUM = 64
 #: otherwise contribute a meaningless estimate to the summary.
 _CONSTANT_TOLERANCE = 1e-12
 
+#: A second population must be this much slower than both the median feature
+#: and the ordinary upper-quartile summary before it changes the global block
+#: plan. Smaller separations are already represented reasonably by q75; this
+#: guard is for a genuinely distinct slow region, not the noisy upper tail of
+#: one homogeneous population.
+SLOW_TAIL_RATIO = 3.0
+
+#: Robust outlier boundary on log correlation times. Four scaled MADs keeps a
+#: homogeneous population on its stable q75 summary even when one FFT estimate
+#: wanders upward.
+SLOW_TAIL_MAD_MULTIPLIER = 4.0
+
+#: One extreme column can be estimator noise. Two independently estimated
+#: columns are the smallest coherent slow region that may alter every block.
+MINIMUM_SLOW_FEATURES = 2
+
+
+@dataclass(frozen=True)
+class CorrelationProfile:
+    """Per-feature evidence behind one correlation-time summary.
+
+    Feature indices are zero-based matrix-column indices. Constant and
+    non-finite columns are excluded before feature subsampling: they carry no
+    autocorrelation estimate and therefore must not vote the summary down.
+    ``slow_features`` is non-empty only when a coherent, separated slow group
+    changed the plan; isolated high estimates remain visible in
+    ``feature_times`` but do not dictate every block.
+    """
+
+    tau: float
+    quantile_tau: float
+    median_tau: float
+    summary: str
+    assessable_features: tuple[int, ...] = ()
+    sampled_features: tuple[int, ...] = ()
+    slow_features: tuple[int, ...] = ()
+    feature_times: tuple[float, ...] = ()
+
+    @property
+    def n_assessable_features(self) -> int:
+        return len(self.assessable_features)
+
+    @property
+    def n_sampled_features(self) -> int:
+        return len(self.sampled_features)
+
 
 @dataclass
 class CorrelationEstimate:
@@ -139,6 +187,10 @@ class CorrelationEstimate:
     growth
         ``tau(n) / tau(n/2)``, kept for reporting. **The verdict does not rest
         on it**: two points cannot tell a dip from a plateau.
+    summary, n_assessable_features, n_sampled_features, slow_features
+        Audit trail for the cross-feature summary. ``slow_features`` contains
+        zero-based matrix columns only when a coherent slow group, rather than
+        the ordinary upper quartile, selected ``tau``.
     """
 
     tau: float
@@ -146,6 +198,18 @@ class CorrelationEstimate:
     prefix_taus: dict[int, float] = field(default_factory=dict)
     growth: float = 1.0
     slope: float = 0.0
+    summary: str = "upper quartile"
+    assessable_features: tuple[int, ...] = ()
+    sampled_features: tuple[int, ...] = ()
+    slow_features: tuple[int, ...] = ()
+
+    @property
+    def n_assessable_features(self) -> int:
+        return len(self.assessable_features)
+
+    @property
+    def n_sampled_features(self) -> int:
+        return len(self.sampled_features)
 
     def __float__(self) -> float:
         return float(self.tau)
@@ -191,10 +255,51 @@ def _autocorrelation_time(series: np.ndarray, c: float = SOKAL_WINDOW) -> float:
     return float(max(1.0, tau))
 
 
-def correlation_time(
-    matrix: np.ndarray, quantile: float = 0.75, max_features: int = 200
-) -> float:
-    """Correlation time of a representation, in frames.
+def _assessable_columns(matrix: np.ndarray, circular: bool = False) -> np.ndarray:
+    """Columns with finite values and enough variation to estimate a time."""
+    if matrix.shape[0] == 0 or matrix.shape[1] == 0:
+        return np.array([], dtype=int)
+    finite = np.all(np.isfinite(matrix), axis=0)
+    # This is the same energy test used by _autocorrelation_time, evaluated in
+    # one pass so constants can be removed *before* the feature limit is
+    # applied. Otherwise 190 constants can crowd slow columns out of a
+    # 200-column sample and also vote as tau=1 in its quantile.
+    finite_columns = np.flatnonzero(finite)
+    if finite_columns.size == 0:
+        return finite_columns
+    values = matrix[:, finite_columns]
+    if circular:
+        # -pi and +pi are the same value. Raw linear variance would call a
+        # trajectory alternating across that boundary highly variable even
+        # when it occupies one narrow angular state.
+        energy = np.maximum(
+            np.var(np.sin(values), axis=0),
+            np.var(np.cos(values), axis=0),
+        ) * matrix.shape[0]
+    else:
+        energy = np.var(values, axis=0) * matrix.shape[0]
+    return finite_columns[energy >= _CONSTANT_TOLERANCE]
+
+
+def _feature_correlation_time(series: np.ndarray, circular: bool) -> float:
+    if not circular:
+        return _autocorrelation_time(series)
+    # The sine/cosine embedding respects angular equivalence at the branch
+    # cut. Taking the slower component protects both angular degrees of
+    # freedom without unwrapping, which would invent a history of full turns.
+    return max(
+        _autocorrelation_time(np.sin(series)),
+        _autocorrelation_time(np.cos(series)),
+    )
+
+
+def correlation_profile(
+    matrix: np.ndarray,
+    quantile: float = 0.75,
+    max_features: int = 200,
+    circular: bool = False,
+) -> CorrelationProfile:
+    """Correlation-time summary and the feature evidence behind it.
 
     Estimated per feature and summarised across features. The choice of
     summary matters more than it looks, because the per-feature estimates are
@@ -205,9 +310,17 @@ def correlation_time(
     rather than the slowest residue, and the difference is not visible in the
     number that comes out.
 
-    The default is the upper quartile: above the median, so a protein's many
-    rigid residues cannot hide its slower ones, and far enough from the tail
-    that it estimates the protein rather than the estimator.
+    The default starts at the upper quartile: above the median and far enough
+    from the tail that it estimates the protein rather than the estimator.
+    An upper quartile alone has another failure, however: any coherent slow
+    region smaller than one quarter of the representation is mathematically
+    invisible to it. Prothon therefore also looks for a distinct upper group
+    on log correlation times. At least two features must lie beyond both a
+    threefold separation and four scaled median absolute deviations, and their
+    median must be at least three times q75. When those conditions hold, the
+    slow-group median sets the block plan. This protects a small slow loop
+    without making one noisy column -- or the noisiest column in a larger
+    protein -- dictate every block.
 
     Parameters
     ----------
@@ -219,26 +332,103 @@ def correlation_time(
     quantile
         Which quantile of the per-feature times to take.
     max_features
-        Estimate on at most this many features, evenly spaced. The estimate is
-        a summary and does not need every residue.
+        Estimate on at most this many *assessable* features, evenly spaced.
+        Constant and non-finite features are removed first.
+    circular
+        Treat feature values as angles in radians. Correlation is estimated on
+        their sine/cosine embedding so crossing -pi/+pi is not mistaken for a
+        decorrelating jump.
     """
     matrix = np.atleast_2d(np.asarray(matrix, dtype=np.float64))
-    n_frames, n_features = matrix.shape
-    if n_frames < 16:
-        return 1.0
+    if matrix.ndim != 2:
+        raise ValueError("A correlation profile requires a 2-D matrix.")
+    n_frames = matrix.shape[0]
+    if not isinstance(max_features, (int, np.integer)) or max_features < 1:
+        raise ValueError("max_features must be a positive integer.")
+    if not np.isfinite(quantile) or not 0.0 <= quantile <= 1.0:
+        raise ValueError("quantile must lie between zero and one.")
+
+    assessable = _assessable_columns(matrix, circular)
+    if n_frames < 16 or assessable.size == 0:
+        return CorrelationProfile(
+            tau=1.0,
+            quantile_tau=1.0,
+            median_tau=1.0,
+            summary="no assessable features",
+            assessable_features=tuple(int(i) for i in assessable),
+        )
 
     columns = (
-        np.arange(n_features)
-        if n_features <= max_features
-        else np.linspace(0, n_features - 1, max_features).astype(int)
+        assessable
+        if assessable.size <= max_features
+        else assessable[
+            np.linspace(0, assessable.size - 1, max_features).astype(int)
+        ]
     )
-    times = np.array([_autocorrelation_time(matrix[:, i]) for i in columns])
-    tau = float(np.quantile(times, quantile))
+    times = np.array([
+        _feature_correlation_time(matrix[:, i], circular) for i in columns
+    ])
+    quantile_tau = float(np.quantile(times, quantile))
+    median_tau = float(np.median(times))
+
+    log_times = np.log(np.maximum(times, 1.0))
+    log_median = float(np.median(log_times))
+    log_mad = float(np.median(np.abs(log_times - log_median)))
+    slow_boundary = np.exp(
+        log_median
+        + max(
+            np.log(SLOW_TAIL_RATIO),
+            SLOW_TAIL_MAD_MULTIPLIER * 1.4826 * log_mad,
+        )
+    )
+    slow_mask = times >= slow_boundary
+    slow_times = times[slow_mask]
+    slow_tau = (
+        float(np.median(slow_times))
+        if slow_times.size >= MINIMUM_SLOW_FEATURES
+        else quantile_tau
+    )
+    protects_slow_group = bool(
+        slow_times.size >= MINIMUM_SLOW_FEATURES
+        and slow_tau >= SLOW_TAIL_RATIO * quantile_tau
+    )
+    tau = slow_tau if protects_slow_group else quantile_tau
+    slow_features = columns[slow_mask] if protects_slow_group else np.array([], dtype=int)
+    ordinary_summary = (
+        "upper quartile"
+        if quantile == 0.75
+        else f"q{100.0 * quantile:g}"
+    )
+    summary = "coherent slow-feature median" if protects_slow_group else ordinary_summary
     logger.debug(
-        "correlation time: median %.1f, q%.0f %.1f, max %.1f frames",
-        np.median(times), 100 * quantile, tau, times.max(),
+        "correlation time: median %.1f, q%.0f %.1f, max %.1f; %s %.1f frames",
+        median_tau, 100 * quantile, quantile_tau, times.max(), summary, tau,
     )
-    return tau
+    return CorrelationProfile(
+        tau=float(tau),
+        quantile_tau=quantile_tau,
+        median_tau=median_tau,
+        summary=summary,
+        assessable_features=tuple(int(i) for i in assessable),
+        sampled_features=tuple(int(i) for i in columns),
+        slow_features=tuple(int(i) for i in slow_features),
+        feature_times=tuple(float(value) for value in times),
+    )
+
+
+def correlation_time(
+    matrix: np.ndarray,
+    quantile: float = 0.75,
+    max_features: int = 200,
+    circular: bool = False,
+) -> float:
+    """Correlation time of a representation, in frames.
+
+    This compatibility wrapper returns the scalar selected by
+    :func:`correlation_profile`. Use that function when the assessable and slow
+    feature sets are needed for an audit trail.
+    """
+    return correlation_profile(matrix, quantile, max_features, circular).tau
 
 
 def correlation_time_estimate(
@@ -246,6 +436,7 @@ def correlation_time_estimate(
     quantile: float = 0.75,
     max_features: int = 200,
     tolerance: float = PLATEAU_SLOPE,
+    circular: bool = False,
 ) -> CorrelationEstimate:
     """Correlation time, plus whether the trajectory was long enough to find it.
 
@@ -271,7 +462,7 @@ def correlation_time_estimate(
     ----------
     matrix
         ``(n_frames, n_features)`` representation, **in frame order**.
-    quantile, max_features
+    quantile, max_features, circular
         As :func:`correlation_time`.
     tolerance
         Growth between the half and the whole that still counts as settled.
@@ -286,7 +477,8 @@ def correlation_time_estimate(
     """
     matrix = np.atleast_2d(np.asarray(matrix, dtype=np.float64))
     n_frames = matrix.shape[0]
-    tau = correlation_time(matrix, quantile, max_features)
+    profile = correlation_profile(matrix, quantile, max_features, circular)
+    tau = profile.tau
 
     lengths = sorted(
         {
@@ -302,12 +494,18 @@ def correlation_time_estimate(
         return CorrelationEstimate(
             tau=tau, converged=False,
             prefix_taus={n_frames: tau}, growth=float("inf"), slope=float("inf"),
+            summary=profile.summary,
+            assessable_features=profile.assessable_features,
+            sampled_features=profile.sampled_features,
+            slow_features=profile.slow_features,
         )
 
     taus = {
         length: (
             tau if length == n_frames
-            else correlation_time(matrix[:length], quantile, max_features)
+            else correlation_time(
+                matrix[:length], quantile, max_features, circular
+            )
         )
         for length in lengths
     }
@@ -330,6 +528,10 @@ def correlation_time_estimate(
     return CorrelationEstimate(
         tau=tau, converged=converged, prefix_taus=taus,
         growth=float(growth), slope=slope,
+        summary=profile.summary,
+        assessable_features=profile.assessable_features,
+        sampled_features=profile.sampled_features,
+        slow_features=profile.slow_features,
     )
 
 

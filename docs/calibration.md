@@ -121,6 +121,35 @@ at 98% of features.
 Reproduce with `python scripts/calibration.py --study correlation`, which runs
 both nulls on the same data.
 
+### A slow minority of features
+
+An upper quartile has a structural blind spot: fewer than 25% slow features
+cannot change it, however slow they are. The audit reproduction uses 4000
+frames and 100 features: 80 IID normals and 20 AR(1) features with relaxation
+time 45. All have the same stationary distribution.
+
+| summary on the mixed system | estimated time (frames) |
+|---|---:|
+| q75 alone | 1.07 (the audited ~1.05 failure) |
+| median of the 20 slow features | 71.90 (the audited ~71.96 value) |
+| selected correlation plan | 71.90 |
+
+The slow group is recovered as columns 80–99 (zero-based). Further fixtures
+cover one contiguous eight-feature slow loop, two separated four-feature slow
+groups, and a slow angular loop crossing the -pi/+pi branch cut. On a
+homogeneous 100-feature system at relaxation time 20, the same rule retains q75
+at 46.27 frames; q95 is 73.61 frames on that fixture. Thus the correction
+protects coherent minorities without paying the growing worst-estimate penalty
+on a homogeneous protein.
+
+The end-to-end null fixture has 18 fast and two slow features in each of two
+2000-frame ensembles. The selected plan leaves 33 complete blocks, warns that
+the correlation estimate is still rising, does not withhold the p-value, and
+makes no false call. Shifting only the two slow features by one stationary
+standard deviation detects exactly those two, so conservatism has not replaced
+power. Reproduce the cases with
+`pytest tests/test_correlation.py -k "slow or homogeneous or mixed or circular"`.
+
 ### What this means for a result
 
 **The p-values from a single continuous trajectory are not trustworthy.** At a

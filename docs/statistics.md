@@ -216,6 +216,36 @@ Nominal 5%, 1000 replicates each. The block rate is flat across the range
 rather than degrading with τ, so the test does not require a user to know
 their correlation time in order to be honest.
 
+The cross-feature summary starts at q75, but q75 cannot see a slow region that
+occupies less than one quarter of a protein. Prothon therefore checks the
+per-feature times for a *coherent slow group*: at least two columns must be
+separated from the median by both a factor of three and four robust standard
+deviations on the log scale, and their median must exceed q75 threefold. When
+those conditions hold, the slow-group median sets the block length. This is
+deliberately not q90, q95 or the maximum: the upper tail of a homogeneous
+system grows with the number of features because the estimator is noisy, so a
+fixed high quantile would make larger proteins look slower for statistical
+rather than physical reasons.
+
+Constant and non-finite columns are unassessable and are removed before the
+200-feature limit is applied. Result metadata records the summary selected,
+the assessable and sampled feature counts, and the zero-based columns in any
+slow group. The scalar correlation time is therefore traceable to the features
+that caused it.
+
+For a circular representation, the same procedure estimates each feature on
+its sine and cosine coordinates and retains the slower component. This makes
+-pi and +pi adjacent, as they are physically, without unwrapping a trajectory
+and inventing a history of complete rotations. Dissimilarity and
+precision/recall pass their declared circularity into the sampling plan.
+
+`MINIMUM_BLOCKS` remains eight. That threshold comes from the 35 distinct
+balanced partitions of eight units, not from the feature aggregation rule, so
+changing the correlation summary does not justify tuning it. The mixed null
+and shifted alternative in the calibration suite check both sides: the new
+plan retains enough blocks to issue a verdict, makes no null call in its fixed
+fixture, and still detects the two deliberately shifted slow features.
+
 This happens automatically. `block_permutation=False` disables it for an
 ensemble whose frames genuinely are independent — generated structures, or an
 already-subsampled trajectory — where blocking costs resolution for nothing.
