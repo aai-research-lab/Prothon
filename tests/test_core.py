@@ -284,7 +284,16 @@ class TestGlobalDissimilarityIsNotFiltered:
     ubiquitin ensembles furthest from the reference reported as unresolvable.
     """
 
-    def _result(self, *, withheld, raw=0.40, floor=0.035, n=70):
+    def _result(
+        self,
+        *,
+        withheld,
+        raw=0.40,
+        floor=0.035,
+        threshold=None,
+        assessable=True,
+        n=70,
+    ):
         import numpy as np
 
         from prothon.compare.dissimilarity import ComparisonResult
@@ -300,6 +309,8 @@ class TestGlobalDissimilarityIsNotFiltered:
             significant=np.zeros(n, dtype=bool),
             noise_floor=float(floor),
             n_frames=(5000, 5000),
+            noise_floor_threshold=threshold,
+            noise_floor_assessable=assessable,
             p_values_withheld=withheld,
         )
 
@@ -321,3 +332,14 @@ class TestGlobalDissimilarityIsNotFiltered:
     def test_a_difference_below_the_floor_is_still_unresolved(self):
         result = self._result(withheld=False, raw=0.02, floor=0.035)
         assert not result.resolved
+
+    def test_the_mean_floor_is_not_the_decision_threshold(self):
+        result = self._result(
+            withheld=False, raw=0.04, floor=0.035, threshold=0.05
+        )
+        assert result.global_dissimilarity > result.noise_floor
+        assert not result.resolved
+
+    def test_too_few_floor_units_withhold_the_verdict(self):
+        result = self._result(withheld=True, assessable=False)
+        assert result.resolved is None

@@ -866,10 +866,19 @@ class Prothon:
                     )
                 else:
                     verdict = "not resolvable at this sampling"
+                if c.noise_floor_assessable:
+                    floor_value = (
+                        c.noise_floor
+                        if c.noise_floor_threshold is None
+                        else c.noise_floor_threshold
+                    )
+                    floor_text = f"floor q95 {floor_value:.4f}"
+                else:
+                    floor_text = f"floor mean {c.noise_floor:.4f}, unassessed"
                 lines.append(
                     f"  ensemble {c.ensemble_index}: "
                     f"d = {c.global_dissimilarity:.4f} "
-                    f"(floor {c.noise_floor:.4f}) — {verdict}"
+                    f"({floor_text}) — {verdict}"
                 )
             lines.append("")
         return "\n".join(lines).rstrip()

@@ -45,9 +45,10 @@ bias scores 0.216 at 5,000 conformations and 0.129 at 50 — the same model, the
 same error, a smaller number because it sampled less.
 
 So a table of raw dissimilarities ranks the thinly sampled model first. Every
-row here carries its own floor, and the **margin** is the distance above it.
-The table is ordered by margin, and that is the column to compare across
-models.
+row here carries its own 95th-percentile floor threshold, and the **margin** is
+the distance above it. The table is ordered by margin, and that is the column
+to compare across models. The mean floor remains in machine-readable output as
+a descriptive sampling statistic, but does not decide the verdict.
 
 This is not a subtlety that can be waved away by sampling everything equally:
 models emit what they emit, and a benchmark that asks each to produce the same

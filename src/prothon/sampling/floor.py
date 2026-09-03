@@ -11,6 +11,11 @@ to come from one distribution without assumption. A bootstrap treats the sample
 as the population and gives a floor about half what it should be; a parametric
 reference imposes a shape.
 
+For a trajectory, however, random rows are not independent halves. They mix
+every slow excursion into both sides and make the ensemble look more precisely
+sampled than it is. The exchangeable unit is therefore a complete temporal
+block, or a complete independent replica when replica labels are available.
+
 As with :mod:`prothon.sampling.null`, the statistic arrives as a callable. What
 a floor is does not depend on which distance is being floored.
 """
@@ -20,10 +25,20 @@ from __future__ import annotations
 import numpy as np
 
 from ..utils import get_logger
+from .correlation import block_labels
 
-__all__ = ["split_half_floor"]
+__all__ = ["FLOOR_QUANTILE", "MINIMUM_FLOOR_REPEATS", "split_half_floor"]
 
 logger = get_logger("floor")
+
+#: Upper tail used when a larger statistic means worse agreement. The mean is
+#: descriptive; a 95th-percentile threshold controls the chance that ordinary
+#: split-half sampling variation alone is called resolved.
+FLOOR_QUANTILE = 0.95
+
+#: Per ensemble. Two ensembles therefore contribute at least twenty values to
+#: a comparison floor, enough for the upper tail not to be merely its maximum.
+MINIMUM_FLOOR_REPEATS = 10
 
 
 def split_half_floor(
@@ -32,7 +47,9 @@ def split_half_floor(
     ensembles: tuple[np.ndarray, ...],
     repeats: int,
     rng: np.random.Generator,
-    weights: tuple = (None, None),
+    weights: tuple | None = None,
+    block_lengths: int | tuple[int, ...] = 1,
+    replica_labels: tuple[np.ndarray | None, ...] | np.ndarray | None = None,
 ) -> np.ndarray:
     """Distance between two disjoint halves of each ensemble.
 
@@ -56,24 +73,110 @@ def split_half_floor(
     Both ensembles are split, not only the reference, and the results pooled:
     the resolution limit of a comparison is set by whichever side is sampled
     worse.
+
+    ``block_lengths`` gives the indivisible temporal-block length for each
+    ensemble. A scalar applies to all ensembles. When ``replica_labels`` are
+    supplied, complete replicas are the units instead and blocks never cross a
+    replica boundary. The original random disjoint split is retained only when
+    the block length is one and no replica labels are supplied.
     """
-    def one_split(ensemble, w, half, seed):
-        rng = np.random.default_rng(seed)
-        order = rng.permutation(ensemble.shape[0])
-        left, right = order[:half], order[half : 2 * half]
+    if not ensembles:
+        raise ValueError("At least one ensemble is required to measure a floor.")
+    if repeats < 1:
+        raise ValueError("Floor repeats must be a positive integer.")
+    ensembles = tuple(np.asarray(ensemble) for ensemble in ensembles)
+    if any(ensemble.ndim != 2 for ensemble in ensembles):
+        raise ValueError("Floor ensembles must be 2-D (frames, features) matrices.")
+    n_features = ensembles[0].shape[1]
+    if any(ensemble.shape[1] != n_features for ensemble in ensembles):
+        raise ValueError("Every floor ensemble must have the same feature count.")
+
+    n_ensembles = len(ensembles)
+    if weights is None:
+        weights = (None,) * n_ensembles
+    elif len(weights) != n_ensembles:
+        raise ValueError(
+            f"Expected weights for {n_ensembles} ensembles; got {len(weights)}."
+        )
+    weights = tuple(None if w is None else np.asarray(w, dtype=float) for w in weights)
+    for ensemble, w in zip(ensembles, weights):
+        if w is not None and (w.ndim != 1 or w.size != ensemble.shape[0]):
+            raise ValueError("Weights must contain one value per ensemble frame.")
+
+    if np.isscalar(block_lengths):
+        block_lengths = (int(block_lengths),) * n_ensembles
+    else:
+        block_lengths = tuple(int(length) for length in block_lengths)
+    if len(block_lengths) != n_ensembles:
+        raise ValueError(
+            f"Expected block lengths for {n_ensembles} ensembles; "
+            f"got {len(block_lengths)}."
+        )
+    if any(length < 1 for length in block_lengths):
+        raise ValueError("Block lengths must be positive integers.")
+
+    if replica_labels is None:
+        replica_labels = (None,) * n_ensembles
+    elif n_ensembles == 1 and isinstance(replica_labels, np.ndarray):
+        replica_labels = (replica_labels,)
+    else:
+        replica_labels = tuple(replica_labels)
+    if len(replica_labels) != n_ensembles:
+        raise ValueError(
+            f"Expected replica labels for {n_ensembles} ensembles; "
+            f"got {len(replica_labels)}."
+        )
+
+    def units_for(ensemble, block_length, replicas):
+        n_frames = ensemble.shape[0]
+        if replicas is not None:
+            replicas = np.asarray(replicas)
+            if replicas.ndim != 1 or replicas.size != n_frames:
+                raise ValueError(
+                    "Replica labels must be one-dimensional with one label per frame."
+                )
+            _, inverse = np.unique(replicas, return_inverse=True)
+            return [
+                np.flatnonzero(inverse == label)
+                for label in range(int(inverse.max()) + 1)
+            ]
+        if block_length > 1:
+            labels = block_labels(n_frames, block_length)
+            return [np.flatnonzero(labels == label) for label in np.unique(labels)]
+        return None
+
+    def one_split(ensemble, w, seed, units):
+        local_rng = np.random.default_rng(seed)
+        if units is None:
+            half = ensemble.shape[0] // 2
+            order = local_rng.permutation(ensemble.shape[0])
+            left, right = order[:half], order[half : 2 * half]
+        else:
+            half = len(units) // 2
+            if half == 0:
+                return None
+            order = local_rng.permutation(len(units))
+            left = np.concatenate([units[i] for i in order[:half]])
+            right = np.concatenate([units[i] for i in order[half : 2 * half]])
         wl = wr = None
         if w is not None:
             wl, wr = w[left], w[right]
+            if wl.sum() <= 0 or wr.sum() <= 0:
+                return None
             wl, wr = wl / wl.sum(), wr / wr.sum()
         return statistic(ensemble[left], ensemble[right], wl, wr)
 
     jobs = []
-    for ensemble, w in zip(ensembles, weights):
-        half = ensemble.shape[0] // 2
-        if half < 2:
+    for ensemble, w, block_length, replicas in zip(
+        ensembles, weights, block_lengths, replica_labels
+    ):
+        if ensemble.shape[0] // 2 < 2:
+            continue
+        units = units_for(ensemble, block_length, replicas)
+        if units is not None and len(units) < 2:
             continue
         for seed in rng.integers(0, 2**63 - 1, size=repeats):
-            jobs.append((ensemble, w, half, seed))
+            jobs.append((ensemble, w, seed, units))
 
     if n_jobs != 1 and len(jobs) > 1:
         import os
@@ -87,12 +190,12 @@ def split_half_floor(
             for group in groups
             if group.size
         )
-        values = [row for group in batched for row in group]
+        values = [row for group in batched for row in group if row is not None]
         if not values:
-            return np.zeros((1, ensembles[0].shape[1]))
+            return np.zeros((1, n_features))
         return np.stack(values, axis=0)
 
-    values = [one_split(*job) for job in jobs]
+    values = [value for job in jobs if (value := one_split(*job)) is not None]
     if not values:
-        return np.zeros((1, ensembles[0].shape[1]))
+        return np.zeros((1, n_features))
     return np.stack(values, axis=0)

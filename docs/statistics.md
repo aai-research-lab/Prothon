@@ -9,22 +9,22 @@ each other. A finite sample never reproduces a continuous distribution exactly,
 so any distance measured between two samples includes a contribution that has
 nothing to do with the systems being compared.
 
-Prothon measures that contribution directly. It splits **each** ensemble in
-half at random, compares the halves, repeats, and reports the mean as the
-**noise floor**. A global dissimilarity below its floor is reported as *not
-resolvable at this sampling*, and `ComparisonResult.resolved` is `False`.
+Prothon measures that contribution directly. For explicitly independent
+structures it splits **each** ensemble into random disjoint halves. For a
+trajectory it assigns complete temporal blocks to the halves, so a slow
+excursion is never interleaved into both sides. Complete independent replicas
+can be supplied as still stronger units.
+
+The mean of these measurements remains the descriptive **noise floor**. A mean
+is not a decision threshold: `ComparisonResult.resolved` clears only the 95th
+percentile of the measured floor distribution. The mean, threshold and full
+distribution are all recorded.
 
 Halves of one ensemble are used because they are the only pair of samples
 guaranteed to come from the same distribution without assuming what that
 distribution is. A bootstrap assumes the sample is the population; a parametric
 reference assumes a shape. Two halves differ only by sampling, by
 construction.
-
-```
-CBCN (reference: ensemble 0)
-  ensemble 1: d = 0.0000 (floor 0.1422) — not resolvable at this sampling
-  ensemble 2: d = 0.5859 (floor 0.1426) — 9/12 residues differ
-```
 
 Reporting a difference without the resolution limit beside it invites a reader
 to interpret a number the sampling cannot support. The floor is cheap to
@@ -78,8 +78,10 @@ Extrapolating from splits at *n*/4 and *n*/2 gives a two-point slope that is
 itself noisy, and on a skewed distribution the extrapolated Jensen–Shannon
 floor came out 29% below the truth — again in the unsafe direction.
 
-So the floor stays as the split-half value: conservative, in the direction that
-costs sensitivity rather than credibility, and documented rather than adjusted.
+So the floor stays as the split-half distribution: conservative, in the
+direction that costs sensitivity rather than credibility, and documented
+rather than adjusted. Its mean describes the sampling contribution and its
+95th percentile controls the resolved/unresolved verdict.
 Reproduce with `python scripts/floor_scaling.py`.
 
 ## The null distribution
@@ -217,9 +219,10 @@ silently finds none.
 
 ### When there is not enough to test with
 
-Two situations leave too little independent information for any p-value, and
-Prothon reports the measured floor and withholds the p-value rather than
-printing one it cannot support:
+Two situations leave too little independent information for any p-value.
+Prothon retains the measured floor values as descriptive diagnostics, but
+withholds both the p-value and the resolved/unresolved floor verdict rather
+than printing decisions the sampling cannot support:
 
 A permutation p-value over six blocks cannot resolve a 5% threshold, let alone
 survive correction across a few hundred residues. Prothon therefore refuses

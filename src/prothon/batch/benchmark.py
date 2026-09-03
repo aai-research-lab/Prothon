@@ -58,6 +58,8 @@ class BenchmarkRow:
     n_model: int = 0
     dissimilarity: float | None = None
     noise_floor: float | None = None
+    noise_floor_threshold: float | None = None
+    noise_floor_assessable: bool = True
     n_significant: int | None = None
     n_features: int | None = None
     precision: float | None = None
@@ -77,12 +79,23 @@ class BenchmarkRow:
         thinly sampled, because a small sample has a high floor and a depressed
         distance; the margin does not.
         """
-        if self.dissimilarity is None or self.noise_floor is None:
+        if (
+            self.dissimilarity is None
+            or self.noise_floor is None
+            or not self.noise_floor_assessable
+        ):
             return None
-        return self.dissimilarity - self.noise_floor
+        threshold = (
+            self.noise_floor
+            if self.noise_floor_threshold is None
+            else self.noise_floor_threshold
+        )
+        return self.dissimilarity - threshold
 
     @property
-    def resolved(self) -> bool:
+    def resolved(self) -> bool | None:
+        if not self.noise_floor_assessable:
+            return None
         margin = self.margin
         return margin is not None and margin > 0
 
@@ -90,6 +103,8 @@ class BenchmarkRow:
     def verdict(self) -> str:
         if self.refused:
             return "refused"
+        if not self.noise_floor_assessable:
+            return "too few independent units for a floor verdict"
         if not self.resolved:
             return "indistinguishable from the reference at this sampling"
         parts = []
@@ -108,6 +123,8 @@ class BenchmarkRow:
             "n_model": self.n_model,
             "dissimilarity": self.dissimilarity,
             "noise_floor": self.noise_floor,
+            "noise_floor_threshold": self.noise_floor_threshold,
+            "noise_floor_assessable": self.noise_floor_assessable,
             "margin": self.margin,
             "resolved": self.resolved,
             "n_significant": self.n_significant,
@@ -162,21 +179,28 @@ class BenchmarkResult:
                     f"| {row.refused} |"
                 )
                 continue
+            threshold = (
+                row.noise_floor
+                if row.noise_floor_threshold is None
+                else row.noise_floor_threshold
+            )
+            margin = "—" if row.margin is None else f"{row.margin:+.3f}"
             lines.append(
                 f"| {row.target} | {row.model} | {row.n_model} | "
-                f"{row.dissimilarity:.3f} | {row.noise_floor:.3f} | "
-                f"{row.margin:+.3f} | "
+                f"{row.dissimilarity:.3f} | {threshold:.3f} | {margin} | "
                 f"{row.precision:.3f} | {row.recall:.3f} | {row.verdict} |"
             )
         return "\n".join(lines)
 
     def summary(self) -> str:
         refused = sum(1 for r in self.rows if r.refused)
-        unresolved = sum(1 for r in self.rows if not r.refused and not r.resolved)
+        unresolved = sum(1 for r in self.rows if not r.refused and r.resolved is False)
+        unassessed = sum(1 for r in self.rows if not r.refused and r.resolved is None)
         lines = [
             f"{len(self.rows)} comparisons against {self.reference_label}",
             f"  {refused} refused for want of sampling",
             f"  {unresolved} not resolvable above the noise floor",
+            f"  {unassessed} without enough independent units for a floor verdict",
         ]
         return "\n".join(lines)
 
@@ -262,6 +286,8 @@ def _compare_one(
 
     row.dissimilarity = result.global_dissimilarity
     row.noise_floor = result.noise_floor
+    row.noise_floor_threshold = result.noise_floor_threshold
+    row.noise_floor_assessable = result.noise_floor_assessable
     row.n_significant = result.n_significant
     row.n_features = int(result.local_dissimilarity.size)
     row.precision = coverage.mean_precision

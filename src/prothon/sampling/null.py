@@ -49,7 +49,15 @@ def _subsample(
 
 
 def _one_permutation(
-    k, seeds, blocks, total, n_reference, pooled, pooled_w, weighted,
+    k,
+    seeds,
+    blocks,
+    total,
+    n_reference,
+    n_reference_blocks,
+    pooled,
+    pooled_w,
+    weighted,
     statistic,
 ):
     """One relabelling, computed from its own seed.
@@ -62,10 +70,16 @@ def _one_permutation(
     rng = np.random.default_rng(seeds[k])
     if blocks is None:
         order = rng.permutation(total)
+        left, right = order[:n_reference], order[n_reference:]
     else:
+        # Blocks are the observations in this design. Preserve the number of
+        # blocks assigned to each ensemble, but allow their frame counts to
+        # vary when a trailing stub made some blocks longer than others.
+        # Cutting the concatenated blocks at ``n_reference`` would keep the
+        # frame count exact only by splitting whichever block crosses it.
         shuffled = rng.permutation(len(blocks))
-        order = np.concatenate([blocks[i] for i in shuffled])
-    left, right = order[:n_reference], order[n_reference:]
+        left = np.concatenate([blocks[i] for i in shuffled[:n_reference_blocks]])
+        right = np.concatenate([blocks[i] for i in shuffled[n_reference_blocks:]])
     wl = wr = None
     if weighted:
         wl, wr = pooled_w[left], pooled_w[right]
@@ -74,7 +88,15 @@ def _one_permutation(
 
 
 def _permutation_chunk(
-    indices, seeds, blocks, total, n_reference, pooled, pooled_w, weighted,
+    indices,
+    seeds,
+    blocks,
+    total,
+    n_reference,
+    n_reference_blocks,
+    pooled,
+    pooled_w,
+    weighted,
     statistic,
 ):
     """A run of permutations, computed in one worker.
@@ -86,8 +108,16 @@ def _permutation_chunk(
     return np.stack(
         [
             _one_permutation(
-                k, seeds, blocks, total, n_reference, pooled, pooled_w,
-                weighted, statistic,
+                k,
+                seeds,
+                blocks,
+                total,
+                n_reference,
+                n_reference_blocks,
+                pooled,
+                pooled_w,
+                weighted,
+                statistic,
             )
             for k in indices
         ],
@@ -140,8 +170,10 @@ def permutation_null(
         labels_b = block_labels(total - n_reference, block_length) + labels_a[-1] + 1
         labels = np.concatenate([labels_a, labels_b])
         blocks = [np.nonzero(labels == b)[0] for b in np.unique(labels)]
+        n_reference_blocks = np.unique(labels_a).size
     else:
         blocks = None
+        n_reference_blocks = None
 
     # Each permutation is independent, so the work divides cleanly. Seeds are
     # drawn from the caller's generator up front rather than letting workers
@@ -152,7 +184,15 @@ def permutation_null(
 
     def one(k: int) -> np.ndarray:
         return _one_permutation(
-            k, seeds, blocks, total, n_reference, pooled, pooled_w, weighted,
+            k,
+            seeds,
+            blocks,
+            total,
+            n_reference,
+            n_reference_blocks,
+            pooled,
+            pooled_w,
+            weighted,
             statistic,
         )
 
@@ -168,8 +208,16 @@ def permutation_null(
         chunks = np.array_split(np.arange(n_permutations), min(workers, n_permutations))
         rows = Parallel(n_jobs=n_jobs, prefer="processes")(
             delayed(_permutation_chunk)(
-                chunk, seeds, blocks, total, n_reference, pooled, pooled_w,
-                weighted, statistic,
+                chunk,
+                seeds,
+                blocks,
+                total,
+                n_reference,
+                n_reference_blocks,
+                pooled,
+                pooled_w,
+                weighted,
+                statistic,
             )
             for chunk in chunks
             if chunk.size
@@ -178,26 +226,7 @@ def permutation_null(
 
     null = np.empty((n_permutations, reference.shape[1]), dtype=np.float64)
     for k in range(n_permutations):
-        rng = np.random.default_rng(seeds[k])
-        if blocks is None:
-            order = rng.permutation(total)
-        else:
-            # Relabel whole blocks. The groups end up close to the original
-            # sizes rather than exactly equal, which is what a block design
-            # gives and is not a problem: the statistic is computed on whatever
-            # each group holds.
-            shuffled = rng.permutation(len(blocks))
-            taken, order = 0, []
-            for index in shuffled:
-                order.append(blocks[index])
-                taken += blocks[index].size
-            order = np.concatenate(order)
-        left, right = order[:n_reference], order[n_reference:]
-        wl = wr = None
-        if weighted:
-            wl, wr = pooled_w[left], pooled_w[right]
-            wl, wr = wl / wl.sum(), wr / wr.sum()
-        null[k] = statistic(pooled[left], pooled[right], wl, wr)
+        null[k] = one(k)
     return null
 
 

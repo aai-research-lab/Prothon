@@ -54,7 +54,7 @@ conditions averages away the difference being measured.
 | `--metric` | `-m` | `jsd` | `jsd`, `wasserstein`, `ks`. |
 | `--random-state` | `-s` | | Seed. Set it and the run is reproducible. |
 | `--n-permutations` | | `100` | Relabellings behind the null. |
-| `--s-num` | | `5` | Split-half repeats behind the noise floor. |
+| `--s-num` | | `5` | Requested split-half repeats; modern mode uses at least 10 per ensemble for the floor quantile. |
 | `--x-num` | | `100` | Grid points per density. |
 | `--alpha` | | `0.05` | False-discovery rate. |
 | `--no-block-permutation` | | | Treat frames as independent. |

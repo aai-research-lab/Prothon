@@ -5,6 +5,46 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Fixed — correlation-aware noise floors
+
+- Split-half floors now assign complete temporal blocks to each half instead
+  of randomly interleaving time-correlated frames. Independent replica labels
+  are also accepted and make complete replicas the indivisible units.
+- The global resolved/unresolved verdict now uses the 95th percentile of the
+  measured floor distribution rather than treating its mean as a decision
+  threshold. The mean remains available as `noise_floor` for compatibility,
+  while the threshold and full distribution are recorded explicitly.
+- When fewer than eight independent blocks are available, the floor remains a
+  descriptive measurement but no resolved/unresolved verdict is made.
+
+### Fixed — indivisible permutation blocks
+
+- Block permutation now assigns complete blocks to the relabelled ensembles.
+  Previously it shuffled complete blocks, concatenated them, and then cut the
+  concatenation at the original frame count; whenever an unequal trailing
+  block crossed that cut, a supposedly indivisible block was split between
+  both ensembles.
+- Relabelling preserves the original number of blocks in each ensemble. Frame
+  counts may differ when blocks have unequal lengths, which is the valid block
+  design and keeps every correlated unit intact.
+- Serial and parallel permutation paths now call the same implementation and
+  are regression-tested to return identical results from the same seed.
+
+### Fixed — trajectory subsampling and block accounting
+
+- A trajectory longer than the default 1000-frame comparison sample is now
+  reduced to a contiguous window whenever block permutation is active. The old
+  random row order destroyed temporal correlation immediately before applying
+  a correction that depends on that order, restoring an anti-conservative
+  frame-permutation null under a different name.
+- Block length, independent-block count and the too-few-blocks refusal are now
+  computed from the frames that actually enter the test. A 5000-frame
+  trajectory sampled to 1000 frames no longer claims blocks from the 4000
+  frames that were not tested.
+- Comparison metadata records the number of sampled frames and whether all
+  frames, a contiguous trajectory window, uniform IID sampling, or the legacy
+  bootstrap supplied the calculation.
+
 ### Added — ingest and reconciliation (towards 3.0)
 
 - **`prothon.ingest.Ensemble`**: a set of conformations with per-frame weights,

@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from prothon.compare.dissimilarity import dissimilarity
+from prothon.compare.dissimilarity import _subsample, dissimilarity
 from prothon.sampling.correlation import (
     MINIMUM_BLOCKS,
     block_labels,
@@ -17,6 +17,8 @@ from prothon.sampling.correlation import (
     effective_frames,
     plan_blocks,
 )
+from prothon.sampling.floor import split_half_floor
+from prothon.sampling.null import permutation_null
 
 
 def ou(n_frames, n_features, tau, rng, mean=0.0):
@@ -29,6 +31,26 @@ def ou(n_frames, n_features, tau, rng, mean=0.0):
     for t in range(1, n_frames):
         series[t] = phi * series[t - 1] + noise[t]
     return series + mean
+
+
+class TestTrajectorySubsampling:
+    def test_a_trajectory_is_reduced_to_one_contiguous_window(self):
+        data = np.arange(5000, dtype=float)[:, None]
+        sampled, _ = _subsample(
+            data, 1000, np.random.default_rng(0), preserve_order=True
+        )
+        assert sampled.shape == (1000, 1)
+        np.testing.assert_array_equal(np.diff(sampled[:, 0]), np.ones(999))
+
+    def test_weights_stay_attached_to_the_contiguous_frames(self):
+        data = np.arange(100, dtype=float)[:, None]
+        weights = np.arange(1, 101, dtype=float)
+        sampled, sampled_weights = _subsample(
+            data, 20, np.random.default_rng(3), weights, preserve_order=True
+        )
+        indices = sampled[:, 0].astype(int)
+        expected = weights[indices] / weights[indices].sum()
+        np.testing.assert_allclose(sampled_weights, expected)
 
 
 class TestCorrelationTime:
@@ -116,6 +138,144 @@ class TestBlockPlanning:
         assert counts.min() >= 30
 
 
+class TestWholeBlockPermutation:
+    @staticmethod
+    def _labelled_ensembles():
+        # block_labels(10, 4) produces blocks of 4 and 6 frames. Globally
+        # unique labels let the statistic detect whether either block was
+        # divided between the relabelled ensembles.
+        labels_a = np.repeat([0.0, 1.0], [4, 6])
+        labels_b = np.repeat([2.0, 3.0], [4, 6])
+        return (
+            np.column_stack([labels_a, labels_a]),
+            np.column_stack([labels_b, labels_b]),
+        )
+
+    @staticmethod
+    def _split_count_and_left_size(left, right, _weights_a, _weights_b):
+        split = np.intersect1d(left[:, 0], right[:, 0]).size
+        return np.array([split, left.shape[0]], dtype=float)
+
+    def test_a_relabelled_block_is_never_split_between_ensembles(self):
+        reference, other = self._labelled_ensembles()
+        null = permutation_null(
+            1,
+            self._split_count_and_left_size,
+            reference,
+            other,
+            n_permutations=200,
+            rng=np.random.default_rng(0),
+            block_length=4,
+        )
+
+        np.testing.assert_array_equal(null[:, 0], np.zeros(200))
+        # Two whole blocks are assigned to each side. Their unequal lengths
+        # mean the frame count may vary; exact frame counts would require a cut.
+        assert set(null[:, 1]) == {8.0, 10.0, 12.0}
+
+    def test_parallel_and_serial_block_relabellings_agree(self):
+        reference, other = self._labelled_ensembles()
+        arguments = (
+            self._split_count_and_left_size,
+            reference,
+            other,
+            40,
+        )
+        serial = permutation_null(
+            1, *arguments, rng=np.random.default_rng(7), block_length=4
+        )
+        parallel = permutation_null(
+            2, *arguments, rng=np.random.default_rng(7), block_length=4
+        )
+        np.testing.assert_array_equal(serial, parallel)
+
+
+class TestCorrelationAwareFloor:
+    @staticmethod
+    def _split_count_and_left_size(left, right, _weights_a, _weights_b):
+        split = np.intersect1d(left[:, 0], right[:, 0]).size
+        return np.array([split, left.shape[0]], dtype=float)
+
+    def test_a_temporal_block_is_never_split_between_halves(self):
+        labels = np.repeat([0.0, 1.0], [4, 6])
+        ensemble = np.column_stack([labels, labels])
+        floor = split_half_floor(
+            1,
+            self._split_count_and_left_size,
+            (ensemble,),
+            repeats=100,
+            rng=np.random.default_rng(0),
+            block_lengths=4,
+        )
+
+        np.testing.assert_array_equal(floor[:, 0], np.zeros(100))
+        assert set(floor[:, 1]) == {4.0, 6.0}
+
+    def test_complete_replicas_are_the_exchangeable_units(self):
+        labels = np.repeat([0.0, 1.0, 2.0, 3.0], [3, 5, 4, 6])
+        ensemble = np.column_stack([labels, labels])
+        floor = split_half_floor(
+            1,
+            self._split_count_and_left_size,
+            (ensemble,),
+            repeats=100,
+            rng=np.random.default_rng(1),
+            replica_labels=labels,
+        )
+
+        np.testing.assert_array_equal(floor[:, 0], np.zeros(100))
+        assert np.unique(floor[:, 1]).size > 1
+
+    def test_random_rows_understate_a_correlated_floor(self):
+        ensemble = ou(2000, 8, 20.0, np.random.default_rng(12))
+
+        def mean_difference(left, right, _weights_a, _weights_b):
+            return np.abs(left.mean(axis=0) - right.mean(axis=0))
+
+        iid = split_half_floor(
+            1,
+            mean_difference,
+            (ensemble,),
+            repeats=100,
+            rng=np.random.default_rng(2),
+        )
+        blocked = split_half_floor(
+            1,
+            mean_difference,
+            (ensemble,),
+            repeats=100,
+            rng=np.random.default_rng(2),
+            block_lengths=40,
+        )
+        assert blocked.mean() > 3.0 * iid.mean()
+
+    def test_dissimilarity_routes_its_block_plan_into_the_floor(self):
+        rng = np.random.default_rng(88)
+        reference = ou(1000, 6, 20.0, rng)
+        other = ou(1000, 6, 20.0, rng)
+        common = dict(
+            x_num=30,
+            s_num=5,
+            n_permutations=10,
+            sample_size=1000,
+            random_state=5,
+        )
+        iid = dissimilarity(
+            reference, other, -5, 5, block_permutation=False, **common
+        )
+        blocked = dissimilarity(
+            reference,
+            other,
+            -5,
+            5,
+            correlation_time_frames=20.0,
+            **common,
+        )
+
+        assert blocked.noise_floor > 1.5 * iid.noise_floor
+        assert blocked.noise_floor_assessable
+
+
 class TestTheFalsePositiveRateIsFixed:
     """The measurement this whole module exists for."""
 
@@ -149,6 +309,31 @@ class TestTheFalsePositiveRateIsFixed:
         assert withheld == 0, "2000 frames at this correlation time should be testable"
         assert block_rate < 0.15
 
+    def test_default_subsampling_preserves_the_block_null(self):
+        """The default thousand-frame path must preserve temporal order.
+
+        The original calibration tests set ``sample_size=frames`` and never
+        entered the branch used by a trajectory longer than 1000 frames. The
+        old branch shuffled the selected rows and restored the 94% false-call
+        failure that block permutation was meant to remove.
+        """
+        hits = total = withheld = 0
+        for seed in range(8):
+            rng = np.random.default_rng(900 + seed)
+            a = ou(2000, 6, 20.0, rng)
+            b = ou(2000, 6, 20.0, rng)
+            result = dissimilarity(
+                a, b, -5, 5, x_num=25, s_num=2,
+                n_permutations=50, random_state=seed,
+                correlation_time_frames=20.0,
+            )
+            hits += result.n_significant
+            total += 6
+            withheld += int(result.p_values_withheld)
+
+        assert withheld == 0
+        assert hits / total < 0.15
+
     def test_it_still_finds_a_real_difference(self):
         """A test made conservative enough to pass the null case is only
         useful if it still has power."""
@@ -180,6 +365,24 @@ class TestTheFalsePositiveRateIsFixed:
 
 
 class TestRefusal:
+    def test_block_count_is_recomputed_after_default_subsampling(self):
+        rng = np.random.default_rng(14)
+        a = rng.normal(size=(5000, 2))
+        b = rng.normal(size=(5000, 2))
+        with pytest.warns(
+            UserWarning, match="3 independent blocks in 1000 sampled frames"
+        ):
+            result = dissimilarity(
+                a, b, -5, 5, x_num=20, s_num=2, n_permutations=5,
+                random_state=0, correlation_time_frames=150.0,
+            )
+        assert result.n_blocks == 3
+        assert result.p_values_withheld
+        assert not result.noise_floor_assessable
+        assert result.resolved is None
+        assert result.metadata["sampled_frames"] == [1000, 1000]
+        assert result.metadata["sampling_strategy"] == "contiguous window"
+
     def test_a_short_trajectory_of_a_slow_system_withholds_the_p_value(self):
         """300 frames of a system with a correlation time of 120 frames.
 

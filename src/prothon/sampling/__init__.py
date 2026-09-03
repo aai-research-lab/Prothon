@@ -17,7 +17,7 @@ from .correlation import (
     effective_frames,
     plan_blocks,
 )
-from .floor import split_half_floor
+from .floor import FLOOR_QUANTILE, MINIMUM_FLOOR_REPEATS, split_half_floor
 from .null import permutation_null, studentised_p_values
 from .statistics import (
     benjamini_hochberg,
@@ -27,6 +27,8 @@ from .statistics import (
 
 __all__ = [
     "MINIMUM_BLOCKS",
+    "FLOOR_QUANTILE",
+    "MINIMUM_FLOOR_REPEATS",
     "benjamini_hochberg",
     "effective_sample_size",
     "permutation_null",

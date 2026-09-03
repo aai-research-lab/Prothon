@@ -76,7 +76,7 @@ from ..sampling.correlation import (
     correlation_time_estimate,
     plan_blocks,
 )
-from ..sampling.floor import split_half_floor
+from ..sampling.floor import FLOOR_QUANTILE, MINIMUM_FLOOR_REPEATS, split_half_floor
 from ..sampling.null import permutation_null, studentised_p_values
 from ..sampling.statistics import (
     DEFAULT_SAMPLE_SIZE,
@@ -174,10 +174,12 @@ class ComparisonResult:
         protein.
     noise_floor
         Mean within-ensemble Jensen-Shannon distance: the smallest difference
-        this much sampling could resolve. A global dissimilarity below it is
-        not evidence of anything.
+        this much sampling could resolve. Retained as a descriptive summary;
+        ``resolved`` uses the upper-tail threshold rather than this mean.
     resolved
-        Whether the global dissimilarity exceeds the noise floor at all.
+        Whether the global dissimilarity exceeds the 95th percentile of the
+        noise-floor distribution. ``None`` when too few independent units were
+        available to support that verdict.
     """
 
     ensemble_index: int
@@ -190,6 +192,14 @@ class ComparisonResult:
     significant: np.ndarray
     noise_floor: float
     n_frames: tuple[int, int]
+    #: Upper quantile of the split-half distribution used for the global
+    #: resolved/unresolved verdict. ``noise_floor`` remains its mean for
+    #: backward compatibility and descriptive reporting.
+    noise_floor_threshold: float | None = None
+    #: False when there were too few independent units to support a floor
+    #: verdict. The measured values remain available but are descriptive only.
+    noise_floor_assessable: bool = True
+    noise_floor_distribution: np.ndarray | None = None
     #: Kish effective sample size of each ensemble. Equal to the frame count
     #: when unweighted; much smaller when a few conformers carry the mass.
     effective_samples: tuple[float, float] = (0.0, 0.0)
@@ -205,9 +215,9 @@ class ComparisonResult:
     correlation_time_converged: bool = True
     n_blocks: int = 0
     #: Set when the sampling could not support a p-value at all, in which case
-    #: every entry of ``p_values`` is 1 and the floor is the only guide. Two
-    #: things cause it: too few blocks to permute, and a trajectory too short
-    #: for its own correlation time to be estimable.
+    #: every entry of ``p_values`` is 1. The floor distribution remains a
+    #: descriptive diagnostic, but it does not issue a verdict from the same
+    #: insufficient blocks.
     p_values_withheld: bool = False
     order_parameter: str = ""
     #: Position of each feature on the reference ensemble, one-based. Set when
@@ -222,16 +232,23 @@ class ComparisonResult:
         return float(np.min(self.p_values)) if self.p_values.size else 1.0
 
     @property
-    def resolved(self) -> bool:
+    def resolved(self) -> bool | None:
         """Whether the difference exceeds what this much sampling could produce.
 
         Compares the unmasked mean against the floor, because the floor is an
         unmasked mean. It is deliberately independent of the significance
-        filter: a comparison whose p-values were withheld for want of
-        independent blocks still has a magnitude, and that magnitude is the
-        whole of what can be said about it.
+        filter. A comparison whose p-values and floor verdict were withheld
+        for want of independent blocks still retains its descriptive
+        magnitude, while this property returns ``None``.
         """
-        return bool(self.global_dissimilarity > self.noise_floor)
+        if not self.noise_floor_assessable:
+            return None
+        threshold = (
+            self.noise_floor
+            if self.noise_floor_threshold is None
+            else self.noise_floor_threshold
+        )
+        return bool(self.global_dissimilarity > threshold)
 
     @property
     def p_values_reported(self) -> bool:
@@ -273,6 +290,17 @@ class ComparisonResult:
             "significant": self.significant.tolist(),
             "n_significant": self.n_significant,
             "noise_floor": float(self.noise_floor),
+            "noise_floor_threshold": (
+                float(self.noise_floor)
+                if self.noise_floor_threshold is None
+                else float(self.noise_floor_threshold)
+            ),
+            "noise_floor_assessable": bool(self.noise_floor_assessable),
+            "noise_floor_distribution": (
+                None
+                if self.noise_floor_distribution is None
+                else np.asarray(self.noise_floor_distribution).tolist()
+            ),
             "resolved": self.resolved,
             "n_frames": list(self.n_frames),
             "effective_samples": list(self.effective_samples),
@@ -322,17 +350,29 @@ def jsd_local(
 
 
 def _subsample(
-    arr: np.ndarray, size: int, rng: np.random.Generator, weights=None
+    arr: np.ndarray,
+    size: int,
+    rng: np.random.Generator,
+    weights=None,
+    *,
+    preserve_order: bool = False,
 ):
     """Take at most ``size`` frames, without replacement.
 
     Without replacement matters: the whole point of the permutation null is
     that the two groups are disjoint, and drawing with replacement would put
-    the same frame on both sides.
+    the same frame on both sides. A trajectory is different from an IID
+    ensemble: its row order carries its correlation structure, so it is
+    reduced to one contiguous window. Selecting scattered rows and sorting
+    them would preserve their labels but change the time step between them.
     """
     if arr.shape[0] <= size:
         return arr, weights
-    keep = rng.choice(arr.shape[0], size, replace=False)
+    if preserve_order:
+        start = int(rng.integers(0, arr.shape[0] - size + 1))
+        keep = np.arange(start, start + size)
+    else:
+        keep = rng.choice(arr.shape[0], size, replace=False)
     return arr[keep], (None if weights is None else weights[keep] / weights[keep].sum())
 
 
@@ -411,8 +451,9 @@ def dissimilarity(
     x_num
         Grid points per density.
     s_num
-        Repeats of the split-half noise floor per ensemble (and, in legacy
-        mode, resamples per ensemble).
+        Requested repeats of the split-half noise floor per ensemble (and, in
+        legacy mode, resamples per ensemble). Modern mode uses at least ten so
+        an upper-tail decision threshold can be estimated.
     n_permutations
         Relabellings used to build the null. More gives finer p-values at
         linear cost; 100 is enough for a few hundred residues once the null is
@@ -424,7 +465,11 @@ def dissimilarity(
     sample_size
         Ensembles larger than this are subsampled, without replacement, before
         the test. The reported dissimilarity is computed on the subsample too,
-        so observation and null are measured on the same data.
+        so observation and null are measured on the same data. When block
+        permutation is active, the subsample is a contiguous window: temporal
+        order and the time step are part of a trajectory's sampling structure.
+        Frames may be selected independently only when block permutation is
+        explicitly disabled or the data are estimated to be uncorrelated.
     weights_ref, weights
         Probability per frame, or ``None`` for uniform. A deposited ensemble
         stores these and a reweighted simulation produces them; ignoring them
@@ -463,13 +508,11 @@ def dissimilarity(
 
     Notes
     -----
-    The permutation null assumes frames are exchangeable. Molecular dynamics
-    frames are correlated in time, so an ensemble holds fewer independent
-    conformations than it has frames, and these p-values remain somewhat
-    optimistic for a single continuous trajectory. Correcting that properly
-    needs a block permutation over the correlation time, which is planned for
-    3.0. Meanwhile the split-half noise floor is measured rather than assumed,
-    and is the more trustworthy of the two guides.
+    Individual molecular-dynamics frames are not exchangeable. When temporal
+    correlation is detected, the null relabels contiguous blocks and any
+    computational subsample remains contiguous. The block count and refusal
+    decision are computed from that sampled window rather than from frames the
+    test did not use.
     """
     ref_rep = np.asarray(ref_rep, dtype=np.float64)
     rep = np.asarray(rep, dtype=np.float64)
@@ -549,6 +592,7 @@ def dissimilarity(
     tau_converged = True
     tau_assessable = True
     block_length, n_blocks = 1, min(ref_rep.shape[0], rep.shape[0])
+    use_blocks = False
     if not legacy and block_permutation is not False:
         if correlation_time_frames is not None:
             # Supplied by the caller, who is responsible for it.
@@ -568,9 +612,7 @@ def dissimilarity(
             tau_assessable = bool(
                 np.isfinite(left.slope) and np.isfinite(right.slope)
             )
-        if tau > 1.0 or block_permutation is True:
-            smaller = min(ref_rep.shape[0], rep.shape[0])
-            block_length, n_blocks = plan_blocks(smaller, tau)
+        use_blocks = tau > 1.0 or block_permutation is True
     if legacy:
         raw_local = jsd_local(
             ref_rep, rep, x_min, x_max, x_num, False, weights_ref, weights, metric
@@ -583,13 +625,30 @@ def dissimilarity(
             pooled = mannwhitneyu(between.flatten(), within.flatten()).pvalue
         p_values = np.full(raw_local.shape, float(pooled))
         noise_floor = float(np.mean(within))
+        noise_floor_threshold = noise_floor
+        noise_floor_distribution = np.asarray(within, dtype=np.float64)
+        noise_floor_assessable = True
         withheld = False
     else:
         # Subsample once, then use the same matrices for the observed statistic
         # and for every relabelling: the null must be built from exactly the
         # data the observation was made on, or it calibrates the wrong thing.
-        reference_sample, w_ref = _subsample(ref_rep, sample_size, rng, weights_ref)
-        other_sample, w_other = _subsample(rep, sample_size, rng, weights)
+        reference_sample, w_ref = _subsample(
+            ref_rep, sample_size, rng, weights_ref, preserve_order=use_blocks
+        )
+        other_sample, w_other = _subsample(
+            rep, sample_size, rng, weights, preserve_order=use_blocks
+        )
+
+        # The test can only claim the independent units that actually reached
+        # it. Planning on the original trajectory and then testing a shorter
+        # sample overstates the number of blocks and can turn a refusal into a
+        # reported p-value.
+        sampled_smaller = min(reference_sample.shape[0], other_sample.shape[0])
+        if use_blocks:
+            block_length, n_blocks = plan_blocks(sampled_smaller, tau)
+        else:
+            block_length, n_blocks = 1, sampled_smaller
 
         raw_local = jsd_local(
             reference_sample, other_sample, x_min, x_max, x_num, use_circular,
@@ -655,24 +714,31 @@ def dissimilarity(
             warnings.warn(
                 f"A correlation time of about {tau:.0f} frames leaves only "
                 f"{n_blocks} independent blocks in "
-                f"{min(ref_rep.shape[0], rep.shape[0])} frames, fewer than the "
+                f"{sampled_smaller} sampled frames, fewer than the "
                 f"{MINIMUM_BLOCKS} a permutation p-value can be built from. No "
-                f"p-value is reported. The noise floor is measured and still "
-                f"applies. Sample this system for longer, or compare independent "
-                f"replicates.",
+                f"p-value is reported, and the split-half floor has too few "
+                f"independent units for a resolved/unresolved verdict. Its "
+                f"measured values are retained as descriptive diagnostics. "
+                f"Sample this system for longer, or compare independent replicas.",
                 UserWarning,
                 stacklevel=3,
             )
-        noise_floor = float(
-            np.mean(
-                split_half_floor(
-                    n_jobs, statistic,
-                    (reference_sample, other_sample),
-                    max(1, s_num // 2), rng,
-                    weights=(w_ref, w_other),
-                )
-            )
+        floor_distribution = split_half_floor(
+            n_jobs,
+            statistic,
+            (reference_sample, other_sample),
+            max(MINIMUM_FLOOR_REPEATS, s_num),
+            rng,
+            weights=(w_ref, w_other),
+            block_lengths=(block_length, block_length),
         )
+        noise_floor_distribution = np.asarray(floor_distribution, dtype=np.float64)
+        global_floor_distribution = noise_floor_distribution.mean(axis=1)
+        noise_floor = float(global_floor_distribution.mean())
+        noise_floor_threshold = float(
+            np.quantile(global_floor_distribution, FLOOR_QUANTILE)
+        )
+        noise_floor_assessable = not use_blocks or n_blocks >= MINIMUM_BLOCKS
 
     significant = p_values < alpha
     local = np.where(significant, raw_local, 0.0)
@@ -688,6 +754,23 @@ def dissimilarity(
         raw_local.size,
     )
 
+    if legacy:
+        sampled_frames = [int(ref_rep.shape[0]), int(rep.shape[0])]
+        sampling_strategy = "bootstrap (2.0)"
+    else:
+        sampled_frames = [
+            int(reference_sample.shape[0]), int(other_sample.shape[0])
+        ]
+        no_subsample = sampled_frames == [
+            int(ref_rep.shape[0]), int(rep.shape[0])
+        ]
+        if no_subsample:
+            sampling_strategy = "all frames"
+        elif use_blocks:
+            sampling_strategy = "contiguous window"
+        else:
+            sampling_strategy = "uniform without replacement"
+
     return ComparisonResult(
         ensemble_index=ensemble_index,
         reference_index=reference_index,
@@ -699,6 +782,9 @@ def dissimilarity(
         significant=significant,
         noise_floor=noise_floor,
         n_frames=(int(ref_rep.shape[0]), int(rep.shape[0])),
+        noise_floor_threshold=noise_floor_threshold,
+        noise_floor_assessable=noise_floor_assessable,
+        noise_floor_distribution=noise_floor_distribution,
         effective_samples=n_eff,
         correlation_time=float(tau),
         correlation_time_converged=bool(tau_converged),
@@ -710,7 +796,10 @@ def dissimilarity(
             "s_num": s_num,
             "n_permutations": 0 if legacy else n_permutations,
             "sample_size": sample_size,
+            "sampled_frames": sampled_frames,
+            "sampling_strategy": sampling_strategy,
             "block_length": int(block_length),
+            "noise_floor_quantile": FLOOR_QUANTILE,
             "null": "bootstrap (2.0)" if legacy else "permutation",
             "metric": "jsd" if legacy else metric,
             "weighted": (weights_ref is not None) or (weights is not None),

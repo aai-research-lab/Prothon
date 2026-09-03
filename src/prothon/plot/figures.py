@@ -155,9 +155,10 @@ def _global_values(comparisons: Sequence[Any]) -> tuple[list[int], list[float], 
     indices = [int(c["ensemble_index"]) for c in comparisons]
     values = [float(c["global_dissimilarity"]) for c in comparisons]
     floors = [
-        float(c["noise_floor"])
+        float(c.get("noise_floor_threshold") or c["noise_floor"])
         for c in comparisons
         if c.get("noise_floor") is not None
+        and c.get("noise_floor_assessable", True)
     ]
     return indices, values, (float(np.mean(floors)) if floors else None)
 

@@ -146,10 +146,12 @@ floor that includes run-to-run variation, then judge a condition-to-condition
 difference against that floor. This is the strongest option available and does
 not depend on estimating a correlation time.
 
-*Read the floor, not the p-value.* The split-half noise floor is measured
-rather than assumed. It is degraded by correlation too — halves of a correlated
-trajectory resemble each other more than independent samples would — but it
-degrades far more gracefully than the null does.
+*Read the floor, not only the p-value.* The split-half noise floor is measured
+rather than assumed. Its halves are assembled from complete temporal blocks,
+or complete independent replicas when those labels are available. Randomly
+interleaving correlated frames made both halves share the same slow excursions
+and understated the uncertainty. The reported mean is descriptive; the 95th
+percentile of the measured distribution is the decision threshold.
 
 **Where blocking cannot help.** With too few blocks, or a trajectory shorter
 than about twenty correlation times, there is no p-value to be had at any block

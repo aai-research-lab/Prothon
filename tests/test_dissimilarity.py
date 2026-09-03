@@ -166,6 +166,9 @@ class TestParallelReproducesSerial:
         serial = dissimilarity(a, b, n_jobs=1, **common)
         parallel = dissimilarity(a, b, n_jobs=2, **common)
         np.testing.assert_allclose(serial.p_values, parallel.p_values)
+        np.testing.assert_allclose(
+            serial.noise_floor_distribution, parallel.noise_floor_distribution
+        )
 
 
 class TestDissimilarity:
@@ -234,6 +237,29 @@ class TestDissimilarity:
         a, b = identical_matrices
         result = dissimilarity(a, b, -4, 4, x_num=60, s_num=3, random_state=0)
         assert result.noise_floor > 0
+
+    def test_floor_distribution_and_decision_quantile_are_recorded(
+        self, identical_matrices
+    ):
+        a, b = identical_matrices
+        result = dissimilarity(
+            a,
+            b,
+            -4,
+            4,
+            x_num=40,
+            s_num=5,
+            n_permutations=10,
+            random_state=0,
+            block_permutation=False,
+        )
+        global_floor = result.noise_floor_distribution.mean(axis=1)
+        assert result.noise_floor_distribution.shape[0] == 20
+        assert result.noise_floor == pytest.approx(global_floor.mean())
+        assert result.noise_floor_threshold == pytest.approx(
+            np.quantile(global_floor, 0.95)
+        )
+        assert result.noise_floor_assessable
 
     def test_raw_values_survive_masking(self, identical_matrices):
         # The masked curve is zero where nothing reached significance; the raw
