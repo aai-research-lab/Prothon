@@ -369,13 +369,18 @@ class Prothon:
 
     @property
     def shares_topology(self) -> bool:
-        """Whether every ensemble has the same number of atoms.
+        """Whether every ensemble has exactly the same structural topology.
 
-        When they do, representation columns already correspond and no
-        reconciliation is needed. When they do not, a residue correspondence
-        is built from a sequence alignment.
+        Chain IDs and order, residue identity and order, atom names, elements
+        and order, and bond connectivity must all match. An atom count is only
+        a matrix-shape check: equal-count mutants and isomers still require
+        reconciliation.
         """
-        return len({e.trajectory.n_atoms for e in self.ensembles}) == 1
+        first = self.ensembles[0].topology_fingerprint
+        return all(
+            ensemble.topology_fingerprint == first
+            for ensemble in self.ensembles[1:]
+        )
 
     # -- representation ---------------------------------------------------
 
@@ -604,10 +609,10 @@ class Prothon:
     def _align_columns(self, reference, other, ref_index, other_index, measure):
         """Reduce two representations to columns describing the same residues.
 
-        For a study built from filenames there is one topology, so the columns
-        already correspond and this returns them untouched. For a study built
-        from ensembles the molecules may differ, and the correspondence decides
-        which columns survive.
+        Exact topology fingerprints prove that columns already correspond and
+        permit returning them untouched. Otherwise the correspondence decides
+        which columns survive, even when the two topologies happen to have the
+        same atom count and representation width.
 
         Returns the two matrices and the position of each surviving feature on
         the *reference* ensemble, one-based -- which is what the per-residue
@@ -615,7 +620,13 @@ class Prothon:
         put the label of one residue under the value of another, and the plot
         would look entirely reasonable.
         """
-        if self.shares_topology and reference.shape[1] == other.shape[1]:
+        reference_ensemble = self.ensembles[ref_index]
+        other_ensemble = self.ensembles[other_index]
+        if (
+            reference_ensemble.topology_fingerprint
+            == other_ensemble.topology_fingerprint
+            and reference.shape[1] == other.shape[1]
+        ):
             return reference, other, None
 
         from .ingest import feature_residues, reconcile
@@ -630,9 +641,6 @@ class Prothon:
 
         reference_topology = self.ensembles[ref_index].topology
         other_topology = self.ensembles[other_index].topology
-
-        if correspondence.is_identical and reference.shape[1] == other.shape[1]:
-            return reference, other, None
 
         take_ref, take_other = correspondence.columns_for(
             measure, reference_topology, other_topology

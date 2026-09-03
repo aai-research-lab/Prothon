@@ -20,7 +20,9 @@ from prothon.ingest import (
     align,
     feature_residues,
     reconcile,
+    same_topology,
     sequence_of,
+    topology_fingerprint,
 )
 from prothon.ingest.sequence import THREE_TO_ONE, residue_letter
 from prothon.represent.order_parameters import compute_cbcn, compute_ensemble_representation
@@ -49,6 +51,22 @@ def build(residue_names, n_frames=30, seed=0, compact_from=None):
         xyz[:, atom.index, :] = base
     xyz += rng.normal(0, 0.04, xyz.shape).astype(np.float32)
     return md.Trajectory(xyz, top)
+
+
+def build_chains(chains, n_frames=2):
+    """A small labelled complex for topology and chain-mapping tests."""
+    top = md.Topology()
+    for chain_id, sequence in chains:
+        chain = top.add_chain()
+        chain.chain_id = chain_id
+        for name in as_residues(sequence):
+            residue = top.add_residue(name, chain)
+            atoms = ["N", "CA", "C", "O"] + ([] if name == "GLY" else ["CB"])
+            for atom in atoms:
+                top.add_atom(atom, md.element.carbon, residue)
+    return md.Trajectory(
+        np.zeros((n_frames, top.n_atoms, 3), dtype=np.float32), top
+    )
 
 
 ONE_TO_THREE = {v: k for k, v in reversed(list(THREE_TO_ONE.items()))}
@@ -188,9 +206,66 @@ class TestEnsemble:
         with pytest.raises(ValueError, match="same molecule"):
             Ensemble.from_pdb_models(str(tmp_path))
 
+    def test_from_pdb_models_refuses_an_equal_count_mutant(self, tmp_path):
+        """Joining models cannot use atom count as molecule identity."""
+        build(as_residues("ACDEF"), n_frames=1)[0].save_pdb(str(tmp_path / "a.pdb"))
+        build(as_residues("ACNEF"), n_frames=1)[0].save_pdb(str(tmp_path / "b.pdb"))
+        with pytest.raises(ValueError, match="atom count alone"):
+            Ensemble.from_pdb_models(str(tmp_path))
+
     def test_missing_file_is_named(self):
         with pytest.raises(FileNotFoundError, match="nowhere.xtc"):
             Ensemble.from_trajectory("nowhere.xtc", "nowhere.pdb")
+
+
+class TestTopologyIdentity:
+    def test_identical_independent_copies_have_one_fingerprint(self):
+        a = build(as_residues("ACDE"), n_frames=1)
+        b = build(as_residues("ACDE"), n_frames=1, seed=9)
+        assert a.topology is not b.topology
+        assert topology_fingerprint(a) == topology_fingerprint(b)
+        assert same_topology(a, b)
+        assert topology_fingerprint(a).hexdigest() == topology_fingerprint(b).hexdigest()
+
+    def test_equal_atom_count_sequences_are_not_identical(self):
+        a = build(as_residues("ACDE"), n_frames=1)
+        b = build(as_residues("ACNE"), n_frames=1)
+        assert a.n_atoms == b.n_atoms
+        assert not same_topology(a, b)
+
+    def test_atom_name_and_element_are_identity(self):
+        named = build(as_residues("ACDE"), n_frames=1)
+        renamed = build(as_residues("ACDE"), n_frames=1)
+        renamed.topology.atom(0).name = "P"
+        renamed.topology.atom(0).element = md.element.phosphorus
+        assert named.n_atoms == renamed.n_atoms
+        assert not same_topology(named, renamed)
+
+    def test_bond_connectivity_distinguishes_equal_atom_isomers(self):
+        linear = build(as_residues("ACDE"), n_frames=1)
+        branched = build(as_residues("ACDE"), n_frames=1)
+        linear.topology.add_bond(linear.topology.atom(0), linear.topology.atom(1))
+        branched.topology.add_bond(branched.topology.atom(0), branched.topology.atom(2))
+        assert linear.n_atoms == branched.n_atoms
+        assert not same_topology(linear, branched)
+
+    def test_a_missing_atom_changes_the_fingerprint(self):
+        full = build(as_residues("ACDE"), n_frames=1)
+        keep = [atom.index for atom in full.topology.atoms if atom.index != 3]
+        missing = full.atom_slice(keep)
+        assert not same_topology(full, missing)
+
+    def test_chain_order_is_identity(self):
+        ordered = build_chains((("A", "ACDE"), ("B", "HIKL")))
+        swapped = build_chains((("B", "HIKL"), ("A", "ACDE")))
+        assert ordered.n_atoms == swapped.n_atoms
+        assert not same_topology(ordered, swapped)
+
+    def test_manifest_form_is_compact_and_deterministic(self):
+        ensemble = Ensemble(build(as_residues("ACDE"), n_frames=1))
+        digest = ensemble.to_dict()["topology_fingerprint"]
+        assert len(digest) == 64
+        assert digest == ensemble.topology_fingerprint.hexdigest()
 
 
 class TestReconcile:
@@ -263,6 +338,19 @@ class TestReconcile:
         monomer = Ensemble(monomer_traj, label="monomer")
         with pytest.raises(ValueError, match="protein chain"):
             reconcile(monomer, dimer)
+
+    def test_reordered_named_chains_are_paired_by_identity(self):
+        ordered = Ensemble(
+            build_chains((("A", "ACDE"), ("B", "HIKL"))), label="ordered"
+        )
+        swapped = Ensemble(
+            build_chains((("B", "HIKL"), ("A", "ACDE"))), label="swapped"
+        )
+        corr = reconcile(ordered, swapped)
+        mapping = corr.residue_map()
+        assert mapping[0] == 4  # chain A follows chain B in the second topology
+        assert mapping[4] == 0
+        assert corr.identity == 1.0
 
 
 class TestFeatureColumns:
@@ -385,9 +473,37 @@ class TestStudyAcrossMolecules:
 
     def test_identical_molecules_need_no_reconciliation(self, tmp_path):
         study = self._study(tmp_path, "ACDEFHIKLMNPQR", "ACDEFHIKLMNPQR")
+        assert study.shares_topology
         result = study.compare_ensembles(order_parameters="cbcn", s_num=2)["cbcn"][0]
         # Nothing was dropped, so the index stays implicit.
         assert result.feature_index is None
+
+    def test_equal_count_mutant_does_not_take_the_fast_path(self, tmp_path):
+        from prothon import Prothon
+
+        wild_type = Ensemble(build(as_residues("ACDE"), n_frames=4), label="wt")
+        mutant = Ensemble(build(as_residues("ACNE"), n_frames=4), label="D3N")
+        assert wild_type.trajectory.n_atoms == mutant.trajectory.n_atoms
+
+        study = Prothon.from_ensembles([wild_type, mutant])
+        assert not study.shares_topology
+        reference = np.zeros((4, 4))
+        other = np.zeros((4, 4))
+        _, _, index = study._align_columns(reference, other, 0, 1, "cacn")
+
+        assert (0, 1) in study.correspondences
+        np.testing.assert_array_equal(index, [1, 2, 3, 4])
+
+    def test_equal_count_different_molecules_are_reconciled_and_refused(self):
+        from prothon import Prothon
+
+        a = Ensemble(build(as_residues("AAAAAAAAAA"), n_frames=2), label="alanine")
+        b = Ensemble(build(as_residues("VVVVVVVVVV"), n_frames=2), label="valine")
+        assert a.trajectory.n_atoms == b.trajectory.n_atoms
+        study = Prothon.from_ensembles([a, b])
+        matrix = np.zeros((2, 10))
+        with pytest.raises(ValueError):
+            study._align_columns(matrix, matrix.copy(), 0, 1, "cacn")
 
     def test_manifest_records_the_correspondence(self, tmp_path):
         study = self._study(tmp_path, "ACDEFHIKLMNPQR", "ACDEGHIKLMNPQR")

@@ -100,6 +100,11 @@ shim that forwards with a `DeprecationWarning`, and is removed in 3.0.
 ```
 
 ```{eval-rst}
+.. automodule:: prothon.ingest.topology
+   :members: TopologyFingerprint, topology_fingerprint, same_topology
+```
+
+```{eval-rst}
 .. automodule:: prothon.ingest.ped
    :members: ped_entry, ped_ensemble, ped_ensembles
 ```

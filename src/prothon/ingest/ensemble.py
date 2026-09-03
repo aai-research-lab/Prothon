@@ -38,6 +38,7 @@ import numpy as np
 from ..quiet import quiet_c_output
 from ..utils import get_logger
 from .sequence import THREE_TO_ONE, chain_sequences, sequence_of
+from .topology import TopologyFingerprint, topology_fingerprint
 
 logger = get_logger("ingest.ensemble")
 
@@ -46,6 +47,27 @@ __all__ = ["Ensemble", "EnsembleQuality"]
 #: Consecutive alpha carbons sit about 0.38 nm apart. Beyond this they are not
 #: bonded, and the chain the topology claims is continuous is not.
 CHAIN_BREAK_NM = 0.45
+
+
+def _require_one_topology(trajectories, names) -> None:
+    """Refuse to join conformations that do not describe one molecule."""
+    if len(trajectories) < 2:
+        return
+    first = trajectories[0]
+    first_fingerprint = topology_fingerprint(first.topology)
+    for index, trajectory in enumerate(trajectories[1:], start=1):
+        if topology_fingerprint(trajectory.topology) == first_fingerprint:
+            continue
+        atom_detail = (
+            f" ({first.n_atoms} versus {trajectory.n_atoms} atoms)"
+            if first.n_atoms != trajectory.n_atoms
+            else f" (both have {first.n_atoms} atoms)"
+        )
+        raise ValueError(
+            f"{names[0]} and {names[index]} do not have identical topologies"
+            f"{atom_detail}. Every conformation in an ensemble must be the "
+            f"same molecule; atom count alone is not proof of identity."
+        )
 
 
 @dataclass(frozen=True)
@@ -196,12 +218,7 @@ class Ensemble:
         """
         with quiet_c_output():
             parts = [md.load(p, top=topology, stride=stride) for p in paths]
-        widths = {p.n_atoms for p in parts}
-        if len(widths) > 1:
-            raise ValueError(
-                f"The files hold different numbers of atoms ({sorted(widths)}); "
-                f"they cannot be one ensemble."
-            )
+        _require_one_topology(parts, [os.path.basename(path) for path in paths])
         traj = parts[0] if len(parts) == 1 else md.join(parts)
         return cls(
             trajectory=traj,
@@ -245,14 +262,10 @@ class Ensemble:
                 frames = [first]
                 for path in files[1:]:
                     model = md.load(path)
-                    if model.n_atoms != first.n_atoms:
-                        raise ValueError(
-                            f"{os.path.basename(path)} has {model.n_atoms} atoms "
-                            f"and {os.path.basename(files[0])} has {first.n_atoms}. "
-                            f"Every conformation in an ensemble must be the same "
-                            f"molecule."
-                        )
                     frames.append(model)
+                _require_one_topology(
+                    frames, [os.path.basename(path) for path in files]
+                )
                 traj = md.join(frames)
 
         logger.info(
@@ -385,6 +398,11 @@ class Ensemble:
         return self.trajectory.topology
 
     @property
+    def topology_fingerprint(self) -> TopologyFingerprint:
+        """Exact structural identity used by comparison fast paths."""
+        return topology_fingerprint(self.topology)
+
+    @property
     def sequence(self) -> str:
         """One-letter sequence of every protein residue, in order."""
         return sequence_of(self.trajectory.topology)[0]
@@ -465,6 +483,7 @@ class Ensemble:
             "n_frames": self.n_frames,
             "n_atoms": int(self.trajectory.n_atoms),
             "n_residues": int(self.trajectory.topology.n_residues),
+            "topology_fingerprint": self.topology_fingerprint.hexdigest(),
             "sequence_length": len(self.sequence),
             "weighted": self.weights is not None,
             "provenance": self.provenance,

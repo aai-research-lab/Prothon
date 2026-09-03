@@ -5,6 +5,18 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Fixed — topology identity is structural
+
+- The comparison fast path now requires an exact deterministic topology
+  fingerprint covering chain identity and order, residue identity and order,
+  atom name, element and order, and bond connectivity. Equal atom counts no
+  longer let mutants, isomers, missing atoms, or reordered complexes bypass
+  residue reconciliation.
+- Reordered protein chains are paired by chain ID when both structures provide
+  the same complete set of unique IDs. Multi-file ensemble loaders apply the
+  same identity rule before joining conformations, and manifests record the
+  compact SHA-256 form of each full fingerprint.
+
 ### Fixed — honest mixed-source benchmarks
 
 - Benchmark dissimilarity and precision/recall now receive both ensembles'

@@ -45,6 +45,14 @@ CBCN (reference: ensemble 0)
 
 ## What reconciliation does
 
+Prothon takes the no-reconciliation fast path only when a deterministic
+topology fingerprint matches. That fingerprint includes chain identity and
+order, residue identity and order, atom name, element and order, and bond
+connectivity. Equal atom counts are not enough: a same-size mutant, an isomer,
+or a complex whose chains were reordered enters reconciliation. When both
+structures provide the same unique chain IDs, reordered chains are paired by
+ID rather than by their position in the files.
+
 The sequences are extracted per chain and aligned globally (Needleman and
 Wunsch 1970) with affine gap penalties (Gotoh 1982) under BLOSUM62 (Henikoff
 and Henikoff 1992); the aligned columns become the residue correspondence.

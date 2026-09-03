@@ -17,6 +17,7 @@ from .ensemble import Ensemble, EnsembleQuality
 from .ped import ped_ensemble, ped_ensembles, ped_entry
 from .reconcile import Correspondence, Substitution, feature_residues, reconcile
 from .sequence import Alignment, align, chain_sequences, sequence_of
+from .topology import TopologyFingerprint, same_topology, topology_fingerprint
 
 __all__ = [
     "Alignment",
@@ -24,6 +25,7 @@ __all__ = [
     "Ensemble",
     "EnsembleQuality",
     "Substitution",
+    "TopologyFingerprint",
     "ped_ensemble",
     "ped_ensembles",
     "ped_entry",
@@ -31,5 +33,7 @@ __all__ = [
     "chain_sequences",
     "feature_residues",
     "reconcile",
+    "same_topology",
     "sequence_of",
+    "topology_fingerprint",
 ]

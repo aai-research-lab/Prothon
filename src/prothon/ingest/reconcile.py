@@ -45,6 +45,7 @@ from .sequence import (
     Alignment,
     align,
     chain_sequences,
+    sequence_of,
 )
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -134,7 +135,12 @@ class Correspondence:
 
     @property
     def is_identical(self) -> bool:
-        """Whether the two ensembles are the same molecule, residue for residue."""
+        """Whether protein residues correspond one-to-one with equal identities.
+
+        This says nothing about atom names, elements, bonds, ligands or chain
+        identity. Only a matching topology fingerprint proves that the full
+        molecular topologies are identical.
+        """
         return (
             not self.substitutions
             and self.unmatched_a.size == 0
@@ -191,7 +197,7 @@ class Correspondence:
         if self.unmatched_b.size:
             lines.append(f"  only in {right}: {self.unmatched_b.size} residues")
         if self.is_identical:
-            lines.append("  the same molecule; no reconciliation was needed")
+            lines.append("  protein sequences correspond one-to-one")
         return "\n".join(lines)
 
 
@@ -219,9 +225,11 @@ def reconcile(
         Lower it deliberately to compare a domain against the protein
         containing it.
     per_chain
-        Align chain against chain in order. Concatenating the chains of a
-        complex into one string invites the aligner to slide one chain against
-        another, which is cheap in score and nonsense as a map.
+        Align chain against chain. When both structures carry the same complete
+        set of unique chain IDs, pair those IDs even if file order differs;
+        otherwise retain chain order. Concatenating the chains of a complex
+        into one string invites the aligner to slide one chain against another,
+        which is cheap in score and nonsense as a map.
 
     Raises
     ------
@@ -245,9 +253,8 @@ def reconcile(
                 f"corresponds to which; select matching chains first, or pass "
                 f"per_chain=False to align them as one sequence."
             )
-        blocks = list(zip(chains_a, chains_b))
+        blocks = _pair_chains(top_a, top_b, chains_a, chains_b)
     else:
-        blocks = [(chain_sequences(top_a) and _flatten(top_a), _flatten(top_b))]
         blocks = [(_flatten(top_a), _flatten(top_b))]
 
     pairs: list[tuple[int, int]] = []
@@ -324,6 +331,44 @@ def reconcile(
 
 def _flatten(topology) -> tuple[str, np.ndarray]:
     """Every protein residue of a topology as one sequence."""
-    from .sequence import sequence_of
-
     return sequence_of(topology)
+
+
+def _pair_chains(top_a, top_b, chains_a, chains_b):
+    """Pair uniquely named protein chains by ID, or retain declared order.
+
+    PDB writers are free to emit chains in a different order. When both
+    topologies provide the same complete set of unique chain IDs, those IDs
+    are stronger identity evidence than file position. If IDs are absent or
+    differ between structures, the documented order-based rule remains: a
+    chain named A in one file may legitimately be named X in another.
+    """
+
+    def records(topology, sequences):
+        result = []
+        sequence_index = 0
+        for chain in topology.chains:
+            sequence, indices = sequence_of(topology, chain.index)
+            if not sequence:
+                continue
+            # ``sequences`` is passed in so this helper cannot silently drift
+            # from the same chain extraction used by the caller.
+            assert np.array_equal(indices, sequences[sequence_index][1])
+            chain_id = (getattr(chain, "chain_id", None) or "").strip()
+            result.append((chain_id or None, sequences[sequence_index]))
+            sequence_index += 1
+        return result
+
+    records_a = records(top_a, chains_a)
+    records_b = records(top_b, chains_b)
+    ids_a = [chain_id for chain_id, _ in records_a]
+    ids_b = [chain_id for chain_id, _ in records_b]
+    named_a = all(chain_id is not None for chain_id in ids_a)
+    named_b = all(chain_id is not None for chain_id in ids_b)
+    unique_a = len(set(ids_a)) == len(ids_a)
+    unique_b = len(set(ids_b)) == len(ids_b)
+
+    if named_a and named_b and unique_a and unique_b and set(ids_a) == set(ids_b):
+        by_id_b = dict(records_b)
+        return [(sequence, by_id_b[chain_id]) for chain_id, sequence in records_a]
+    return list(zip(chains_a, chains_b))
