@@ -134,6 +134,14 @@ includes raw counts, seed ranges, Wilson intervals, the commit and dependency
 versions; explicitly forced IID permutation of correlated data is labelled as
 a negative control and cannot make the corrected gate pass.
 
+The ordinary suite also treats metric laws as generated-input properties:
+symmetry, finiteness, non-negativity, declared bounds and invariance to frame
+permutation are checked over several sample shapes and seeds for every metric.
+Frame order is deliberately different for correlation correction, and one test
+asserts both facts on the same OU trajectory. A disk-backed integration fixture
+takes two trajectories, per-ensemble chain selections and weight files through
+YAML and the CLI to JSON and the recorded manifest.
+
 The scale envelope found a memory bug that needed 8,000 frames to appear; the
 calibration harness found a metric that was never reaching the estimator, which
 showed up only as three metrics agreeing to five decimal places over eight

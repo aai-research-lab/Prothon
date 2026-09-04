@@ -8,6 +8,8 @@ empty ensemble back has been told nothing.
 
 from __future__ import annotations
 
+import json
+
 import mdtraj as md
 import numpy as np
 import pytest
@@ -186,3 +188,57 @@ class TestThroughTheCommandLine:
         ).save(tmp_path / "s.yml")
         loaded = Study.from_file(path).resolve()
         assert [e.provenance["chains"] for e in loaded] == [[0], [1]]
+
+    def test_configured_chains_and_weight_files_reach_the_json_result(
+        self, files, tmp_path, capsys
+    ):
+        """One real loader path exercises config, chains, weights and CLI."""
+        from prothon.config import Study
+
+        weight_a = tmp_path / "a.weights"
+        weight_b = tmp_path / "b.weights"
+        np.savetxt(weight_a, np.linspace(1.0, 2.0, 300))
+        np.savetxt(weight_b, np.linspace(2.0, 1.0, 300) ** 2)
+        output = tmp_path / "result"
+        path = Study(
+            ensembles=[
+                {
+                    "ensemble": str(files / "a.dcd"),
+                    "topology": str(files / "top.pdb"),
+                    "chains": "A",
+                    "weights": str(weight_a),
+                    "label": "chain A",
+                },
+                {
+                    "ensemble": str(files / "b.dcd"),
+                    "topology": str(files / "top.pdb"),
+                    "chains": "B",
+                    "weights": str(weight_b),
+                    "label": "chain B",
+                },
+            ],
+            settings={
+                "order_parameters": "cacn",
+                "random_state": 0,
+                "sample_size": 300,
+                "n_permutations": 10,
+                "s_num": 2,
+                "no_block_permutation": True,
+            },
+            output_dir=str(output),
+        ).save(tmp_path / "weighted-chains.yml")
+
+        assert main(["compare", "--config", str(path), "--json"]) == 0
+        result = json.loads(capsys.readouterr().out)["cacn"][0]
+        assert result["n_frames"] == [300, 300]
+        assert len(result["feature_index"]) == 12
+        assert all(10.0 < count < 300.0 for count in result["effective_samples"])
+
+        manifest = json.loads(
+            (output / "cacn_output" / "manifest.json").read_text(encoding="utf-8")
+        )
+        assert [item["chains"] for item in manifest["study"]["ensembles"]] == [
+            "A",
+            "B",
+        ]
+        assert all(item["weighted"] for item in manifest["ensembles"])

@@ -39,7 +39,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 import numpy as np
-from scipy.spatial.distance import jensenshannon
+from scipy.special import rel_entr
 from scipy.stats import wasserstein_distance
 
 from ..sampling.statistics import validate_weights
@@ -128,18 +128,31 @@ def _jsd(x, y, wx, wy, circular, grid, x_num):
     x_min, x_max = grid
     _, p = estimate_pdf(x, x_min, x_max, x_num, circular, wx)
     _, q = estimate_pdf(y, x_min, x_max, x_num, circular, wy)
-    value = jensenshannon(p, q, base=2)
-    if np.isfinite(value):
-        return float(value)
+    # scipy.spatial.distance.jensenshannon takes sqrt(js / 2) without
+    # protecting the mathematical zero from floating-point summation. Two
+    # KDEs built from the same frames in a different order can differ by a few
+    # ulps and produce a tiny negative divergence, hence NaN after sqrt. Work
+    # at the divergence boundary so only round-off around the proven lower
+    # bound is clipped.
+    p = p / p.sum()
+    q = q / q.sum()
+    midpoint = 0.5 * (p + q)
+    divergence = float(
+        0.5 * (np.sum(rel_entr(p, midpoint)) + np.sum(rel_entr(q, midpoint)))
+        / np.log(2.0)
+    )
+    tolerance = 64.0 * np.finfo(np.float64).eps
+    if np.isfinite(divergence) and divergence >= -tolerance:
+        return float(np.sqrt(max(0.0, divergence)))
 
     # Both densities carry a floor, so every grid point is positive and the
     # distance is defined. Reaching here means something else has gone wrong,
     # and neither 0 nor 1 would be an answer: 0 reads as agreement and 1 as
     # maximal disagreement, and a caller cannot tell either from a measurement.
     raise FloatingPointError(
-        "The Jensen-Shannon distance came out non-finite, which the density "
-        "floor should make impossible. This is a bug rather than a property "
-        "of the data; please report it."
+        "The Jensen-Shannon divergence came out non-finite or materially "
+        "negative, which positive normalised densities should make impossible. "
+        "This is a bug rather than a property of the data; please report it."
     )
 
 
