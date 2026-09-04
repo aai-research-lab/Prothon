@@ -306,26 +306,95 @@ class TestOneObjectForEveryInterface:
         assert study.settings["random_state"] == 0
 
     def test_a_flag_not_given_is_not_written_down(self, files):
-        """argparse reports an unset `store_true` as False while the schema
-        declares None, so comparing against the schema alone would record
-        every boolean flag as an explicit false and produce a file full of
-        settings nobody chose."""
-        import argparse
+        """The parser preserves absence instead of inventing false flags."""
+        from prothon.cli import build_parser
 
-        from prothon.config.schema import parameters_for
-
-        args = argparse.Namespace(
-            ensembles=[str(files / "a.dcd")], topology=None, reference=0,
-            output_dir=None, config=None, save_config=None,
-            **{p.name: (False if p.action else p.default)
-               for p in parameters_for("compare")
-               if p.name not in {"ensembles", "topology", "reference",
-                                 "output_dir", "config", "save_config"}},
+        args = build_parser().parse_args(
+            ["compare", "--ensembles", str(files / "a.dcd")]
         )
         settings = Study.from_arguments(args).settings
-        for name in ("block_permutation", "no_block_permutation",
-                     "legacy_statistics"):
-            assert name not in settings
+        assert settings == {}
+
+    @pytest.mark.parametrize(
+        ("flag", "text", "setting", "configured", "expected"),
+        [
+            ("--order-parameters", "cbcn", "order_parameters", "sasa", "cbcn"),
+            ("--metric", "jsd", "metric", "ks", "jsd"),
+            ("--n-permutations", "100", "n_permutations", 23, 100),
+            ("--n-jobs", "1", "n_jobs", 4, 1),
+            ("--sample-size", "1000", "sample_size", 41, 1000),
+            ("--s-num", "5", "s_num", 2, 5),
+            ("--x-num", "100", "x_num", 31, 100),
+            ("--alpha", "0.05", "alpha", 0.01, 0.05),
+            ("--report", "summary", "report", "table", "summary"),
+            ("--dimred", "none", "dimred", "pca", "none"),
+        ],
+    )
+    def test_an_explicit_schema_default_overrides_the_file(
+        self, flag, text, setting, configured, expected
+    ):
+        from prothon.cli import build_parser
+
+        args = build_parser().parse_args(
+            ["compare", "--config", "study.yml", flag, text]
+        )
+        study = Study(
+            ensembles=[{"ensemble": "a"}, {"ensemble": "b"}],
+            settings={setting: configured},
+        )
+
+        assert study.merged_with(args).settings[setting] == expected
+
+    @pytest.mark.parametrize(
+        ("configured", "flag", "present", "absent"),
+        [
+            ({"no_block_permutation": True}, "--block-permutation",
+             "block_permutation", "no_block_permutation"),
+            ({"block_permutation": True}, "--no-block-permutation",
+             "no_block_permutation", "block_permutation"),
+        ],
+    )
+    def test_an_explicit_block_choice_replaces_its_opposite(
+        self, configured, flag, present, absent
+    ):
+        from prothon.cli import build_parser
+
+        args = build_parser().parse_args(
+            ["compare", "--config", "study.yml", flag]
+        )
+        study = Study(
+            ensembles=[{"ensemble": "a"}, {"ensemble": "b"}],
+            settings=configured,
+        ).merged_with(args)
+
+        assert study.settings[present] is True
+        assert absent not in study.settings
+
+    def test_an_explicit_legacy_flag_overrides_false(self):
+        from prothon.cli import build_parser
+
+        args = build_parser().parse_args(
+            ["compare", "--config", "study.yml", "--legacy-statistics"]
+        )
+        study = Study(
+            ensembles=[{"ensemble": "a"}, {"ensemble": "b"}],
+            settings={"legacy_statistics": False},
+        )
+
+        assert study.merged_with(args).settings["legacy_statistics"] is True
+
+    def test_an_explicit_default_reference_overrides_the_file(self):
+        from prothon.cli import build_parser
+
+        args = build_parser().parse_args(
+            ["compare", "--config", "study.yml", "--reference", "0"]
+        )
+        study = Study(
+            ensembles=[{"ensemble": "a"}, {"ensemble": "b"}],
+            reference=1,
+        )
+
+        assert study.merged_with(args).reference == "0"
 
     def test_a_study_round_trips_through_a_file(self, files, tmp_path):
         original = Study(

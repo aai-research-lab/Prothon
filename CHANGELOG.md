@@ -5,6 +5,14 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Fixed — explicit CLI overrides
+
+- CLI parsing now retains whether an option was actually supplied. An
+  explicit default-valued flag (for example `--alpha 0.05`) can override a
+  non-default YAML value, while an absent flag leaves the file untouched.
+- The positive and negative block-permutation flags replace one another, and
+  an explicit reference index `0` can override another configured reference.
+
 ### Fixed — rank defaults
 
 - `Prothon.rank()` now uses the constructor's `order_parameters` when the call

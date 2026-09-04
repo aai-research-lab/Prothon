@@ -37,11 +37,18 @@ def _add(parser: argparse.ArgumentParser, command: str) -> None:
     """Give a parser the flags its subcommand declares."""
     for spec in parameters_for(command):
         kwargs: dict[str, Any] = {"help": spec.help, "dest": spec.name}
+        # A configured study needs to distinguish an omitted option from an
+        # explicitly typed value that happens to equal the schema default.
+        # Attribute presence is that provenance. Other commands do not merge
+        # with configuration and retain ordinary argparse defaults.
+        if command == "compare":
+            kwargs["default"] = argparse.SUPPRESS
         if spec.action:
             kwargs["action"] = spec.action
         else:
             kwargs["type"] = spec.kind
-            kwargs["default"] = spec.default
+            if command != "compare":
+                kwargs["default"] = spec.default
             if spec.nargs:
                 kwargs["nargs"] = spec.nargs
             if spec.choices:
@@ -160,7 +167,7 @@ def run_compare(args) -> int:
     if getattr(args, "config", None):
         study = Study.from_file(args.config).merged_with(args)
     else:
-        if not args.ensembles:
+        if not getattr(args, "ensembles", None):
             raise ValueError(
                 "compare needs --ensembles, or --config naming a file that "
                 "lists them."
@@ -179,7 +186,7 @@ def run_compare(args) -> int:
     comparison = study.run()
     print(
         json.dumps(_serialisable(comparison.comparison_results), indent=2)
-        if args.json
+        if getattr(args, "json", False)
         else comparison.summary()
     )
     return 0
@@ -203,7 +210,7 @@ def _run_table(args, study) -> int:
     result = benchmark(
         ensembles[reference], others, **study.benchmark_arguments()
     )
-    if args.json:
+    if getattr(args, "json", False):
         print(json.dumps(result.to_dict(), indent=2, default=float))
     else:
         print(result.summary())

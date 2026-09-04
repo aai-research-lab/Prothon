@@ -106,6 +106,12 @@ what flags cannot — a topology, a label and a weight vector per ensemble — a
 every key is checked against the schema, so a misspelled setting is refused
 rather than ignored. See [the study](config.md).
 
+Only flags actually present on the command line override the file. This
+distinction matters when the requested value is also the normal default: for
+example, `--alpha 0.05` deliberately replaces `alpha: 0.01`, while omitting
+`--alpha` preserves the file. `--block-permutation` and
+`--no-block-permutation` likewise replace one another.
+
 ## `prothon validate`
 
 | flag | meaning |

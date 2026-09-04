@@ -119,7 +119,7 @@ class Study:
         than a second way of running one: every flag lands in the same object a
         file would produce, so the two cannot come to offer different settings.
         """
-        sources = args.ensembles or []
+        sources = getattr(args, "ensembles", None) or []
         if isinstance(sources, str):
             sources = [sources]
         flattened: list = []
@@ -167,26 +167,25 @@ class Study:
             for entry, pick in zip(ensembles, picks):
                 entry["chains"] = pick
 
-        # A flag not given is a flag not written down. argparse reports an
-        # unset `store_true` as False while the schema declares its default as
-        # None, so comparing against the schema alone would record every
-        # boolean flag as an explicit false and produce a file full of
-        # settings nobody chose.
+        # The compare parser suppresses absent attributes. Presence therefore
+        # means the user supplied the flag, even when its value equals the
+        # schema default.
         specs = {p.name: p for p in parameters_for("compare")}
         # `chains` lands on each ensemble entry above, not in the settings:
         # it says which part of a molecule an ensemble is, not how to compare.
         skip = {"ensembles", "topology", "reference", "output_dir", "config",
                 "json", "verbose", "save_config", "chains"}
         settings = {}
-        for name, spec in specs.items():
+        supplied = vars(args)
+        for name in specs:
             if name in skip:
                 continue
-            value = getattr(args, name, None)
+            if name not in supplied:
+                continue
+            value = supplied[name]
             if value is None:
                 continue
-            unset = False if spec.action == "store_true" else spec.default
-            if value != unset:
-                settings[name] = value
+            settings[name] = value
         # A reference may name a source of its own rather than one of the
         # ensembles being compared -- "everything against this one thing"
         # should not require putting that thing in the list and counting. It
@@ -214,9 +213,8 @@ class Study:
         """This study, with anything given explicitly on the command line.
 
         A flag wins over the file, so a study re-runs with a different seed or
-        output directory without being edited. Whether a flag was *given* is
-        decided by comparing it with the schema default, since argparse cannot
-        say otherwise.
+        output directory without being edited. The compare parser suppresses
+        absent attributes, preserving whether a value was explicitly given.
         """
         specs = {p.name: p for p in parameters_for("compare")}
         # How a study was reached is not part of what it says. Recording
@@ -228,20 +226,36 @@ class Study:
         skip = {"config", "save_config", "json", "verbose", "output_dir",
                 "ensembles", "topology", "reference", "chains"}
         settings = {k: v for k, v in self.settings.items() if k not in skip}
-        for name, spec in specs.items():
+        supplied = vars(args)
+        for name in specs:
             if name in skip:
                 continue
-            value = getattr(args, name, None)
+            if name not in supplied:
+                continue
+            value = supplied[name]
             if value is None:
                 continue
-            unset = False if spec.action == "store_true" else spec.default
-            if value != unset:
-                settings[name] = value
+            settings[name] = value
+
+        # These are two spellings of one tri-state setting. An explicit flag
+        # must replace, not merely sit beside, its configured opposite.
+        if supplied.get("no_block_permutation"):
+            settings.pop("block_permutation", None)
+        elif supplied.get("block_permutation"):
+            settings.pop("no_block_permutation", None)
+
+        reference = (
+            supplied["reference"] if "reference" in supplied else self.reference
+        )
         return Study(
             ensembles=list(self.ensembles),
-            reference=self.reference,
+            reference=reference,
             settings=settings,
-            output_dir=getattr(args, "output_dir", None) or self.output_dir,
+            output_dir=(
+                supplied["output_dir"]
+                if "output_dir" in supplied
+                else self.output_dir
+            ),
             description=self.description,
             path=self.path,
         )
