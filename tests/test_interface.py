@@ -34,6 +34,7 @@ def files(tmp_path_factory):
     models = directory / "models"
     models.mkdir()
     traj = build(as_residues(SEQ), n_frames=30, seed=3)
+    traj.save_dcd(str(directory / "short.dcd"))
     for i in range(30):
         traj[i].save_pdb(str(models / f"s{i:02d}.pdb"))
     return directory
@@ -676,13 +677,20 @@ class TestConstructor:
             Prothon(ensembles=[str(files / "a.dcd")], topology=str(files / "top.pdb"))
 
     def test_ensembles_of_different_sizes_are_noticed(self, files):
-        """A directory of 30 structures against a 300-frame trajectory is a
-        legitimate comparison, and not one that shares a topology by accident."""
+        """Frame count is sampling information, not topology identity.
+
+        Both DCDs deliberately use the same topology-loading path. Comparing a
+        DCD to independently parsed PDB models made this assertion depend on
+        whether that MDTraj build inferred the same optional bonds from PDB.
+        Bond connectivity remains part of the production fingerprint.
+        """
         study = Prothon(
-            ensembles=[str(files / "a.dcd"), str(files / "models")],
+            ensembles=[str(files / "a.dcd"), str(files / "short.dcd")],
             topology=str(files / "top.pdb"),
         )
-        assert study.shares_topology      # same molecule, different sampling
+        assert study.ensembles[0].n_frames == 300
+        assert study.ensembles[1].n_frames == 30
+        assert study.shares_topology
 
 
 class TestCommandLine:
