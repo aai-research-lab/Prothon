@@ -134,6 +134,16 @@ includes raw counts, seed ranges, Wilson intervals, the commit and dependency
 versions; explicitly forced IID permutation of correlated data is labelled as
 a negative control and cannot make the corrected gate pass.
 
+The monthly `Performance regression evidence` workflow runs the quick scale
+envelope. It gates completion, scaling exponents and peak memory at the exact
+8,000-frame regression point, while retaining raw timings, versions, commit and
+platform as JSON. Absolute seconds are intentionally evidence rather than a
+gate because shared-runner speed is not stable. Reproduce it with:
+
+```bash
+python scripts/scale_envelope.py --json performance-evidence.json
+```
+
 The ordinary suite also treats metric laws as generated-input properties:
 symmetry, finiteness, non-negativity, declared bounds and invariance to frame
 permutation are checked over several sample shapes and seeds for every metric.
