@@ -76,6 +76,11 @@ A `v*` tag invokes the same reusable quality workflow as branches and pull
 requests. The publisher cannot build or obtain its PyPI OIDC token unless the
 complete Python 3.9–3.13 matrix on Linux, macOS and Windows, the documentation
 build, and the real-structure tests all pass at that exact tagged commit.
+The wheel and source distribution are then built once and retained as one
+artifact. Separate jobs install each into a clean virtual environment without
+checking out the source tree, run `pip check`, import the installed package and
+exercise the installed CLI. PyPI receives those same files only after both
+artifact jobs pass.
 
 Two things in `scripts/` are measurements rather than tests, and both have
 found defects that the test suite could not:

@@ -51,10 +51,64 @@ jobs:
         with:
           name: dist
           path: dist/
+          if-no-files-found: error
+
+  test-distributions:
+    name: Smoke-test ${{ matrix.distribution }}
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        distribution: [wheel, sdist]
+    steps:
+      # Deliberately do not check out the repository. Imports can only come
+      # from the downloaded release artifact, never from an editable tree.
+      - uses: actions/download-artifact@v5
+        with:
+          name: dist
+          path: dist/
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install the exact ${{ matrix.distribution }} in a clean environment
+        shell: bash
+        run: |
+          if [ "${{ matrix.distribution }}" = wheel ]; then
+            PACKAGE=$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)
+          else
+            PACKAGE=$(find dist -maxdepth 1 -type f -name '*.tar.gz' -print -quit)
+          fi
+          if [ -z "$PACKAGE" ]; then
+            echo "::error::the requested ${{ matrix.distribution }} is absent"
+            exit 1
+          fi
+          python -m venv "$RUNNER_TEMP/prothon-smoke"
+          "$RUNNER_TEMP/prothon-smoke/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/prothon-smoke/bin/python" -m pip install "$PACKAGE"
+          "$RUNNER_TEMP/prothon-smoke/bin/python" -m pip check
+
+      - name: Smoke-test the installed import and CLI
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/prothon-smoke/bin/python" -I - <<'PY'
+          from importlib.metadata import version
+          import prothon
+          from prothon import Prothon
+
+          assert prothon.__version__ == version("prothon-ensembles")
+          assert "cbcn" in Prothon.order_parameters()
+          print(f"installed prothon {prothon.__version__}")
+          PY
+          "$RUNNER_TEMP/prothon-smoke/bin/prothon" --version
+          "$RUNNER_TEMP/prothon-smoke/bin/prothon" info > /dev/null
 
   publish:
     name: Publish to PyPI
-    needs: build
+    needs: [build, test-distributions]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
