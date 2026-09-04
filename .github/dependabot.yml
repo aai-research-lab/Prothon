@@ -10,3 +10,13 @@ updates:
           - "*"
     commit-message:
       prefix: ci
+  - package-ecosystem: pip
+    directory: "/requirements"
+    schedule:
+      interval: weekly
+    groups:
+      security-tools:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: security

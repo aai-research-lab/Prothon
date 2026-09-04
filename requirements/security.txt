@@ -1,0 +1,4 @@
+# CI-only scanners. Keep exact top-level versions so a release gate cannot
+# silently change underneath a tag; Dependabot proposes grouped updates.
+pip-audit==2.10.1
+detect-secrets==1.5.0
