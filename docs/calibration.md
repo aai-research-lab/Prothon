@@ -311,5 +311,13 @@ python scripts/calibration.py --study correlation     # the table above
 python scripts/joint_calibration.py                    # deterministic joint gates
 ```
 
+`scripts/calibration.py` exits nonzero when a predeclared corrected-null gate
+fails. Its JSON output records raw rejection/support counts, seed ranges,
+Wilson intervals, the git commit and software versions. Rows that deliberately
+force frame permutation on correlated data remain in the record as negative
+controls, but are excluded from the release verdict. The scheduled scientific
+calibration workflow retains this file and the joint MMD/C2ST record whether a
+gate passes or fails.
+
 Replicates are independent, so the script parallelises across cores. A
 thousand replicates per setting takes roughly an hour on a workstation.

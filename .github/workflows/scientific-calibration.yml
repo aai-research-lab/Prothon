@@ -1,0 +1,58 @@
+name: Scientific calibration evidence
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "43 7 1 * *"
+
+permissions:
+  contents: read
+
+jobs:
+  calibrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+      - name: Prepare evidence directory
+        run: mkdir calibration-evidence
+      - name: Calibrate the correlated local null
+        id: local
+        continue-on-error: true
+        run: |
+          python scripts/calibration.py \
+            --quick \
+            --study correlation \
+            --replicates 250 \
+            --workers 2 \
+            --out calibration-evidence/local-calibration.md \
+            --json calibration-evidence/local-calibration.json
+      - name: Calibrate MMD and C2ST null and power
+        id: joint
+        continue-on-error: true
+        run: |
+          python scripts/joint_calibration.py \
+            --out calibration-evidence/joint-calibration.json
+      - name: Retain calibration evidence
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: scientific-calibration-evidence
+          path: calibration-evidence/
+          if-no-files-found: error
+      - name: Enforce every calibration gate
+        if: always()
+        env:
+          LOCAL_OUTCOME: ${{ steps.local.outcome }}
+          JOINT_OUTCOME: ${{ steps.joint.outcome }}
+        run: |
+          test "$LOCAL_OUTCOME" = success
+          test "$JOINT_OUTCOME" = success

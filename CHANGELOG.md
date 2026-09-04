@@ -5,6 +5,15 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Fixed — retained statistical calibration gates
+
+- Correlated local-null calibration now has predeclared false-positive and
+  inference-support gates, returns nonzero on failure, and records raw counts,
+  seeds, confidence intervals, commit and software versions in JSON.
+- A monthly workflow runs 250 replicates per selected local-null setting plus
+  the complete MMD/C2ST null-and-power harness, retaining both records even
+  when a scientific gate fails.
+
 ### Fixed — source and conda version provenance
 
 - An unversioned GitHub source snapshot now reports `0+unknown` instead of the
