@@ -126,6 +126,14 @@ python scripts/calibration.py --replicates 1000
 python scripts/floor_scaling.py             # how the floor depends on n
 ```
 
+The monthly `Scientific calibration evidence` workflow runs the correlated
+local null over 250 replicates per predeclared setting and runs the complete
+MMD/C2ST null-and-power harness. Both commands return nonzero when a gate fails,
+and the workflow retains their JSON records even on failure. The local record
+includes raw counts, seed ranges, Wilson intervals, the commit and dependency
+versions; explicitly forced IID permutation of correlated data is labelled as
+a negative control and cannot make the corrected gate pass.
+
 The scale envelope found a memory bug that needed 8,000 frames to appear; the
 calibration harness found a metric that was never reaching the estimator, which
 showed up only as three metrics agreeing to five decimal places over eight

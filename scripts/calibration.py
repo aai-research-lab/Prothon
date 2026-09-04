@@ -27,9 +27,12 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import itertools
 import json
 import multiprocessing as mp
+import platform
+import subprocess
 import sys
 import time
 import warnings
@@ -144,7 +147,8 @@ def one_replicate(job):
         "rejected": int(result.n_significant),
         "features": int(settings["features"]),
         "any": int(result.n_significant > 0),
-        "resolved": int(result.resolved),
+        "resolved": None if result.resolved is None else int(result.resolved),
+        "inference_supported": int(not result.p_values_withheld),
         "floor": float(result.noise_floor),
     }
 
@@ -172,13 +176,22 @@ def run(settings, replicates, workers, offset=0):
     rejected = sum(r["rejected"] for r in results)
     total = sum(r["features"] for r in results)
     any_rejected = sum(r["any"] for r in results)
+    supported = sum(r["inference_supported"] for r in results)
     return {
         **settings,
         "replicates": replicates,
+        "seeds": [offset, offset + replicates - 1],
+        "counts": {
+            "features_rejected": rejected,
+            "features_tested": total,
+            "studies_with_rejection": any_rejected,
+            "inference_supported": supported,
+        },
         "feature_rate": rejected / total,
         "feature_ci": wilson(rejected, total),
         "study_rate": any_rejected / replicates,
         "study_ci": wilson(any_rejected, replicates),
+        "support_rate": supported / replicates,
         "mean_floor": float(np.mean([r["floor"] for r in results])),
         "seconds": time.perf_counter() - started,
     }
@@ -261,6 +274,81 @@ STUDIES = {
 }
 
 
+def calibration_gates(studies: dict[str, list[dict]]) -> dict:
+    """Apply predeclared null bands without counting refusal as success.
+
+    The explicitly frame-permuted rows in the correlation study are preserved
+    negative controls: they reproduce the failure caused by treating an OU
+    trajectory as IID and are never used to pass the corrected implementation.
+    """
+    rows = []
+    for study, results in studies.items():
+        for result in results:
+            corrected = study != "correlation" or result.get("blocked", False)
+            alpha = float(result["alpha"])
+            maximum = min(0.15, max(0.03, 2.0 * alpha))
+            supported = result["support_rate"] == 1.0
+            passed = (
+                result["feature_rate"] <= maximum
+                and result["study_rate"] <= maximum
+                and supported
+            )
+            rows.append(
+                {
+                    "study": study,
+                    "generator": result["generator"],
+                    "tau": result.get("tau"),
+                    "metric": result["metric"],
+                    "alpha": alpha,
+                    "role": "release_gate" if corrected else "negative_control",
+                    "maximum_false_positive_rate": maximum if corrected else None,
+                    "feature_rate": result["feature_rate"],
+                    "study_rate": result["study_rate"],
+                    "support_rate": result["support_rate"],
+                    "passed": passed if corrected else None,
+                }
+            )
+    assessed = [row for row in rows if row["role"] == "release_gate"]
+    return {
+        "rule": (
+            "feature and whole-study false-positive rates must not exceed "
+            "min(15%, max(3%, 2*alpha)); every replicate must support inference"
+        ),
+        "rows": rows,
+        "passed": bool(assessed) and all(row["passed"] for row in assessed),
+    }
+
+
+def software_record() -> dict[str, str]:
+    """Versions and commit needed to reproduce one calibration artifact."""
+    import scipy
+
+    from prothon import __version__ as prothon_version
+
+    commit = "unknown"
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if completed.returncode == 0:
+            commit = completed.stdout.strip() or commit
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return {
+        "created_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "git_commit": commit,
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "prothon": prothon_version,
+        "numpy": np.__version__,
+        "scipy": scipy.__version__,
+    }
+
+
 def render(name, rows) -> str:
     lines = []
     if name == "parameters":
@@ -305,6 +393,10 @@ def main() -> int:
     parser.add_argument("--out", help="write markdown here")
     parser.add_argument("--json", help="write raw results here")
     args = parser.parse_args()
+    if args.replicates < 1:
+        parser.error("--replicates must be positive")
+    if args.workers < 1:
+        parser.error("--workers must be positive")
 
     chosen = list(STUDIES) if args.study == "all" else [args.study]
     print(
@@ -327,13 +419,32 @@ def main() -> int:
     )
     print(document)
 
+    gates = calibration_gates(raw)
+    payload = {
+        "schema_version": 2,
+        "software": software_record(),
+        "predeclared": {
+            "null_band": gates["rule"],
+            "negative_control": (
+                "correlated OU rows explicitly forced to frame permutation are recorded "
+                "but cannot satisfy a release gate"
+            ),
+        },
+        "studies": raw,
+        "gates": gates,
+        "passed": gates["passed"],
+    }
+
     if args.out:
         with open(args.out, "w", encoding="utf-8") as handle:
             handle.write(document)
     if args.json:
         with open(args.json, "w", encoding="utf-8") as handle:
-            json.dump(raw, handle, indent=2, default=float)
-    return 0
+            json.dump(payload, handle, indent=2, default=float, allow_nan=False)
+            handle.write("\n")
+    if not payload["passed"]:
+        print("one or more predeclared calibration gates failed", file=sys.stderr)
+    return 0 if payload["passed"] else 1
 
 
 if __name__ == "__main__":
