@@ -220,9 +220,57 @@ def _run_table(args, study) -> int:
     return 0
 
 
-def run_validate(args) -> int:
+def _load_experimental_table(path, uncertainty=None):
+    """Read measured values without losing their row/column orientation."""
     import numpy as np
 
+    data = np.loadtxt(path, ndmin=2)
+    if data.size == 0:
+        raise ValueError(f"Experimental table {path!s} is empty.")
+    if data.ndim != 2 or data.shape[1] not in {1, 2}:
+        raise ValueError(
+            f"Experimental table {path!s} has ambiguous shape {data.shape}. "
+            "Use one value per row, or two columns containing value and "
+            "uncertainty."
+        )
+
+    measured = np.asarray(data[:, 0], dtype=np.float64)
+    if data.shape[1] == 2:
+        if uncertainty is not None:
+            raise ValueError(
+                "Uncertainty was supplied both as the experimental table's "
+                "second column and with --uncertainty. Use one source."
+            )
+        sigma = np.asarray(data[:, 1], dtype=np.float64)
+    elif uncertainty is not None:
+        try:
+            sigma = np.full(measured.size, float(uncertainty))
+        except (TypeError, ValueError):
+            sigma = np.asarray(np.loadtxt(uncertainty), dtype=np.float64).ravel()
+            if sigma.size == 1:
+                sigma = np.full(measured.size, float(sigma[0]))
+    else:
+        raise ValueError(
+            "No uncertainties. Give a second column in --experimental, or "
+            "--uncertainty as a file or a single number. A chi-squared without "
+            "them is a sum of squares in arbitrary units."
+        )
+
+    if not np.all(np.isfinite(measured)):
+        raise ValueError("Experimental values must all be finite.")
+    if sigma.size != measured.size:
+        raise ValueError(
+            f"{sigma.size} uncertainties for {measured.size} experimental "
+            "values. Give one uncertainty, or one per value."
+        )
+    if not np.all(np.isfinite(sigma)) or np.any(sigma <= 0.0):
+        raise ValueError(
+            "Experimental uncertainties must all be finite and strictly positive."
+        )
+    return measured, sigma
+
+
+def run_validate(args) -> int:
     from .ingest.sources import resolve_all
     from .validate import score_observable
     from .validate.observables import (
@@ -234,24 +282,10 @@ def run_validate(args) -> int:
     if not args.experimental:
         raise ValueError("validate needs --experimental: the measured values.")
 
-    ensembles = resolve_all(args.ensembles, args.topology)
-    data = np.atleast_2d(np.loadtxt(args.experimental))
-    if data.shape[0] == 1 and data.shape[1] > 2:
-        data = data.T
-    measured = data[:, 0]
-    if data.shape[1] > 1:
-        sigma = data[:, 1]
-    elif args.uncertainty:
-        try:
-            sigma = np.full(measured.size, float(args.uncertainty))
-        except ValueError:
-            sigma = np.loadtxt(args.uncertainty).ravel()
-    else:
-        raise ValueError(
-            "No uncertainties. Give a second column in --experimental, or "
-            "--uncertainty as a file or a single number. A chi-squared without "
-            "them is a sum of squares in arbitrary units."
-        )
+    ensembles = resolve_all(args.ensembles, args.topology, chains=args.chains)
+    measured, sigma = _load_experimental_table(
+        args.experimental, args.uncertainty
+    )
 
     compute = {
         "rg": lambda t: radius_of_gyration(t)[:, None],

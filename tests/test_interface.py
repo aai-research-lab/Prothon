@@ -774,6 +774,90 @@ class TestCommandLine:
         assert code == 0
         assert "chi2_red" in capsys.readouterr().out
 
+    def test_validate_passes_one_chain_selection_per_ensemble(
+        self, monkeypatch, tmp_path
+    ):
+        import importlib
+
+        sources = importlib.import_module("prothon.ingest.sources")
+        received = {}
+
+        def fake_resolve_all(ensembles, topology, chains=None):
+            received.update(
+                ensembles=ensembles, topology=topology, chains=chains
+            )
+            return []
+
+        monkeypatch.setattr(sources, "resolve_all", fake_resolve_all)
+        measurements = tmp_path / "rg.txt"
+        measurements.write_text("2.5 0.1\n", encoding="utf-8")
+
+        assert main([
+            "validate", "--ensembles", "first.dcd", "second.dcd",
+            "--topology", "first.pdb", "second.pdb",
+            "--chains", "A", "B", "--experimental", str(measurements),
+        ]) == 0
+        assert received == {
+            "ensembles": ["first.dcd", "second.dcd"],
+            "topology": ["first.pdb", "second.pdb"],
+            "chains": ["A", "B"],
+        }
+
+    def test_two_values_on_two_lines_are_two_measurements(self, tmp_path):
+        from prothon.cli import _load_experimental_table
+
+        measurements = tmp_path / "two.txt"
+        measurements.write_text("1.0\n2.0\n", encoding="utf-8")
+        measured, sigma = _load_experimental_table(measurements, "0.2")
+
+        np.testing.assert_array_equal(measured, [1.0, 2.0])
+        np.testing.assert_array_equal(sigma, [0.2, 0.2])
+
+    def test_two_values_on_one_line_are_value_and_uncertainty(self, tmp_path):
+        from prothon.cli import _load_experimental_table
+
+        measurements = tmp_path / "pair.txt"
+        measurements.write_text("1.0 0.2\n", encoding="utf-8")
+        measured, sigma = _load_experimental_table(measurements)
+
+        np.testing.assert_array_equal(measured, [1.0])
+        np.testing.assert_array_equal(sigma, [0.2])
+
+    @pytest.mark.parametrize(
+        ("contents", "uncertainty", "message"),
+        [
+            ("1 0.1 3\n2 0.2 4\n", None, "ambiguous shape"),
+            ("nan 0.1\n", None, "values must all be finite"),
+            ("1 nan\n", None, "finite and strictly positive"),
+            ("1 0\n", None, "finite and strictly positive"),
+            ("1 -0.1\n", None, "finite and strictly positive"),
+        ],
+    )
+    def test_invalid_experimental_tables_are_refused(
+        self, tmp_path, contents, uncertainty, message
+    ):
+        from prothon.cli import _load_experimental_table
+
+        measurements = tmp_path / "bad.txt"
+        measurements.write_text(contents, encoding="utf-8")
+        with pytest.raises(ValueError, match=message):
+            _load_experimental_table(measurements, uncertainty)
+
+    def test_uncertainty_sources_and_lengths_are_unambiguous(self, tmp_path):
+        from prothon.cli import _load_experimental_table
+
+        paired = tmp_path / "paired.txt"
+        paired.write_text("1 0.1\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="both"):
+            _load_experimental_table(paired, "0.2")
+
+        values = tmp_path / "values.txt"
+        values.write_text("1\n2\n", encoding="utf-8")
+        uncertainty = tmp_path / "sigma.txt"
+        uncertainty.write_text("0.1\n0.2\n0.3\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="3 uncertainties for 2"):
+            _load_experimental_table(values, uncertainty)
+
     def test_validate_j_couplings_keeps_their_residue_indices(
         self, files, tmp_path, capsys
     ):

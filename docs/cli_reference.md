@@ -125,7 +125,12 @@ prothon validate -e md.xtc -t top.pdb --observable rg --experimental rg.txt
 ```
 
 Uncertainties are required. A chi-squared without them is a sum of squares in
-arbitrary units. See [validation](validate.md).
+arbitrary units. Put multiple measured values on separate lines. A single line
+with two numbers means one value and its uncertainty; a two-column table means
+one value/uncertainty pair per row. Values must be finite, and uncertainties
+must be finite and strictly positive. `--chains A B` applies the corresponding
+selection to each ensemble, just as it does for `compare`. See
+[validation](validate.md).
 
 ## `prothon info`
 

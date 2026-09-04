@@ -5,6 +5,15 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Fixed — validation CLI inputs
+
+- Validation now forwards chain selections, including one selection per
+  ensemble. Experimental tables retain their row/column orientation: two
+  one-value rows are two measurements, while one two-value row is a value and
+  uncertainty pair.
+- Ambiguous table shapes, duplicate uncertainty sources, non-finite measured
+  values, and non-finite or non-positive uncertainties now fail explicitly.
+
 ### Fixed — explicit CLI overrides
 
 - CLI parsing now retains whether an option was actually supplied. An
