@@ -5,6 +5,18 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Fixed — metric properties and loader integration coverage
+
+- Jensen–Shannon now clips only a tiny negative divergence at its mathematical
+  zero before taking the square root. Permuting identical frames can no longer
+  turn floating-point summation noise into a `NaN`/`FloatingPointError`.
+- Generated-input tests now enforce symmetry, finiteness, non-negativity,
+  declared bounds and frame-order invariance for every distance metric while
+  separately proving that trajectory correlation correction is order-sensitive.
+- A disk-backed integration test carries per-ensemble chain selections and
+  weight files through YAML, real trajectory loading, the CLI, JSON output and
+  the saved manifest.
+
 ### Fixed — retained statistical calibration gates
 
 - Correlated local-null calibration now has predeclared false-positive and

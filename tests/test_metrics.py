@@ -51,6 +51,66 @@ class TestRegistry:
         assert "feature units" in describe_metric("wasserstein")
 
 
+class TestMetricPropertiesAcrossGeneratedInputs:
+    """Invariants over several shapes, not one hand-picked fixture."""
+
+    @pytest.mark.parametrize("metric", sorted(METRICS))
+    @pytest.mark.parametrize("seed", range(6))
+    def test_every_metric_is_symmetric_finite_and_non_negative(self, metric, seed):
+        rng = np.random.default_rng(seed)
+        a = rng.standard_t(df=3, size=180 + 7 * seed)
+        b = rng.normal(0.3 * seed, 0.5 + 0.2 * seed, 230 - 5 * seed)
+
+        forward = feature_distance(a, b, metric, -12, 12, 100)
+        reverse = feature_distance(b, a, metric, -12, 12, 100)
+
+        assert np.isfinite(forward)
+        assert forward >= 0.0
+        assert forward == pytest.approx(reverse, abs=1e-12)
+        if METRICS[metric].bounded:
+            assert forward <= 1.0
+
+    @pytest.mark.parametrize("metric", sorted(METRICS))
+    @pytest.mark.parametrize("seed", range(4))
+    def test_every_metric_is_invariant_to_independent_frame_permutations(
+        self, metric, seed
+    ):
+        rng = np.random.default_rng(100 + seed)
+        a = rng.normal(size=400)
+        b = rng.normal(0.4, 1.3, size=370)
+        expected = feature_distance(a, b, metric, -5, 6, 90)
+
+        observed = feature_distance(
+            a[rng.permutation(a.size)],
+            b[rng.permutation(b.size)],
+            metric,
+            -5,
+            6,
+            90,
+        )
+
+        assert observed == pytest.approx(expected, abs=1e-12)
+
+    def test_distance_ignores_frame_order_but_correlation_correction_does_not(self):
+        from prothon.sampling.correlation import correlation_time
+
+        rng = np.random.default_rng(71)
+        values = np.empty(4000)
+        values[0] = rng.normal()
+        phi = np.exp(-1.0 / 20.0)
+        noise = rng.normal(size=values.size) * np.sqrt(1.0 - phi**2)
+        for frame in range(1, values.size):
+            values[frame] = phi * values[frame - 1] + noise[frame]
+        shuffled = values[rng.permutation(values.size)]
+
+        for metric in METRICS:
+            assert feature_distance(values, shuffled, metric, -5, 5, 100) == pytest.approx(
+                0.0, abs=1e-12
+            )
+        assert correlation_time(values[:, None]) > 10.0
+        assert correlation_time(shuffled[:, None]) < 3.0
+
+
 class TestWasserstein:
     def test_reports_in_the_features_own_units(self):
         """The reason to offer it. 'This residue gains 1.4 contacts' is a
