@@ -83,6 +83,9 @@ All notable changes to Prothon are recorded here. This project follows
   credentials are not persisted, and default workflow permissions are
   read-only. Weekly grouped Dependabot updates keep the pins reviewable without
   returning to mutable tags.
+- Artifact upload/download and coverage actions now use their reviewed
+  Node.js 24 releases, removing runner deprecation warnings while retaining
+  immutable commit pins and the human-readable release comments.
 
 ### Fixed — installed release artifacts
 
