@@ -88,6 +88,21 @@ updates each week; review the upstream release notes and retain a full 40-digit
 SHA when accepting one. Workflow tokens are read-only unless a job declares a
 narrower exception (the publisher receives only `id-token: write`).
 
+The reusable workflow also creates a `security-evidence` artifact. It contains
+the resolved runtime environment, scanner versions, a tracked-source secret
+scan, and a CycloneDX JSON SBOM with vulnerability data. A possible secret, any
+known dependency vulnerability, or an incomplete dependency audit blocks the
+quality workflow and therefore blocks publication. Do not weaken or suppress a
+finding to make a release pass: resolve it, or document and review a narrowly
+identified exception in a separate pull request.
+
+To reproduce the two scans locally after installing `requirements/security.txt`:
+
+```bash
+detect-secrets scan --no-verify
+pip-audit --strict --progress-spinner off
+```
+
 Two things in `scripts/` are measurements rather than tests, and both have
 found defects that the test suite could not:
 

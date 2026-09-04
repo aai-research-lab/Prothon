@@ -118,3 +118,73 @@ jobs:
             grep -E "WARNING|ERROR" sphinx.log | grep -v "failed to reach any of the inventories"
             exit 1
           fi
+
+  security:
+    name: Dependency and secret evidence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+
+      - name: Prepare evidence directory
+        run: |
+          mkdir security-evidence
+          echo '{"status":"not run"}' > security-evidence/detect-secrets.json
+          echo '{"status":"not run"}' > security-evidence/prothon.cdx.json
+
+      - name: Install the runtime and security tools separately
+        run: |
+          python -m venv "$RUNNER_TEMP/prothon-runtime"
+          "$RUNNER_TEMP/prothon-runtime/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/prothon-runtime/bin/python" -m pip install .
+          "$RUNNER_TEMP/prothon-runtime/bin/python" -m pip freeze \
+            > security-evidence/runtime-requirements.txt
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements/security.txt
+          python -m pip freeze > security-evidence/security-tools.txt
+
+      - name: Refuse secrets in tracked source
+        run: |
+          detect-secrets scan --no-verify > security-evidence/detect-secrets.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("security-evidence/detect-secrets.json").read_text())
+          findings = report.get("results", {})
+          if findings:
+              for filename, matches in sorted(findings.items()):
+                  lines = ", ".join(str(match["line_number"]) for match in matches)
+                  print(f"::error file={filename},line={matches[0]['line_number']}::"
+                        f"possible secret(s) on line(s) {lines}")
+              raise SystemExit("secret scan found material that must be removed or reviewed")
+          print("No possible secrets found in tracked source")
+          PY
+
+      - name: Audit runtime dependencies and write the SBOM
+        run: |
+          RUNTIME_SITE=$("$RUNNER_TEMP/prothon-runtime/bin/python" - <<'PY'
+          import site
+          print(site.getsitepackages()[0])
+          PY
+          )
+          pip-audit \
+            --strict \
+            --progress-spinner off \
+            --path "$RUNTIME_SITE" \
+            --format cyclonedx-json \
+            --output security-evidence/prothon.cdx.json
+
+      - name: Retain security evidence
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: security-evidence
+          path: security-evidence/
+          if-no-files-found: error
