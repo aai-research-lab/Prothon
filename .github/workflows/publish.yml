@@ -6,8 +6,14 @@ on:
       - "v*"
 
 jobs:
+  quality:
+    name: Test the tagged commit
+    uses: ./.github/workflows/tests.yml
+    secrets: inherit
+
   build:
     name: Build distributions
+    needs: quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

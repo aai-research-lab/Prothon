@@ -5,6 +5,13 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Fixed — release quality gate
+
+- The tag-triggered publisher now calls and depends on the same reusable test,
+  real-data and documentation workflow as pull requests. The operating-system
+  matrix covers every declared Python version from 3.9 through 3.13, so a tag
+  cannot publish merely because its distribution built successfully.
+
 ### Fixed — public weight validation
 
 - All public weighted APIs now share one probability contract: one finite,
