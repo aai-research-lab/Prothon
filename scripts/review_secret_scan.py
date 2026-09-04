@@ -14,6 +14,14 @@ ROOT = Path(__file__).resolve().parent.parent
 PUBLIC_DIGEST_PATH = "recipes/prothon/recipe.yaml"
 PUBLIC_DIGEST_LINE = re.compile(r"\s*sha256:\s*[0-9a-f]{64}\s*")
 
+#: Workflows are pinned to immutable action releases by commit SHA, which is
+#: the recommended practice and the opposite of a secret: a git commit hash is
+#: public by construction and identifies the exact code a runner will execute.
+#: `detect-secrets` sees forty hex characters and reports high entropy.
+WORKFLOWS = Path(".github/workflows")
+_PINNED_ACTION = re.compile(r"uses:\s*[\w.-]+/[\w.-]+@([0-9a-f]{40})\b")
+_GIT_SHA = re.compile(r"\b[0-9a-f]{40}\b")
+
 
 def _normalise_path(filename: str) -> str:
     """Use the repository-relative spelling emitted on every runner OS."""
@@ -47,6 +55,51 @@ def _is_reviewed_public_digest(
     return PUBLIC_DIGEST_LINE.fullmatch(lines[line_number - 1]) is not None
 
 
+def _pinned_action_shas(root: Path) -> set[str]:
+    """Every action SHA the workflows actually pin to.
+
+    Read from the workflows rather than listed here, so a SHA is only excused
+    while it is genuinely in use. Deleting the pin removes the exception, and a
+    hex string that never appears in a workflow is never excused at all.
+    """
+    shas: set[str] = set()
+    directory = root / WORKFLOWS
+    if not directory.is_dir():
+        return shas
+    for workflow in directory.glob("*.yml"):
+        text = workflow.read_text(encoding="utf-8")
+        shas.update(match.group(1) for match in _PINNED_ACTION.finditer(text))
+    return shas
+
+
+def _is_reviewed_pinned_action(
+    filename: str,
+    match: dict[str, Any],
+    root: Path,
+    pinned: set[str],
+) -> bool:
+    """Recognise a hex string that is a pinned action SHA and nothing else.
+
+    Narrow in the same way as the public digest above: the line must contain a
+    forty-character hex string, and that string must be one the workflows pin
+    to. A different forty-hex value on the same line is still reported.
+    """
+    if not pinned:
+        return False
+    filename = _normalise_path(filename)
+    path = root / filename
+    if not path.is_file():
+        return False
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    line_number = _line_number(match)
+    if line_number > len(lines):
+        raise ValueError(f"finding points beyond the end of {filename}")
+
+    found = set(_GIT_SHA.findall(lines[line_number - 1]))
+    return bool(found) and found <= pinned
+
+
 def partition_findings(
     report: dict[str, Any],
     root: Path = ROOT,
@@ -56,6 +109,7 @@ def partition_findings(
     if not isinstance(results, dict):
         raise ValueError("detect-secrets report has no results object")
 
+    pinned = _pinned_action_shas(root)
     unreviewed: dict[str, list[dict[str, Any]]] = {}
     reviewed_count = 0
     for filename, matches in results.items():
@@ -65,7 +119,9 @@ def partition_findings(
             if not isinstance(match, dict):
                 raise ValueError("detect-secrets report contains a malformed finding")
             _line_number(match)
-            if _is_reviewed_public_digest(filename, match, root):
+            if _is_reviewed_public_digest(filename, match, root) or (
+                _is_reviewed_pinned_action(filename, match, root, pinned)
+            ):
                 reviewed_count += 1
             else:
                 unreviewed.setdefault(filename, []).append(match)
