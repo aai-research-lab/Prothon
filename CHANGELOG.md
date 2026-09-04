@@ -63,9 +63,13 @@ All notable changes to Prothon are recorded here. This project follows
 
 - The reusable quality gate now scans tracked source for possible secrets and
   audits an isolated runtime installation for known dependency vulnerabilities.
-  Any finding or incomplete audit blocks publication; resolved requirements,
-  scanner versions, the scan report and a CycloneDX JSON SBOM are retained as
-  release evidence even when a gate fails.
+  Any unreviewed finding or incomplete audit blocks publication; resolved
+  requirements, scanner versions, the scan report and a CycloneDX JSON SBOM
+  are retained as release evidence even when a gate fails.
+- GitHub's reusable-workflow secret-inheritance declaration is explicitly
+  allowlisted, and the scanner excludes only a complete SHA-256 metadata
+  field. The latter is independently verified against PyPI by the conda-sync
+  gate.
 
 ### Fixed — workflow supply-chain trust
 

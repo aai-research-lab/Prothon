@@ -12,7 +12,7 @@ jobs:
   quality:
     name: Test the tagged commit
     uses: ./.github/workflows/tests.yml
-    secrets: inherit
+    secrets: inherit  # pragma: allowlist secret
 
   build:
     name: Build distributions

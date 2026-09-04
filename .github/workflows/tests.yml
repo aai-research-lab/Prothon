@@ -154,7 +154,13 @@ jobs:
 
       - name: Refuse secrets in tracked source
         run: |
-          detect-secrets scan --no-verify > security-evidence/detect-secrets.json
+          # This one shape is public package metadata, not a credential.  It
+          # cannot carry an inline pragma because the reference recipe must
+          # remain byte-for-byte identical to the conda-forge recipe.  The
+          # separate sync gate verifies the digest against PyPI.
+          detect-secrets scan --no-verify \
+            --exclude-lines '^\s*sha256:\s*[0-9a-f]{64}\s*$' \
+            > security-evidence/detect-secrets.json
           python - <<'PY'
           import json
           from pathlib import Path
