@@ -103,6 +103,20 @@ detect-secrets scan --no-verify
 pip-audit --strict --progress-spinner off
 ```
 
+After PyPI publishes a release, update the conda-forge feedstock to the exact
+sdist version and SHA-256, then copy that reviewed recipe back to
+`recipes/prothon/recipe.yaml`. The scheduled and post-publish conda-sync
+workflow compares the entire reference recipe with the live feedstock and
+checks its version and digest against PyPI:
+
+```bash
+python scripts/check_conda_sync.py
+```
+
+The check is necessarily post-publish because the final PyPI sdist hash does
+not exist beforehand. A failure means the conda release is incomplete; it is
+not a reason to disable the monitor.
+
 Two things in `scripts/` are measurements rather than tests, and both have
 found defects that the test suite could not:
 

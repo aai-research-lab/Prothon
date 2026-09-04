@@ -55,6 +55,10 @@ conda activate prothon
 prothon info
 ```
 
+For source work, clone the repository. GitHub's **Download ZIP** is an
+unversioned audit snapshot; installable, versioned artifacts are the PyPI
+wheel/source distribution and the conda-forge package.
+
 ## What you can compare
 
 | | |

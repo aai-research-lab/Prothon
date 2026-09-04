@@ -15,7 +15,7 @@ copyright = "2026, AAI Research Lab"
 try:
     from prothon import __version__ as release
 except ImportError:  # docs can be built without the package installed
-    release = "2.1.0"
+    release = "0+unknown"
 version = ".".join(release.split(".")[:2])
 
 extensions = [

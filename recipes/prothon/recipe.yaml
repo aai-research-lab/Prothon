@@ -1,5 +1,4 @@
 schema_version: 1
-
 # This is the reference copy. Once the staged-recipes pull request merges, the
 # package is built from the conda-forge feedstock at
 # https://github.com/conda-forge/prothon-feedstock, and the two have to be kept
@@ -13,13 +12,12 @@ schema_version: 1
 # is fetched under the name PyPI would give it. The import name and the command
 # are `prothon` either way, so the divergence is invisible to a user after
 # installation and appears only in the install line.
-
 context:
   name: prothon
   # PyPI normalises the sdist filename to underscores. The directory segment
   # tolerates either form; the filename does not.
   pypi_name: prothon_ensembles
-  version: "2.1.0"
+  version: "2.3.2"
 
 package:
   name: ${{ name|lower }}
@@ -27,8 +25,7 @@ package:
 
 source:
   url: https://pypi.org/packages/source/${{ pypi_name[0] }}/${{ pypi_name }}/${{ pypi_name }}-${{ version }}.tar.gz
-  sha256: f5b9ade6a5bae68c4d8dddf0ba1fe923141486dc49e457cab597bed0ddb5a509
-
+  sha256: db2c7ee1063b53c8a4626fe4eb9ba9db1a085bf806367c76c224970084a33c47
 build:
   noarch: python
   number: 0
@@ -36,7 +33,6 @@ build:
   python:
     entry_points:
       - prothon = prothon.cli:main
-
 requirements:
   host:
     - python ${{ python_min }}.*
@@ -60,6 +56,12 @@ requirements:
     # release failed on the code path the CLI took by default.
     - scikit-learn >=1.0
     - mdtraj >=1.9.7
+    # Arrived with config-as-study in 2.2: a study is written to and read from
+    # a YAML file, and the CLI's --config and --save-config both go through it.
+    # Missing here, `pip check` in the test section reports it and a user
+    # installing from conda-forge would meet it as a ModuleNotFoundError the
+    # first time they touched a config.
+    - pyyaml >=5.1
     # mdtraj declares netcdf4 in its own Python metadata and conda-forge's
     # mdtraj does not install it, so `pip check` in the test section reports a
     # broken requirement that belongs to a dependency rather than to us.
@@ -70,7 +72,6 @@ requirements:
     # that the path is significantly slower. FastMDXplora carries it for the
     # same reason.
     - netcdf4
-
 tests:
   - python:
       imports:
@@ -78,6 +79,14 @@ tests:
         - prothon.core
         - prothon.core.dissimilarity
         - prothon.core.representation
+        # The paths those two moved to in 2.3. `prothon.core` is a shim that
+        # forwards with a DeprecationWarning until 3.0, and testing both the
+        # old and the new names is what keeps the shim honest -- it shipped
+        # once handling `from prothon.core import x` and not
+        # `import prothon.core.x`, which this section caught.
+        - prothon.compare.dissimilarity
+        - prothon.represent.order_parameters
+        - prothon.sampling.correlation
       python_version:
         - ${{ python_min }}.*
         - "*"
@@ -89,26 +98,22 @@ tests:
     requirements:
       run:
         - python ${{ python_min }}.*
-
 about:
   homepage: https://github.com/aai-research-lab/Prothon
-  summary: Efficient comparison of protein conformational ensembles using local order parameters
+  summary: Software for accurate comparison of protein conformational ensembles
   description: |
     Prothon represents a protein conformational ensemble as a vector of
     probability distributions over local order parameters -- contact numbers,
     virtual bond and torsion angles, solvent accessible surface area -- and
     measures the Jensen-Shannon distance between corresponding distributions.
-
     Because the representation is local, no structural superposition is
     required and the cost is linear in the number of frames rather than
     quadratic, which makes ensembles of tens of thousands of conformations
     tractable.
-
     Every result is reported beside its noise floor: the distance between two
     disjoint halves of a single ensemble, which is the smallest difference the
     sampling can resolve. A difference below that floor is reported as
     unresolvable rather than as a small difference.
-
     The method is described in Aina, Hsueh and Plotkin, J. Chem. Inf. Model.
     2023, 63 (11), 3453-3461.
   license: MIT
