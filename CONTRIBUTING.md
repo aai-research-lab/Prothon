@@ -92,16 +92,23 @@ narrower exception (the publisher receives only `id-token: write`).
 
 The reusable workflow also creates a `security-evidence` artifact. It contains
 the resolved runtime environment, scanner versions, a tracked-source secret
-scan, and a CycloneDX JSON SBOM with vulnerability data. A possible secret, any
-known dependency vulnerability, or an incomplete dependency audit blocks the
-quality workflow and therefore blocks publication. Do not weaken or suppress a
-finding to make a release pass: resolve it, or document and review a narrowly
-identified exception in a separate pull request.
+scan, and a CycloneDX JSON SBOM with vulnerability data. An unreviewed possible
+secret, any known dependency vulnerability, or an incomplete dependency audit
+blocks the quality workflow and therefore blocks publication. Two public
+metadata values are narrowly reviewed exceptions: GitHub's reusable-workflow
+inheritance declaration has an inline allowlist pragma, and a complete
+`sha256:` field is excluded because the conda recipe must remain byte-for-byte
+identical to its live feedstock. The separate conda-sync gate verifies that
+digest against PyPI.
+Do not weaken or broadly suppress another finding to make a release pass:
+resolve it, or document and review a narrowly identified exception in a
+separate pull request.
 
 To reproduce the two scans locally after installing `requirements/security.txt`:
 
 ```bash
-detect-secrets scan --no-verify
+detect-secrets scan --no-verify \
+  --exclude-lines '^\s*sha256:\s*[0-9a-f]{64}\s*$'
 pip-audit --strict --progress-spinner off
 ```
 
