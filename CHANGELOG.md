@@ -5,6 +5,11 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Fixed — rank defaults
+
+- `Prothon.rank()` now uses the constructor's `order_parameters` when the call
+  omits them, and falls back to `cbcn` when neither location supplies one.
+
 ### Fixed — table settings integrity
 
 - Table reports no longer discard most study settings. Summary and table

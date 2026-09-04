@@ -332,6 +332,38 @@ class TestOneImport:
         assert set(Prothon.metrics()) == {"jsd", "wasserstein", "ks"}
         assert "rg" in Prothon.observables()
 
+    @pytest.mark.parametrize(
+        ("configured", "requested", "expected"),
+        [
+            ("sasa", None, "sasa"),
+            (None, None, "cbcn"),
+            ("sasa", "cacn", "cacn"),
+        ],
+    )
+    def test_rank_resolves_the_constructor_default(
+        self, monkeypatch, configured, requested, expected
+    ):
+        import importlib
+
+        from prothon import Prothon
+
+        study = object.__new__(Prothon)
+        study.ensembles = [object(), object()]
+        study._order_parameters = configured
+        study.random_state = 7
+        study.output_dir = "results"
+        received = {}
+
+        def fake_benchmark(reference, models, **kwargs):
+            received.update(kwargs)
+            return "ranked"
+
+        benchmark_module = importlib.import_module("prothon.batch.benchmark")
+        monkeypatch.setattr(benchmark_module, "benchmark", fake_benchmark)
+
+        assert study.rank(requested) == "ranked"
+        assert received["order_parameters"] == expected
+
     @pytest.mark.parametrize("method", ["mmd", "c2st"])
     def test_joint_methods_receive_the_sampling_provenance(self, monkeypatch, method):
         from prothon.compare.joint import EnsembleComparison

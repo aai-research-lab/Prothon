@@ -279,6 +279,7 @@ class Prothon:
         """
         from .batch.benchmark import benchmark
 
+        order_parameters = self._parameters(order_parameters)
         others = [e for i, e in enumerate(self.ensembles) if i != ref]
         if not others:
             raise ValueError("Nothing to compare against the reference.")
