@@ -245,6 +245,12 @@ def study_time_correlation(replicates, workers, quick):
     """How optimistic are the p-values on a trajectory?
 
     This is the assumption the documentation declares and does not quantify.
+
+    ``sample_size`` equals ``frames`` here so that every frame is tested and the
+    two nulls differ only in how they relabel. That is deliberate and it is also
+    **not what a user gets**: the default sample size is smaller than most
+    trajectories, so the default path subsamples first. See
+    :func:`study_default_path`, which exists because this study did not.
     """
     taus = [1.0, 20.0] if quick else [1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
     rows = []
@@ -267,7 +273,54 @@ def study_time_correlation(replicates, workers, quick):
     return rows
 
 
+def study_default_path(replicates, workers, quick):
+    """The false-positive rate a user actually gets.
+
+    Every other study in this file sets ``sample_size`` equal to ``frames``, so
+    the subsampling branch never ran and the published calibration described a
+    configuration nobody uses. On a trajectory longer than the default sample
+    size the default path subsampled first, and before the sampling fix that
+    subsample was drawn in random order: blocks of the subsample were runs of
+    frames scattered through the trajectory, the block null degenerated to a
+    frame null, and two ensembles from the *same* distribution were reported as
+    94% different.
+
+    The point of this study is that it is the one measurement that would have
+    caught it. It varies the sample size *below* the frame count, which is the
+    only thing the others do not do.
+    """
+    lengths = [(2000, 1000)] if quick else [
+        (2000, 2000),   # no subsampling, for comparison with the study above
+        (2000, 1000),   # the default sample size against a longer trajectory
+        (5000, 1000),   # a trajectory five times the default
+        (5000, 2500),
+    ]
+    taus = [10.0] if quick else [1.0, 10.0, 50.0]
+    rows = []
+    for tau in taus:
+        for frames, sample_size in lengths:
+            settings = {
+                **BASE, "generator": "time_correlated", "tau": tau,
+                "frames": frames, "sample_size": sample_size,
+                "block_permutation": None,
+            }
+            print(
+                f"  tau {tau}, {frames} frames sampled to {sample_size}"
+                f"{' (no subsampling)' if sample_size >= frames else ''}",
+                file=sys.stderr,
+            )
+            row = run(settings, replicates, workers)
+            row["tau"] = tau
+            row["frames"] = frames
+            row["sample_size"] = sample_size
+            row["subsampled"] = sample_size < frames
+            row["theoretical_neff"] = theoretical_neff(frames, tau)
+            rows.append(row)
+    return rows
+
+
 STUDIES = {
+    "default_path": study_default_path,
     "parameters": study_parameters,
     "features": study_correlated_features,
     "correlation": study_time_correlation,
@@ -359,6 +412,18 @@ def render(name, rows) -> str:
             lines.append(
                 f"| `{r['metric']}` | {r['alpha']} | {r['permutations']} | "
                 f"{r['feature_rate']:.3%} | {lo:.2%}–{hi:.2%} | {r['study_rate']:.1%} |"
+            )
+    elif name == "default_path":
+        lines.append(
+            "| τ | frames | sampled to | subsampled | features called | 95% CI |"
+        )
+        lines.append("|---|---|---|---|---|---|")
+        for r in rows:
+            lo, hi = r["feature_ci"]
+            lines.append(
+                f"| {r['tau']:.0f} | {r['frames']} | {r['sample_size']} | "
+                f"{'yes' if r['subsampled'] else 'no'} | "
+                f"{r['feature_rate']:.2%} | {lo:.2%}–{hi:.2%} |"
             )
     elif name == "features":
         lines.append("| correlation between features | features called | 95% CI |")
