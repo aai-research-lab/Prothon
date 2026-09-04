@@ -87,6 +87,13 @@ All notable changes to Prothon are recorded here. This project follows
   Node.js 24 releases, removing runner deprecation warnings while retaining
   immutable commit pins and the human-readable release comments.
 
+### Fixed — reproducible real-data tests
+
+- Network tests now fetch the MDTraj corpus from the immutable, reviewed
+  1.11.1 release commit instead of its moving default branch. Downloads are
+  installed atomically, so an interrupted transfer cannot become a cached
+  trajectory on the next run.
+
 ### Fixed — installed release artifacts
 
 - Release wheels and source distributions are built once, then each is

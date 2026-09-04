@@ -87,6 +87,16 @@ def test_artifact_and_coverage_actions_use_reviewed_node24_releases():
         assert references == [(commit, version)] * count
 
 
+def test_real_data_corpus_uses_an_immutable_reviewed_revision():
+    source = (ROOT / "tests" / "test_real_data.py").read_text(encoding="utf-8")
+    revision = "9bac885848417ec1c257af0191c4186f82f87c8f"
+
+    assert f'_CORPUS_REVISION = "{revision}"' in source
+    assert "mdtraj/mdtraj/master/tests/data" not in source
+    assert 'f"{_CORPUS_REVISION}/tests/data"' in source
+    assert "cache = cache_root / _CORPUS_REVISION" in source
+
+
 def test_the_public_recipe_digest_is_reviewed():
     recipe = (ROOT / "recipes" / "prothon" / "recipe.yaml").read_text(
         encoding="utf-8"
