@@ -203,3 +203,26 @@ def test_removing_a_pin_removes_the_exception(tmp_path):
     """
     (tmp_path / ".github" / "workflows").mkdir(parents=True)
     assert REVIEW._pinned_action_shas(tmp_path) == set()
+
+
+def test_the_readme_does_not_assert_the_superseded_calibration():
+    """The 1.7-2.3% figure described a path the default does not take.
+
+    It was measured with the sample size equal to the frame count, so the
+    subsampling branch never ran. On the default path the same configuration
+    gave 94%. The figure is not wrong about what it measured; it is wrong as an
+    unqualified claim about the software.
+    """
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "between 1.7%" not in readme
+    assert "CORRECTION.md" in readme, (
+        "the README should point users of affected releases at the correction"
+    )
+
+
+def test_the_correction_note_exists_and_names_the_affected_releases():
+    correction = ROOT / "CORRECTION.md"
+    assert correction.is_file(), "README links to CORRECTION.md"
+    text = correction.read_text(encoding="utf-8")
+    assert "2.3.2" in text, "the correction must say which releases are affected"
+    assert "94.2%" in text, "the correction must state the measured rate"
