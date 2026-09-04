@@ -366,17 +366,34 @@ class Prothon:
         """
         from .config.study import WHERE, Study
 
-        study = self.study or Study(
-            ensembles=[
-                {WHERE: e.provenance.get("path", e.label), "label": e.label}
-                for e in self.ensembles
-            ],
+        if self.study is not None:
+            return self.study.save(path)
+
+        # Everything needed to run this study again. A trajectory without its
+        # topology cannot be loaded, and a comparison without its order
+        # parameters is not the comparison that was run, so both belong in the
+        # file even though the object could once write neither.
+        settings: dict = {}
+        if self.random_state is not None:
+            settings["random_state"] = self.random_state
+        if self._order_parameters is not None:
+            settings["order_parameters"] = self._order_parameters
+
+        entries = []
+        for ensemble in self.ensembles:
+            entry = {
+                WHERE: ensemble.provenance.get("path", ensemble.label),
+                "label": ensemble.label,
+            }
+            topology = ensemble.provenance.get("topology") or self.topology
+            if topology is not None:
+                entry["topology"] = topology
+            entries.append(entry)
+
+        study = Study(
+            ensembles=entries,
             output_dir=self.output_dir,
-            settings=(
-                {"random_state": self.random_state}
-                if self.random_state is not None
-                else {}
-            ),
+            settings=settings,
         )
         return study.save(path)
 
