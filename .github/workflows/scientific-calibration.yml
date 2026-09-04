@@ -10,8 +10,45 @@ permissions:
 
 jobs:
   calibrate:
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - gate: local-null
+            name: Calibrate the correlated local null
+            command: >-
+              python scripts/calibration.py
+              --quick
+              --study correlation
+              --replicates 250
+              --workers 2
+              --out calibration-evidence/local-calibration.md
+              --json calibration-evidence/local-calibration.json
+          - gate: default-path
+            name: Calibrate default subsampling
+            command: >-
+              python scripts/calibration.py
+              --quick
+              --study default_path
+              --replicates 250
+              --workers 2
+              --out calibration-evidence/default-path-calibration.md
+              --json calibration-evidence/default-path-calibration.json
+          - gate: floors
+            name: Calibrate floor verdicts
+            command: >-
+              python scripts/floor_calibration.py
+              --replicates 60
+              --out calibration-evidence/floor-calibration.md
+              --json calibration-evidence/floor-calibration.json
+          - gate: joint
+            name: Calibrate MMD and C2ST
+            command: >-
+              python scripts/joint_calibration.py
+              --out calibration-evidence/joint-calibration.json
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -24,35 +61,19 @@ jobs:
         run: python -m pip install -e ".[dev]"
       - name: Prepare evidence directory
         run: mkdir calibration-evidence
-      - name: Calibrate the correlated local null
-        id: local
+      - name: Run the ${{ matrix.gate }} gate
+        id: gate
         continue-on-error: true
-        run: |
-          python scripts/calibration.py \
-            --quick \
-            --study correlation \
-            --replicates 250 \
-            --workers 2 \
-            --out calibration-evidence/local-calibration.md \
-            --json calibration-evidence/local-calibration.json
-      - name: Calibrate MMD and C2ST null and power
-        id: joint
-        continue-on-error: true
-        run: |
-          python scripts/joint_calibration.py \
-            --out calibration-evidence/joint-calibration.json
+        run: ${{ matrix.command }}
       - name: Retain calibration evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: scientific-calibration-evidence
+          name: scientific-calibration-evidence-${{ matrix.gate }}
           path: calibration-evidence/
           if-no-files-found: error
-      - name: Enforce every calibration gate
+      - name: Enforce the calibration gate
         if: always()
         env:
-          LOCAL_OUTCOME: ${{ steps.local.outcome }}
-          JOINT_OUTCOME: ${{ steps.joint.outcome }}
-        run: |
-          test "$LOCAL_OUTCOME" = success
-          test "$JOINT_OUTCOME" = success
+          GATE_OUTCOME: ${{ steps.gate.outcome }}
+        run: test "$GATE_OUTCOME" = success
