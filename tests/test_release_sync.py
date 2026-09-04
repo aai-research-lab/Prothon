@@ -68,7 +68,14 @@ def test_the_conda_checker_reports_recipe_version_and_hash_drift(tmp_path, capsy
     pypi_path = tmp_path / "pypi.json"
     recipe_path.write_text(_recipe("2.3.1", old_digest), encoding="utf-8")
     feedstock_path.write_text(_recipe("2.3.2", new_digest), encoding="utf-8")
-    pypi_path.write_text(json.dumps(_pypi("2.3.2", new_digest)), encoding="utf-8")
+    # The project JSON returned by PyPI contains files for historical releases
+    # as well as the latest one. Keep the fixture faithful to that contract so
+    # the checker can independently diagnose both stale version and bad digest.
+    pypi = _pypi("2.3.2", new_digest)
+    pypi["releases"]["2.3.1"] = [
+        {"packagetype": "sdist", "digests": {"sha256": new_digest}}
+    ]
+    pypi_path.write_text(json.dumps(pypi), encoding="utf-8")
 
     status = CHECKER.main(
         [
@@ -86,6 +93,32 @@ def test_the_conda_checker_reports_recipe_version_and_hash_drift(tmp_path, capsy
     assert "live feedstock recipes differ" in errors
     assert "not PyPI's latest" in errors
     assert "does not match PyPI sdist" in errors
+
+
+def test_the_conda_checker_reports_a_missing_versioned_sdist(tmp_path, capsys):
+    digest = "a" * 64
+    recipe = _recipe("2.3.1", digest)
+    recipe_path = tmp_path / "recipe.yaml"
+    feedstock_path = tmp_path / "feedstock.yaml"
+    pypi_path = tmp_path / "pypi.json"
+    recipe_path.write_text(recipe, encoding="utf-8")
+    feedstock_path.write_text(recipe, encoding="utf-8")
+    pypi_path.write_text(json.dumps(_pypi("2.3.2", digest)), encoding="utf-8")
+
+    status = CHECKER.main(
+        [
+            "--recipe",
+            str(recipe_path),
+            "--feedstock-url",
+            feedstock_path.as_uri(),
+            "--pypi-url",
+            pypi_path.as_uri(),
+        ]
+    )
+
+    errors = capsys.readouterr().err
+    assert status == 1
+    assert "PyPI has 0 source distributions for recipe version '2.3.1'" in errors
 
 
 def test_an_unversioned_source_snapshot_does_not_claim_an_old_release():
