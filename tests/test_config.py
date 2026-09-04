@@ -379,6 +379,46 @@ ensembles:
         from_file = Study.from_file(path).run().summary()
         assert from_python == from_file
 
+    @pytest.mark.parametrize(
+        ("setting", "value", "argument", "expected"),
+        [
+            ("order_parameters", ["cbcn", "cacn"], "order_parameters", "cbcn,cacn"),
+            ("metric", "ks", "metric", "ks"),
+            ("random_state", 17, "random_state", 17),
+            ("n_permutations", 23, "n_permutations", 23),
+            ("n_jobs", 3, "n_jobs", 3),
+            ("sample_size", 41, "sample_size", 41),
+            ("s_num", 7, "s_num", 7),
+            ("x_num", 31, "x_num", 31),
+            ("alpha", 0.01, "alpha", 0.01),
+            ("block_permutation", True, "block_permutation", True),
+            ("no_block_permutation", True, "block_permutation", False),
+            ("legacy_statistics", True, "legacy", True),
+        ],
+    )
+    def test_every_computation_setting_reaches_the_table_benchmark(
+        self, setting, value, argument, expected
+    ):
+        study = Study(
+            ensembles=[{"ensemble": "a"}, {"ensemble": "b"}],
+            settings={setting: value},
+            output_dir="results",
+        )
+        arguments = study.benchmark_arguments()
+
+        assert arguments[argument] == expected
+        assert arguments["output_dir"] == "results"
+        if setting == "s_num":
+            assert arguments["floor_repeats"] == expected
+
+    def test_table_mode_refuses_a_projection_instead_of_ignoring_it(self):
+        study = Study(
+            ensembles=[{"ensemble": "a"}, {"ensemble": "b"}],
+            settings={"dimred": "pca"},
+        )
+        with pytest.raises(ValueError, match="not part of the table report"):
+            study.benchmark_arguments()
+
     def test_saving_from_the_command_line(self, files, tmp_path, capsys):
         """A command line typed once becomes a study that can be committed."""
         out = tmp_path / "typed.yml"

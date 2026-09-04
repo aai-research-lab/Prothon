@@ -82,6 +82,30 @@ class TestTheTable:
             str(index) for index in range(1, 13)
         ]
 
+    def test_the_methods_report_records_every_computation_setting(self, reference):
+        result = benchmark(
+            reference,
+            [ensemble(800, 2, "m")],
+            order_parameters="cbcn",
+            random_state=7,
+            metric="ks",
+            sample_size=40,
+            n_permutations=9,
+            s_num=3,
+            floor_repeats=4,
+            x_num=21,
+            alpha=0.01,
+            n_jobs=1,
+        )
+
+        methods = result.methods()
+        for text in (
+            "order_parameters=['cbcn']", "metric='ks'", "sample_size=40",
+            "n_permutations=9", "s_num=3", "coverage_floor_repeats=4",
+            "x_num=21", "alpha=0.01", "n_jobs=1", "random_state=7",
+        ):
+            assert text in methods
+
     def test_no_models_is_refused(self, reference):
         with pytest.raises(ValueError, match="No models"):
             benchmark(reference, [], order_parameters="cbcn")

@@ -201,10 +201,7 @@ def _run_table(args, study) -> int:
         raise ValueError("Nothing to compare against the reference.")
 
     result = benchmark(
-        ensembles[reference], others,
-        order_parameters=study.settings.get("order_parameters", "cbcn"),
-        random_state=study.settings.get("random_state"),
-        output_dir=study.output_dir,
+        ensembles[reference], others, **study.benchmark_arguments()
     )
     if args.json:
         print(json.dumps(result.to_dict(), indent=2, default=float))

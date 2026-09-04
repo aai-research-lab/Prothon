@@ -258,10 +258,33 @@ class Study:
         """
         from ..study import Prothon
 
+        settings = self.comparison_arguments()
+
+        comparison = Prothon(
+            ensembles=self.resolve(cache_dir),
+            output_dir=self.output_dir,
+            random_state=settings.pop("random_state", None),
+            study=self,
+        )
+        comparison.compare_ensembles(
+            ref=self.reference_index(),
+            **settings,
+        )
+        return comparison
+
+    def comparison_arguments(self) -> dict[str, Any]:
+        """Translate validated study settings to the analysis API once.
+
+        Summary and table output are views of the same requested study. This
+        adapter is therefore the only place where configuration names are
+        converted to computation names; neither view may maintain its own
+        hand-written subset of settings.
+        """
         settings = dict(self.settings)
-        for key in ("report", "json", "verbose", "config", "save_config",
-                    "output_dir", "ensembles", "topology", "reference",
-                    "chains"):
+        for key in (
+            "report", "json", "verbose", "config", "save_config",
+            "output_dir", "ensembles", "topology", "reference", "chains",
+        ):
             settings.pop(key, None)
 
         block = None
@@ -278,21 +301,32 @@ class Study:
         if isinstance(order_parameters, (list, tuple)):
             order_parameters = ",".join(order_parameters)
 
-        comparison = Prothon(
-            ensembles=self.resolve(cache_dir),
-            output_dir=self.output_dir,
-            random_state=settings.pop("random_state", None),
-            study=self,
-        )
-        comparison.compare_ensembles(
-            order_parameters=order_parameters,
-            ref=self.reference_index(),
-            dimred=dimred,
-            block_permutation=block,
-            legacy=settings.pop("legacy_statistics", False),
+        return {
+            "order_parameters": order_parameters,
+            "dimred": dimred,
+            "block_permutation": block,
+            "legacy": settings.pop("legacy_statistics", False),
             **settings,
-        )
-        return comparison
+        }
+
+    def benchmark_arguments(self) -> dict[str, Any]:
+        """Return the same analysis request in :func:`benchmark` vocabulary.
+
+        The benchmark adds a coverage floor, so the study's ``s_num`` controls
+        both floor calculations. Options unsupported by table output are
+        refused explicitly instead of being accepted and silently discarded.
+        """
+        settings = self.comparison_arguments()
+        dimred = settings.pop("dimred")
+        if dimred:
+            raise ValueError(
+                "Dimensionality reduction is not part of the table report. "
+                "Use --report summary, or set --dimred none."
+            )
+        if "s_num" in settings:
+            settings["floor_repeats"] = settings["s_num"]
+        settings["output_dir"] = self.output_dir
+        return settings
 
     def save(self, path) -> str:
         """Write this study to a YAML file.

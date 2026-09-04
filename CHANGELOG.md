@@ -5,6 +5,12 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Fixed — table settings integrity
+
+- Table reports no longer discard most study settings. Summary and table
+  views use one canonical conversion, metadata and the methods report record
+  the resolved calculation, and unsupported projection requests are refused.
+
 ### Fixed — protein- and chain-safe representations
 
 - Default CA/CB selections now contain protein residues only. Calcium ions and

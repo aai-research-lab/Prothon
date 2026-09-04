@@ -87,6 +87,12 @@ with coverage and fidelity beside each row. There is no separate `benchmark`
 command, because there is no separate calculation, and two commands for one
 operation is how they come to disagree. See [benchmarking](benchmark.md).
 
+Every computation option is shared with summary mode. The table's methods line
+records the resolved metric, sample size, permutation and floor repeat counts,
+grid size, alpha, worker count and random seed; JSON stores the same values
+under `settings`. A dimensionality-reduction request is rejected in table mode
+because a table has no projection to render.
+
 ### A study in a file
 
 ```bash

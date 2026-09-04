@@ -211,8 +211,20 @@ class BenchmarkResult:
             f"  {refused} refused for want of sampling",
             f"  {unresolved} not resolvable above the noise floor",
             f"  {unassessed} without enough independent units for a floor verdict",
+            self.methods(),
         ]
         return "\n".join(lines)
+
+    def methods(self) -> str:
+        """A compact, reproducible account of the table calculation."""
+        parameters = {
+            "order_parameters": list(self.order_parameters),
+            **self.settings,
+        }
+        rendered = ", ".join(
+            f"{name}={value!r}" for name, value in sorted(parameters.items())
+        )
+        return f"  methods: {rendered}"
 
     def to_dict(self) -> dict[str, Any]:
         from .. import __version__
