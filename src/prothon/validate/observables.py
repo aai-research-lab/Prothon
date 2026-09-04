@@ -48,6 +48,7 @@ import mdtraj as md
 import numpy as np
 
 from ..represent.order_parameters import _protein_chain_atoms, _selection_indices
+from ..sampling.statistics import validate_weights
 from ..utils import get_logger
 
 logger = get_logger("validate.observables")
@@ -103,11 +104,11 @@ def average_observable(values, weights=None, averaging: str = "linear"):
         ``linear`` or ``r6``.
     """
     values = np.asarray(values, dtype=np.float64)
-    if weights is None:
+    normalised = validate_weights(weights, values.shape[0])
+    if normalised is None:
         w = np.full(values.shape[0], 1.0 / values.shape[0])
     else:
-        w = np.asarray(weights, dtype=np.float64)
-        w = w / w.sum()
+        w = normalised
 
     if values.ndim == 1:
         values = values[:, None]

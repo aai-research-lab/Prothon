@@ -83,10 +83,10 @@ from ..sampling.floor import (
 from ..sampling.null import permutation_null, studentised_p_values
 from ..sampling.statistics import (
     DEFAULT_SAMPLE_SIZE,
-    _normalise,
     benjamini_hochberg,
     effective_sample_size,
     random_sample,
+    validate_weights,
 )
 from ..utils import get_logger
 from .density import estimate_pdf
@@ -650,8 +650,10 @@ def dissimilarity(
             f"representations do not describe the same residues."
         )
 
-    weights_ref = _normalise(weights_ref, ref_rep.shape[0])
-    weights = _normalise(weights, rep.shape[0])
+    weights_ref = validate_weights(
+        weights_ref, ref_rep.shape[0], "Reference weights"
+    )
+    weights = validate_weights(weights, rep.shape[0], "Comparison weights")
 
     if (weights_ref is None) != (weights is None):
         # One deposited ensemble against one trajectory is a real comparison

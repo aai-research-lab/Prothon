@@ -5,6 +5,13 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Fixed — public weight validation
+
+- All public weighted APIs now share one probability contract: one finite,
+  non-negative value per frame, at least one positive value, and a finite
+  positive sum. Valid unnormalised and dominant weights remain supported;
+  invalid vectors fail before producing a NaN statistic or effective size.
+
 ### Fixed — validation CLI inputs
 
 - Validation now forwards chain selections, including one selection per

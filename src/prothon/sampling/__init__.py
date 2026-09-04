@@ -33,6 +33,7 @@ from .statistics import (
     benjamini_hochberg,
     effective_sample_size,
     random_sample,
+    validate_weights,
 )
 
 __all__ = [
@@ -48,6 +49,7 @@ __all__ = [
     "random_sample",
     "split_half_floor",
     "studentised_p_values",
+    "validate_weights",
     "CorrelationEstimate",
     "CorrelationProfile",
     "block_labels",

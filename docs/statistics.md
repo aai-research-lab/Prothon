@@ -2,6 +2,16 @@
 
 This is the page to read before quoting a number from Prothon.
 
+## Probability weights
+
+Every public weighted API uses the same contract. Supply exactly one numeric
+weight per frame. Values must be finite and non-negative, at least one must be
+positive, and their sum must be finite and positive. The scale is immaterial:
+valid weights are normalised internally, so `2, 3, 5` and `0.2, 0.3, 0.5`
+describe the same ensemble. Zero-weight frames are allowed; negative values,
+NaNs, infinities, an all-zero vector, and a length mismatch are refused before
+an effective sample size or statistic is computed.
+
 ## The floor comes first
 
 Two independent halves of a *single* ensemble are not at distance zero from

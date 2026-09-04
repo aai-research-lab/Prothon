@@ -58,6 +58,7 @@ from ..sampling.floor import (
     plan_floor,
     split_half_floor,
 )
+from ..sampling.statistics import validate_weights
 from ..utils import get_logger
 from .dissimilarity import MINIMUM_EFFECTIVE_SAMPLES, effective_sample_size, estimate_pdf
 
@@ -428,8 +429,10 @@ def precision_recall(
         raise ValueError(f"coverage must lie strictly between 0 and 1; got {coverage}.")
 
     rng = np.random.default_rng(random_state)
-    weights_ref = None if weights_ref is None else np.asarray(weights_ref, float)
-    weights = None if weights is None else np.asarray(weights, float)
+    weights_ref = validate_weights(
+        weights_ref, reference.shape[0], "Reference weights"
+    )
+    weights = validate_weights(weights, other.shape[0], "Compared weights")
 
     n_eff = (
         effective_sample_size(weights_ref, reference.shape[0]),

@@ -47,6 +47,7 @@ from ..sampling.floor import (
     plan_floor,
     split_half_floor,
 )
+from ..sampling.statistics import validate_weights
 from ..utils import get_logger
 
 logger = get_logger("validate.score")
@@ -260,6 +261,7 @@ def score_observable(
         )
 
     n_frames = per_frame.shape[0]
+    weights = validate_weights(weights, n_frames)
     n_eff = effective_sample_size(weights, n_frames)
     if n_eff < MINIMUM_EFFECTIVE_SAMPLES:
         raise ValueError(

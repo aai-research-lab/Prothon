@@ -42,6 +42,8 @@ import numpy as np
 from scipy.spatial.distance import jensenshannon
 from scipy.stats import wasserstein_distance
 
+from ..sampling.statistics import validate_weights
+
 __all__ = [
     "METRICS",
     "Metric",
@@ -229,9 +231,13 @@ def feature_distance(
 ) -> float:
     """Distance between two samples of one feature, under the chosen metric."""
     spec = resolve_metric(metric)
+    x = np.asarray(x, dtype=np.float64).ravel()
+    y = np.asarray(y, dtype=np.float64).ravel()
+    weights_x = validate_weights(weights_x, x.size, "First-sample weights")
+    weights_y = validate_weights(weights_y, y.size, "Second-sample weights")
     return spec.function(
-        np.asarray(x, dtype=np.float64).ravel(),
-        np.asarray(y, dtype=np.float64).ravel(),
+        x,
+        y,
         weights_x,
         weights_y,
         circular,

@@ -17,7 +17,7 @@ import numpy as np
 from scipy.special import ive
 from scipy.stats import gaussian_kde
 
-from ..sampling.statistics import _normalise, effective_sample_size
+from ..sampling.statistics import effective_sample_size, validate_weights
 from ..utils import get_logger
 
 __all__ = ["estimate_pdf"]
@@ -157,7 +157,7 @@ def estimate_pdf(
     values = np.asarray(arr, dtype=np.float64).ravel()
     if values.size == 0:
         raise ValueError("Cannot estimate a density from an empty sample.")
-    w = _normalise(weights, values.size)
+    w = validate_weights(weights, values.size)
 
     if circular:
         grid = np.linspace(-np.pi, np.pi, x_num)

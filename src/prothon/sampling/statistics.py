@@ -25,6 +25,7 @@ __all__ = [
     "benjamini_hochberg",
     "effective_sample_size",
     "random_sample",
+    "validate_weights",
 ]
 
 logger = get_logger("sampling")
@@ -54,24 +55,54 @@ def effective_sample_size(weights=None, n: int | None = None) -> float:
         if n is None:
             raise ValueError("Give either weights or a frame count.")
         return float(n)
-    w = np.asarray(weights, dtype=np.float64).ravel()
-    total = w.sum()
-    if total <= 0:
-        return 0.0
-    return float(total**2 / np.sum(w**2))
+    raw = np.asarray(weights, dtype=np.float64).ravel()
+    w = validate_weights(weights, raw.size if n is None else n)
+    return float(1.0 / np.sum(w**2))
 
 
-def _normalise(weights, n: int) -> np.ndarray | None:
-    """Weights summing to one, or ``None`` for uniform."""
+def validate_weights(
+    weights,
+    n: int,
+    label: str = "Weights",
+) -> np.ndarray | None:
+    """Validate and normalise one non-negative probability per observation.
+
+    The scale of a weight vector contains no information, so valid vectors are
+    returned with unit sum. Invalid probability mass is never repaired:
+    lengths must match, every value and the sum must be finite, no value may
+    be negative, and at least one observation must carry positive mass.
+    """
     if weights is None:
         return None
-    w = np.asarray(weights, dtype=np.float64).ravel()
-    if w.size != n:
-        raise ValueError(f"{w.size} weights for {n} frames.")
-    total = w.sum()
-    if total <= 0:
-        raise ValueError("Weights sum to zero.")
-    return w / total
+    try:
+        values = np.asarray(weights, dtype=np.float64).ravel()
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{label} must be numeric, with one value per frame.") from error
+    if values.size != n:
+        raise ValueError(
+            f"{values.size} weights for {n} frames. A weight belongs to "
+            "exactly one conformation."
+        )
+    if not np.all(np.isfinite(values)):
+        raise ValueError(f"{label} contain non-finite values.")
+    if np.any(values < 0.0):
+        raise ValueError(
+            f"{label} contain negative values. A probability cannot be "
+            "negative; check whether these are log-weights, which need "
+            "exponentiating first."
+        )
+    if not np.any(values > 0.0):
+        raise ValueError(
+            f"{label} sum to zero; no conformation carries any weight."
+        )
+    with np.errstate(over="ignore", invalid="ignore"):
+        total = float(np.sum(values))
+    if not np.isfinite(total) or total <= 0.0:
+        raise ValueError(f"{label} must have a finite, strictly positive sum.")
+    normalised = values / total
+    if not np.all(np.isfinite(normalised)):
+        raise ValueError(f"{label} could not be normalised to finite probabilities.")
+    return normalised
 
 
 def random_sample(

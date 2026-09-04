@@ -36,6 +36,7 @@ import mdtraj as md
 import numpy as np
 
 from ..quiet import quiet_c_output
+from ..sampling.statistics import validate_weights
 from ..utils import get_logger
 from .sequence import THREE_TO_ONE, chain_sequences, sequence_of
 from .topology import TopologyFingerprint, topology_fingerprint
@@ -149,23 +150,7 @@ class Ensemble:
         no information -- but a negative weight is not a scaling problem, it is
         a sign that whatever produced the file did something else.
         """
-        w = np.asarray(weights, dtype=np.float64).ravel()
-        if w.size != n_frames:
-            raise ValueError(
-                f"{w.size} weights for {n_frames} frames. A weight belongs to "
-                f"exactly one conformation."
-            )
-        if not np.all(np.isfinite(w)):
-            raise ValueError("Weights contain non-finite values.")
-        if np.any(w < 0):
-            raise ValueError(
-                "Weights contain negative values. A probability cannot be negative; "
-                "check whether these are log-weights, which need exponentiating first."
-            )
-        total = w.sum()
-        if total <= 0:
-            raise ValueError("Weights sum to zero; no conformation carries any weight.")
-        return w / total
+        return validate_weights(weights, n_frames)
 
     # -- constructors -----------------------------------------------------
 

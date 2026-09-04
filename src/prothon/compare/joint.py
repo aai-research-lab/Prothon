@@ -70,6 +70,7 @@ import numpy as np
 
 from ..sampling.correlation import block_labels
 from ..sampling.floor import FloorPlan, plan_floor
+from ..sampling.statistics import validate_weights
 from ..utils import get_logger
 from .dissimilarity import (
     MINIMUM_EFFECTIVE_SAMPLES,
@@ -301,19 +302,7 @@ class _JointSample:
 
 def _probability_weights(weights, n_frames: int, label: str) -> np.ndarray | None:
     """Validated probability mass that remains attached to its observation."""
-    if weights is None:
-        return None
-    values = np.asarray(weights, dtype=np.float64).ravel()
-    if values.size != n_frames:
-        raise ValueError(f"{values.size} weights for {n_frames} {label} frames.")
-    if not np.all(np.isfinite(values)):
-        raise ValueError(f"The {label} weights contain non-finite values.")
-    if np.any(values < 0.0):
-        raise ValueError(f"The {label} weights contain negative probabilities.")
-    total = float(values.sum())
-    if total <= 0.0:
-        raise ValueError(f"The {label} weights sum to zero.")
-    return values / total
+    return validate_weights(weights, n_frames, f"The {label} weights")
 
 
 def _replica_subsample_indices(
