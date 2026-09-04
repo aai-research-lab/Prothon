@@ -147,6 +147,26 @@ def test_a_non_digest_line_inside_the_recipe_is_not_reviewed(tmp_path):
     assert reviewed_count == 0
 
 
+def test_the_corpus_revision_is_reviewed():
+    """The same category as an action pin, from a different declaration.
+
+    Pinning the real-data corpus put its MDTraj commit in two files: the
+    constant that declares it and the test that asserts the pin. Both tripped
+    the scanner, for the same reason the action SHAs did.
+    """
+    source = (ROOT / "tests" / "test_real_data.py").read_text(encoding="utf-8")
+    revision = re.search(r'_CORPUS_REVISION\s*=\s*"([0-9a-f]{40})"', source)
+    assert revision is not None, "the corpus revision is no longer declared"
+    assert revision.group(1) in REVIEW._pinned_action_shas(ROOT)
+
+
+def test_every_declared_pin_is_reviewed():
+    """Whatever the sources declare, the reviewer accepts -- and only that."""
+    found = REVIEW._pinned_action_shas(ROOT)
+    assert found, "no pinned revisions found at all"
+    assert all(len(sha) == 40 for sha in found)
+
+
 def test_a_pinned_action_sha_is_reviewed():
     """A pinned action SHA is public by construction.
 
