@@ -1,6 +1,7 @@
 """The release security gates keep their reviewed exceptions narrow."""
 
 import importlib.util
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -10,6 +11,24 @@ SPEC = importlib.util.spec_from_file_location(
 assert SPEC is not None and SPEC.loader is not None
 REVIEW = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(REVIEW)
+
+NODE24_ACTIONS = {
+    "actions/upload-artifact": (
+        "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+        "v7.0.1",
+        4,
+    ),
+    "actions/download-artifact": (
+        "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+        "v8.0.1",
+        2,
+    ),
+    "codecov/codecov-action": (
+        "fb8b3582c8e4def4969c97caa2f19720cb33a72f",
+        "v7.0.0",
+        1,
+    ),
+}
 
 
 def test_workflow_secret_inheritance_is_explicitly_reviewed():
@@ -53,6 +72,19 @@ def test_dependency_audit_excludes_only_the_unpublished_root_distribution():
     assert "--no-deps" in workflow
     assert "--disable-pip" in workflow
     assert '--path "$RUNTIME_SITE"' not in workflow
+
+
+def test_artifact_and_coverage_actions_use_reviewed_node24_releases():
+    workflows = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((ROOT / ".github" / "workflows").glob("*.yml"))
+    )
+
+    for action, (commit, version, count) in NODE24_ACTIONS.items():
+        references = re.findall(
+            rf"{re.escape(action)}@([0-9a-f]{{40}}) # (v[^\s]+)", workflows
+        )
+        assert references == [(commit, version)] * count
 
 
 def test_the_public_recipe_digest_is_reviewed():
