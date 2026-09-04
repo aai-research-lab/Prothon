@@ -72,6 +72,11 @@ python scripts/calibration.py --help
 
 ## Before a release
 
+A `v*` tag invokes the same reusable quality workflow as branches and pull
+requests. The publisher cannot build or obtain its PyPI OIDC token unless the
+complete Python 3.9–3.13 matrix on Linux, macOS and Windows, the documentation
+build, and the real-structure tests all pass at that exact tagged commit.
+
 Two things in `scripts/` are measurements rather than tests, and both have
 found defects that the test suite could not:
 
