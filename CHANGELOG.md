@@ -14,6 +14,9 @@ All notable changes to Prothon are recorded here. This project follows
   with independently parsed PDB models, whose optional inferred bonds vary by
   MDTraj build. The Jensen–Shannon identity check now uses the expected
   square-root-of-machine-epsilon numerical-zero bound.
+- The conda synchronisation check now normalises text transport newlines, so
+  an identical `file://` feedstock fixture is not reported as drift merely
+  because Windows wrote it with CRLF line endings.
 
 ### Fixed — portable performance regression gates
 
