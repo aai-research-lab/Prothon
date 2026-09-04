@@ -82,6 +82,12 @@ checking out the source tree, run `pip check`, import the installed package and
 exercise the installed CLI. PyPI receives those same files only after both
 artifact jobs pass.
 
+All third-party actions are pinned to immutable commit SHAs. The trailing
+version comment is documentary, not executable. Dependabot proposes grouped
+updates each week; review the upstream release notes and retain a full 40-digit
+SHA when accepting one. Workflow tokens are read-only unless a job declares a
+narrower exception (the publisher receives only `id-token: write`).
+
 Two things in `scripts/` are measurements rather than tests, and both have
 found defects that the test suite could not:
 
