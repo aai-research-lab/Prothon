@@ -5,6 +5,17 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Fixed — portable performance regression gates
+
+- The scale envelope now measures block-aware MMD and grouped C2ST as well as
+  representations and local comparison. It fails on incomplete measurements,
+  scaling beyond predeclared ceilings, or more than 1.0 GB peak RSS at the
+  historical 8,000-frame regression point, and retains machine-readable timing,
+  memory, fitted exponents, commit, platform and dependency versions.
+- A monthly workflow runs the quick envelope and uploads its Markdown and JSON
+  evidence even when a performance gate fails. Wall-clock seconds remain
+  reported but are not treated as portable thresholds.
+
 ### Fixed — metric properties and loader integration coverage
 
 - Jensen–Shannon now clips only a tiny negative divergence at its mathematical

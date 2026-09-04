@@ -96,10 +96,27 @@ measure process start-up rather than the work. That is why `cata` reports no
 slope: virtual torsions over a hundred residues take a hundredth of a second,
 and nothing in this grid can measure their scaling.
 
+## Regression budgets
+
+The automated quick envelope gates properties that transfer between machines,
+not absolute seconds. Every measurement must finish. The fitted ensemble-size
+exponents for `cbcn`, local comparison, block-aware MMD and grouped C2ST must
+be at most 1.30. Their chain-length ceilings are 2.50 for the pairwise contact
+representation and 1.60 for each comparison method. Peak resident memory at
+the historical 8,000-frame regression point must remain at or below 1.0 GB.
+The full envelope also limits the `sasa` ensemble-size exponent to 1.30.
+
+These deliberately loose ceilings catch the old `cbcn` regression (1.38 and
+1.24 GB at 8,000 frames) without treating runner speed as a scientific
+constant. Measurements, fits, versions, commit, platform and every gate result
+are retained in JSON even when the workflow fails.
+
 ## Reproducing this table
 
 ```bash
-python scripts/scale_envelope.py --out docs/performance.md
+python scripts/scale_envelope.py \
+  --out docs/performance.md \
+  --json performance-evidence.json
 python scripts/scale_envelope.py --full     # the grid above
 ```
 
