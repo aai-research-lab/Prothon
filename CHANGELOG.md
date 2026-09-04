@@ -71,6 +71,11 @@ All notable changes to Prothon are recorded here. This project follows
   reviewer excuses a finding only when it names the exact conda recipe path
   and points to a complete SHA-256 metadata field. The conda-sync gate
   independently verifies that digest against PyPI.
+- The dependency audit now consumes a fully pinned freeze of the installed
+  third-party runtime dependencies. The complete environment freeze still
+  records the local Prothon build, but the audit no longer asks PyPI to resolve
+  an unpublished development version of the project itself. Strict collection
+  and vulnerability failures continue to block the workflow.
 
 ### Fixed — workflow supply-chain trust
 

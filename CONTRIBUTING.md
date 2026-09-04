@@ -91,16 +91,19 @@ SHA when accepting one. Workflow tokens are read-only unless a job declares a
 narrower exception (the publisher receives only `id-token: write`).
 
 The reusable workflow also creates a `security-evidence` artifact. It contains
-the resolved runtime environment, scanner versions, a tracked-source secret
-scan, and a CycloneDX JSON SBOM with vulnerability data. An unreviewed possible
-secret, any known dependency vulnerability, or an incomplete dependency audit
-blocks the quality workflow and therefore blocks publication. Two public
-metadata values are narrowly reviewed exceptions: GitHub's reusable-workflow
-inheritance declaration has an inline allowlist pragma. The raw scanner report
-retains the conda digest finding; a source-validated reviewer excuses it only
-when it points to a complete `sha256:` field at the exact reference-recipe
-path. The recipe remains byte-for-byte identical to its live feedstock, and
-the separate conda-sync gate verifies that digest against PyPI.
+the complete resolved runtime environment, the fully pinned third-party audit
+input, scanner versions, a tracked-source secret scan, and a CycloneDX JSON
+dependency SBOM with vulnerability data. The audit omits only the local Prothon
+distribution because an unreleased development version cannot be resolved by
+PyPI; its installed dependencies remain in the pinned input. An unreviewed
+possible secret, any known dependency vulnerability, or an incomplete
+dependency audit blocks the quality workflow and therefore blocks publication.
+Two public metadata values are narrowly reviewed exceptions: GitHub's
+reusable-workflow inheritance declaration has an inline allowlist pragma. The
+raw scanner report retains the conda digest finding; a source-validated reviewer
+excuses it only when it points to a complete `sha256:` field at the exact
+reference-recipe path. The recipe remains byte-for-byte identical to its live
+feedstock, and the separate conda-sync gate verifies that digest against PyPI.
 Do not weaken or broadly suppress another finding to make a release pass:
 resolve it, or document and review a narrowly identified exception in a
 separate pull request.
@@ -110,7 +113,11 @@ To reproduce the two scans locally after installing `requirements/security.txt`:
 ```bash
 detect-secrets scan --no-verify > /tmp/prothon-detect-secrets.json
 python scripts/review_secret_scan.py /tmp/prothon-detect-secrets.json
-pip-audit --strict --progress-spinner off
+python -m pip freeze --exclude prothon-ensembles \
+  > /tmp/prothon-audit-requirements.txt
+pip-audit --strict --progress-spinner off \
+  --requirement /tmp/prothon-audit-requirements.txt \
+  --no-deps --disable-pip
 ```
 
 After PyPI publishes a release, update the conda-forge feedstock to the exact
