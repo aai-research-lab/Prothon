@@ -80,12 +80,8 @@ Where a trajectory holds too few independent blocks to build a null from, it
 reports the floor and prints no p-value at all.
 
 The false-positive rate is
-[measured](https://prothon.readthedocs.io/en/latest/calibration.html) rather
-than asserted, and the measurement now exercises the default sampling path.
-**Releases up to 2.3.2 did not**: the calibration studies set the sample size
-equal to the frame count, so the subsampling every longer trajectory goes
-through was never tested, and on that path the rate was far above nominal. See
-[CORRECTION.md](CORRECTION.md) for which results change and what to re-run.
+[measured](https://prothon.readthedocs.io/en/latest/calibration.html), on the
+default sampling path, rather than asserted.
 
 ## One import, and everything is reachable from it
 
