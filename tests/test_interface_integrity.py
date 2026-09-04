@@ -25,8 +25,6 @@ from __future__ import annotations
 
 import json
 import pathlib
-import subprocess
-import sys
 
 import numpy as np
 import pytest
@@ -67,13 +65,20 @@ def study_inputs(tmp_path_factory):
     return directory, paths, str(topology_path)
 
 
-def _run_cli(*arguments):
-    result = subprocess.run(
-        [sys.executable, "-m", "prothon.cli", *arguments],
-        capture_output=True, text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    return result.stdout
+def _run_cli(capsys, *arguments):
+    """Call the CLI in process, as the rest of the suite does.
+
+    A subprocess was tried first and passed locally while returning empty
+    stdout under CI, which `json.loads` reported as a decode error rather than
+    as the missing output it was. In process the output is captured directly
+    and a non-zero exit is a plain assertion.
+    """
+    from prothon.cli import main
+
+    code = main(list(arguments))
+    captured = capsys.readouterr()
+    assert code == 0, captured.err
+    return captured.out
 
 
 def _numbers(result) -> tuple:
@@ -131,10 +136,13 @@ class TestEveryInterfaceRecordsTheSameStudy:
         ).read_text(encoding="utf-8")
         assert 'Prothon(study="' not in readme
 
-    def test_the_command_line_records_what_it_was_given(self, study_inputs):
+    def test_the_command_line_records_what_it_was_given(
+        self, study_inputs, capsys
+    ):
         directory, ensembles, topology = study_inputs
         written = directory / "from_cli.yml"
         _run_cli(
+            capsys,
             "compare",
             "--ensembles", *ensembles,
             "--topology", topology,
@@ -167,7 +175,7 @@ class TestEveryInterfaceComputesTheSameNumbers:
             viaconfig.compare()["cbcn"][0]
         )
 
-    def test_json_output_matches_the_python_api(self, study_inputs):
+    def test_json_output_matches_the_python_api(self, study_inputs, capsys):
         from prothon import Prothon
 
         _, ensembles, topology = study_inputs
@@ -175,16 +183,17 @@ class TestEveryInterfaceComputesTheSameNumbers:
             ensembles, topology, "cbcn", random_state=7
         ).compare()["cbcn"][0]
 
-        payload = json.loads(
-            _run_cli(
+        output = _run_cli(
+                capsys,
                 "compare",
                 "--ensembles", *ensembles,
                 "--topology", topology,
                 "--order-parameters", "cbcn",
                 "--random-state", "7",
                 "--json",
-            )
         )
+        assert output.strip(), "the CLI produced no output to parse"
+        payload = json.loads(output)
         # Keyed by order parameter, then one entry per compared ensemble.
         emitted = payload["cbcn"][0]
         assert round(emitted["global_dissimilarity"], 12) == round(
