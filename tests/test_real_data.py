@@ -147,7 +147,7 @@ class TestRealNmrEnsemble:
         rep = compute_representation(traj, "cacn")
         with pytest.warns(UserWarning, match="independent conformations"):
             result = dissimilarity(
-                rep[::2], rep[1::2], rep.min(), rep.max(),
+                rep[:10], rep[10:], rep.min(), rep.max(),
                 x_num=60, s_num=2, random_state=0,
             )
         assert result.n_significant == 0
@@ -210,15 +210,17 @@ class TestRealTrajectory:
         assert not result.resolved
         assert result.n_significant == 0
 
-    def test_alternate_frames_of_one_trajectory_are_not_called_different(
+    def test_ordered_held_out_blocks_are_not_called_different(
         self, corpus
     ):
-        """The sharpest calibration test available on real data.
+        """A real-data null must preserve time and reach an actual verdict.
 
-        Even-numbered and odd-numbered frames of one trajectory are drawn from
-        the same distribution by construction, but adjacent frames are as
-        correlated in time as any two frames can be. If time correlation broke
-        the permutation null, it would break here first.
+        Odd/even rows are not independent samples: they interleave adjacent
+        frames, change the effective time step, and erase the order needed to
+        estimate correlation. Keep two contiguous held-out segments instead;
+        the production path then constructs complete temporal blocks within
+        each segment. The assessability assertions prevent a reassuring
+        ``False`` obtained merely by withholding the verdict.
         """
         traj = md.load(corpus["frame0.xtc"], top=corpus["native.pdb"])
         rep = compute_representation(traj, "sasa")
@@ -228,14 +230,19 @@ class TestRealTrajectory:
         lag_one = (centred[:-1] * centred[1:]).sum(axis=0) / (centred**2).sum(axis=0)
         assert lag_one.max() > 0.2, "these frames are not correlated enough to test"
 
-        resolved = 0
-        for seed in range(5):
-            result = dissimilarity(
-                rep[::2], rep[1::2], rep.min(), rep.max(),
-                x_num=80, s_num=3, random_state=seed,
-            )
-            resolved += int(result.resolved)
-        assert resolved == 0
+        result = dissimilarity(
+            rep[:250], rep[251:], rep.min(), rep.max(),
+            x_num=80, s_num=3, random_state=0,
+        )
+
+        assert result.metadata["sampling_strategies"] == ["all frames"] * 2
+        assert [
+            plan["strategy"] for plan in result.metadata["sampling_plans"]
+        ] == ["temporal blocks"] * 2
+        assert result.p_values_reported
+        assert result.noise_floor_assessable
+        assert result.resolved is False
+        assert result.n_significant == 0
 
 
 # ---------------------------------------------------------------------------
@@ -326,12 +333,21 @@ class TestEveryMetricOnRealData:
         traj = md.load(corpus["frame0.xtc"], top=corpus["native.pdb"])
         rep = compute_representation(traj, "sasa")
         result = distinguishability(rep[:250], rep[251:], method, random_state=0)
+
         assert np.isfinite(result.statistic)
-        assert result.p_value is None or 0.0 <= result.p_value <= 1.0
+        assert [
+            plan["strategy"] for plan in result.metadata["sampling_plans"]
+        ] == ["temporal blocks"] * 2
+        assert not result.p_value_withheld
+        assert result.p_value is not None
+        assert result.distinguishable is False
 
     def test_coverage_and_fidelity_run_on_held_out_real_blocks(self, corpus):
         traj = md.load(corpus["frame0.xtc"], top=corpus["native.pdb"])
         rep = compute_representation(traj, "sasa")
         result = precision_recall(rep[:250], rep[251:], random_state=0)
-        assert 0.0 <= result.mean_precision <= 1.0
-        assert 0.0 <= result.mean_recall <= 1.0
+
+        assert result.metadata["floor_strategy"] == ["temporal blocks"] * 2
+        assert result.floor_assessable
+        assert result.missed().size == 0
+        assert result.invented().size == 0
