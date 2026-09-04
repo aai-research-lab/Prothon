@@ -154,27 +154,11 @@ jobs:
 
       - name: Refuse secrets in tracked source
         run: |
-          # This one shape is public package metadata, not a credential.  It
-          # cannot carry an inline pragma because the reference recipe must
-          # remain byte-for-byte identical to the conda-forge recipe.  The
-          # separate sync gate verifies the digest against PyPI.
-          detect-secrets scan --no-verify \
-            --exclude-lines '^\s*sha256:\s*[0-9a-f]{64}\s*$' \
-            > security-evidence/detect-secrets.json
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          report = json.loads(Path("security-evidence/detect-secrets.json").read_text())
-          findings = report.get("results", {})
-          if findings:
-              for filename, matches in sorted(findings.items()):
-                  lines = ", ".join(str(match["line_number"]) for match in matches)
-                  print(f"::error file={filename},line={matches[0]['line_number']}::"
-                        f"possible secret(s) on line(s) {lines}")
-              raise SystemExit("secret scan found material that must be removed or reviewed")
-          print("No possible secrets found in tracked source")
-          PY
+          # Keep the unfiltered report as evidence.  The reviewer recognises
+          # the public package digest only by its exact path and source line;
+          # the separate sync gate verifies that digest against PyPI.
+          detect-secrets scan --no-verify > security-evidence/detect-secrets.json
+          python scripts/review_secret_scan.py security-evidence/detect-secrets.json
 
       - name: Audit runtime dependencies and write the SBOM
         run: |

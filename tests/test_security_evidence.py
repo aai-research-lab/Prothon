@@ -1,10 +1,15 @@
 """The release secret scan keeps its reviewed exceptions narrow."""
 
-import re
+import importlib.util
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DIGEST_EXCLUSION = r"^\s*sha256:\s*[0-9a-f]{64}\s*$"
+SPEC = importlib.util.spec_from_file_location(
+    "review_secret_scan", ROOT / "scripts" / "review_secret_scan.py"
+)
+assert SPEC is not None and SPEC.loader is not None
+REVIEW = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(REVIEW)
 
 
 def test_workflow_secret_inheritance_is_explicitly_reviewed():
@@ -19,13 +24,68 @@ def test_workflow_secret_inheritance_is_explicitly_reviewed():
     assert declaration.endswith("# pragma: allowlist secret")
 
 
-def test_scanner_excludes_only_a_complete_sha256_metadata_field():
+def test_workflow_keeps_the_raw_scan_then_reviews_it():
     workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(
         encoding="utf-8"
     )
 
-    assert f"--exclude-lines '{DIGEST_EXCLUSION}'" in workflow
-    assert workflow.count("--exclude-lines") == 1
+    assert (
+        "detect-secrets scan --no-verify > security-evidence/detect-secrets.json"
+        in workflow
+    )
+    assert (
+        "python scripts/review_secret_scan.py security-evidence/detect-secrets.json"
+        in workflow
+    )
+    assert "--exclude-lines" not in workflow
     assert "--exclude-files" not in workflow
-    assert re.fullmatch(DIGEST_EXCLUSION, "  sha256: " + "a" * 64)
-    assert not re.fullmatch(DIGEST_EXCLUSION, "  token: " + "a" * 64)
+
+
+def test_the_public_recipe_digest_is_reviewed():
+    recipe = (ROOT / "recipes" / "prothon" / "recipe.yaml").read_text(
+        encoding="utf-8"
+    )
+    line_number = next(
+        number
+        for number, line in enumerate(recipe.splitlines(), start=1)
+        if line.strip().startswith("sha256:")
+    )
+    report = {
+        "results": {
+            "recipes/prothon/recipe.yaml": [{"line_number": line_number}]
+        }
+    }
+
+    unreviewed, reviewed_count = REVIEW.partition_findings(report, ROOT)
+
+    assert unreviewed == {}
+    assert reviewed_count == 1
+
+
+def test_the_same_value_outside_the_recipe_is_not_reviewed(tmp_path):
+    report = {
+        "results": {
+            "elsewhere.yaml": [{"line_number": 1}]
+        }
+    }
+
+    unreviewed, reviewed_count = REVIEW.partition_findings(report, tmp_path)
+
+    assert unreviewed == report["results"]
+    assert reviewed_count == 0
+
+
+def test_a_non_digest_line_inside_the_recipe_is_not_reviewed(tmp_path):
+    recipe = tmp_path / "recipes" / "prothon" / "recipe.yaml"
+    recipe.parent.mkdir(parents=True)
+    recipe.write_text("token: " + "a" * 64 + "\n", encoding="utf-8")
+    report = {
+        "results": {
+            "recipes/prothon/recipe.yaml": [{"line_number": 1}]
+        }
+    }
+
+    unreviewed, reviewed_count = REVIEW.partition_findings(report, tmp_path)
+
+    assert unreviewed == report["results"]
+    assert reviewed_count == 0
