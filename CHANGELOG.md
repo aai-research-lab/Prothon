@@ -67,9 +67,10 @@ All notable changes to Prothon are recorded here. This project follows
   requirements, scanner versions, the scan report and a CycloneDX JSON SBOM
   are retained as release evidence even when a gate fails.
 - GitHub's reusable-workflow secret-inheritance declaration is explicitly
-  allowlisted, and the scanner excludes only a complete SHA-256 metadata
-  field. The latter is independently verified against PyPI by the conda-sync
-  gate.
+  allowlisted. The raw scanner report is retained, and a source-validated
+  reviewer excuses a finding only when it names the exact conda recipe path
+  and points to a complete SHA-256 metadata field. The conda-sync gate
+  independently verifies that digest against PyPI.
 
 ### Fixed — workflow supply-chain trust
 
