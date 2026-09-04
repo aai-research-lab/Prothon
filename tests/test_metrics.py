@@ -103,9 +103,14 @@ class TestMetricPropertiesAcrossGeneratedInputs:
             values[frame] = phi * values[frame - 1] + noise[frame]
         shuffled = values[rng.permutation(values.size)]
 
+        # JSD is the square root of a divergence. An epsilon-sized positive
+        # roundoff in two numerically identical KDEs can therefore appear as a
+        # distance of order sqrt(epsilon), even though the mathematical answer
+        # is zero. This is a numerical-zero bound, not a scientific tolerance.
+        numerical_zero = np.sqrt(np.finfo(float).eps)
         for metric in METRICS:
             assert feature_distance(values, shuffled, metric, -5, 5, 100) == pytest.approx(
-                0.0, abs=1e-12
+                0.0, abs=numerical_zero
             )
         assert correlation_time(values[:, None]) > 10.0
         assert correlation_time(shuffled[:, None]) < 3.0

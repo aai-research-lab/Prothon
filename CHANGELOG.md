@@ -5,6 +5,16 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Fixed — portable CI fixtures and matrix
+
+- CI now tests Python 3.9, 3.11 and 3.13 on every declared operating system,
+  preserving both supported boundaries and a middle version while removing
+  six redundant jobs.
+- The different-length topology fixture no longer compares a DCD topology
+  with independently parsed PDB models, whose optional inferred bonds vary by
+  MDTraj build. The Jensen–Shannon identity check now uses the expected
+  square-root-of-machine-epsilon numerical-zero bound.
+
 ### Fixed — portable performance regression gates
 
 - The scale envelope now measures block-aware MMD and grouped C2ST as well as
@@ -72,8 +82,8 @@ All notable changes to Prothon are recorded here. This project follows
 
 - The tag-triggered publisher now calls and depends on the same reusable test,
   real-data and documentation workflow as pull requests. The operating-system
-  matrix covers every declared Python version from 3.9 through 3.13, so a tag
-  cannot publish merely because its distribution built successfully.
+  matrix covers Python 3.9, 3.11 and 3.13 on Linux, macOS and Windows, so both
+  supported boundaries and a representative middle version gate publication.
 
 ### Fixed — public weight validation
 
