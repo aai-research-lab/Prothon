@@ -109,7 +109,7 @@ file and API are generated from one schema:
 |---|---|
 | **The CLI** | `prothon compare --ensembles wt.dcd mut.dcd --topology top.pdb --order-parameters cbcn`, or a flag for any setting. Every long flag has a short form. |
 | **A config file** | `prothon compare --config prothon.yml`. A study written down can be committed beside a manuscript, diffed when it changes, and re-run by someone who has the data but not the terminal session. |
-| **The Python API** | `Prothon(...)`, or `Prothon.from_config("prothon.yml")`. |
+| **The Python API** | `Prothon(...)`, or `Prothon(config="prothon.yml")`. |
 
 Any command line can be written out as a file with `--save-config`, and any
 file can be run from the command line.

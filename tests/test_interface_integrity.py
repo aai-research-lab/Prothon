@@ -204,3 +204,50 @@ class TestEveryInterfaceComputesTheSameNumbers:
         assert _numbers(first.compare()["cbcn"][0]) == _numbers(
             second.compare()["cbcn"][0]
         )
+
+
+class TestAStudyRunsFromItsFile:
+    """`config=` is the entry point, matching the sibling project.
+
+    A study written to a file carries everything the comparison needs, so no
+    other argument goes with it. Giving both a config and sources is an error
+    rather than a precedence rule nobody would remember.
+    """
+
+    def test_config_runs_the_study(self, study_inputs):
+        from prothon import Prothon
+
+        directory, ensembles, topology = study_inputs
+        written = Prothon(
+            ensembles, topology, "cbcn", random_state=7
+        ).save_config(str(directory / "entry_point.yml"))
+
+        assert list(Prothon(config=written).comparison_results) == ["cbcn"]
+
+    def test_it_matches_the_direct_construction(self, study_inputs):
+        from prothon import Prothon
+
+        directory, ensembles, topology = study_inputs
+        direct = Prothon(ensembles, topology, "cbcn", random_state=7)
+        written = direct.save_config(str(directory / "match.yml"))
+
+        assert _numbers(Prothon(config=written).comparison_results["cbcn"][0]) == (
+            _numbers(direct.compare()["cbcn"][0])
+        )
+
+    def test_both_is_an_error(self, study_inputs):
+        from prothon import Prothon
+
+        directory, ensembles, topology = study_inputs
+        written = Prothon(
+            ensembles, topology, "cbcn", random_state=7
+        ).save_config(str(directory / "both.yml"))
+
+        with pytest.raises(TypeError, match="not both"):
+            Prothon(config=written, ensembles=ensembles, topology=topology)
+
+    def test_neither_names_both_ways_in(self):
+        from prothon import Prothon
+
+        with pytest.raises(TypeError, match="config="):
+            Prothon()

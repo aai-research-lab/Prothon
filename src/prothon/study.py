@@ -105,12 +105,17 @@ class Prothon:
         chains=None,
         study=None,
         *,
+        config: str | None = None,
         traj_files=None,
     ) -> None:
         """Set up a comparison.
 
         Parameters
         ----------
+        config
+            A study written to a file. Give this *or* ``ensembles``, not both.
+            Everything the comparison needs is in the file, so no other
+            argument is required beside it.
         order_parameters
             The order parameter, or several, this study is about. Set here it
             becomes the default for every method, so ``study.compare()`` needs
@@ -162,8 +167,20 @@ class Prothon:
             )
             ensembles = traj_files
 
+        if config is not None:
+            if ensembles is not None or traj_files is not None:
+                raise TypeError(
+                    "Pass either config= (a study written to a file) or "
+                    "ensembles= (the sources directly), not both."
+                )
+            self._from_config(config, output_dir=output_dir, verbose=verbose)
+            return
+
         if ensembles is None:
-            raise TypeError("Prothon needs ensembles= : two or more sources.")
+            raise TypeError(
+                "Prothon needs either ensembles= : two or more sources, or "
+                "config= : a study written to a file."
+            )
 
         loaded = resolve_all(ensembles, topology, cache_dir=cache_dir, chains=chains)
         if len(loaded) < 2:
@@ -203,6 +220,22 @@ class Prothon:
     # instance: the registries as attributes, the other ways of starting a
     # study as classmethods, and the analyses as methods. Anybody who wants
     # the underlying functions can still import them; nobody has to.
+
+    def _from_config(self, path, output_dir=None, verbose=False) -> None:
+        """Adopt the study a file describes.
+
+        `Study.run` builds a `Prothon` and runs it, so this takes that object's
+        state rather than calling it again: constructing one from a config must
+        not construct a second.
+        """
+        from .config.study import Study
+
+        study = Study.from_file(str(path))
+        if output_dir is not None:
+            study.output_dir = output_dir
+        if verbose:
+            study.settings["verbose"] = True
+        self.__dict__.update(study.run().__dict__)
 
     @classmethod
     def from_config(cls, path, **overrides) -> Prothon:
