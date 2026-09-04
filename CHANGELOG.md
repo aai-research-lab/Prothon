@@ -5,6 +5,13 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Fixed — workflow supply-chain trust
+
+- Third-party GitHub Actions are pinned to immutable release commits, checkout
+  credentials are not persisted, and default workflow permissions are
+  read-only. Weekly grouped Dependabot updates keep the pins reviewable without
+  returning to mutable tags.
+
 ### Fixed — installed release artifacts
 
 - Release wheels and source distributions are built once, then each is
