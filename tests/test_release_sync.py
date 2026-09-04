@@ -60,6 +60,30 @@ def test_the_conda_checker_accepts_one_identical_published_recipe(tmp_path):
     assert status == 0
 
 
+def test_the_conda_checker_normalises_feedstock_transport_newlines(tmp_path):
+    digest = "a" * 64
+    recipe = _recipe("2.3.2", digest)
+    recipe_path = tmp_path / "recipe.yaml"
+    feedstock_path = tmp_path / "feedstock.yaml"
+    pypi_path = tmp_path / "pypi.json"
+    recipe_path.write_bytes(recipe.encode("utf-8"))
+    feedstock_path.write_bytes(recipe.replace("\n", "\r\n").encode("utf-8"))
+    pypi_path.write_text(json.dumps(_pypi("2.3.2", digest)), encoding="utf-8")
+
+    status = CHECKER.main(
+        [
+            "--recipe",
+            str(recipe_path),
+            "--feedstock-url",
+            feedstock_path.as_uri(),
+            "--pypi-url",
+            pypi_path.as_uri(),
+        ]
+    )
+
+    assert status == 0
+
+
 def test_the_conda_checker_reports_recipe_version_and_hash_drift(tmp_path, capsys):
     old_digest = "a" * 64
     new_digest = "b" * 64

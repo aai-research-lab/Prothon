@@ -27,7 +27,11 @@ _SHA256 = re.compile(r"^\s{2}sha256:\s*([0-9a-f]{64})\s*$", re.MULTILINE)
 def _read_url(url: str) -> str:
     """Read UTF-8 text from an HTTPS or test ``file:`` URL."""
     with urllib.request.urlopen(url, timeout=30) as response:  # noqa: S310
-        return response.read().decode("utf-8")
+        # Path.read_text() uses universal-newline translation, whereas bytes
+        # returned by urlopen() preserve the transport's line endings.  Make
+        # the two inputs obey one text contract before comparing whole recipes.
+        text = response.read().decode("utf-8")
+        return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def recipe_identity(text: str) -> tuple[str, str]:
