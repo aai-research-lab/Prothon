@@ -14,12 +14,28 @@ ROOT = Path(__file__).resolve().parent.parent
 PUBLIC_DIGEST_PATH = "recipes/prothon/recipe.yaml"
 PUBLIC_DIGEST_LINE = re.compile(r"\s*sha256:\s*[0-9a-f]{64}\s*")
 
-#: Workflows are pinned to immutable action releases by commit SHA, which is
-#: the recommended practice and the opposite of a secret: a git commit hash is
-#: public by construction and identifies the exact code a runner will execute.
-#: `detect-secrets` sees forty hex characters and reports high entropy.
-WORKFLOWS = Path(".github/workflows")
-_PINNED_ACTION = re.compile(r"uses:\s*[\w.-]+/[\w.-]+@([0-9a-f]{40})\b")
+#: Several things in this repository are deliberately pinned to an immutable
+#: upstream commit: workflow actions, and the external corpus the real-data
+#: tests read. That is the recommended practice and the opposite of a secret --
+#: a git commit hash is public by construction and names the exact tree that
+#: will be used. `detect-secrets` sees forty hex characters and reports high
+#: entropy.
+#:
+#: Each entry is a file to read and the pattern that declares a pin in it. A
+#: SHA is excused only while one of these declarations still names it, so
+#: removing a pin withdraws its exception without anyone having to remember.
+#: Adding a third kind of pin means adding a line here, deliberately, which is
+#: the point: the exception should never be a category, only a list.
+PINNED_REVISION_SOURCES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        ".github/workflows",
+        re.compile(r"uses:\s*[\w.-]+/[\w.-]+@([0-9a-f]{40})\b"),
+    ),
+    (
+        "tests/test_real_data.py",
+        re.compile(r'_CORPUS_REVISION\s*=\s*"([0-9a-f]{40})"'),
+    ),
+)
 _GIT_SHA = re.compile(r"\b[0-9a-f]{40}\b")
 
 
@@ -56,19 +72,23 @@ def _is_reviewed_public_digest(
 
 
 def _pinned_action_shas(root: Path) -> set[str]:
-    """Every action SHA the workflows actually pin to.
+    """Every upstream revision this repository deliberately pins to.
 
-    Read from the workflows rather than listed here, so a SHA is only excused
-    while it is genuinely in use. Deleting the pin removes the exception, and a
-    hex string that never appears in a workflow is never excused at all.
+    Read from the declarations themselves rather than listed here, so a SHA is
+    only excused while it is genuinely in use. Deleting the pin removes the
+    exception, and a hex string declared nowhere is never excused at all.
     """
     shas: set[str] = set()
-    directory = root / WORKFLOWS
-    if not directory.is_dir():
-        return shas
-    for workflow in directory.glob("*.yml"):
-        text = workflow.read_text(encoding="utf-8")
-        shas.update(match.group(1) for match in _PINNED_ACTION.finditer(text))
+    for location, pattern in PINNED_REVISION_SOURCES:
+        target = root / location
+        files = (
+            sorted(target.glob("*.yml")) if target.is_dir()
+            else [target] if target.is_file()
+            else []
+        )
+        for path in files:
+            text = path.read_text(encoding="utf-8")
+            shas.update(match.group(1) for match in pattern.finditer(text))
     return shas
 
 
@@ -81,8 +101,9 @@ def _is_reviewed_pinned_action(
     """Recognise a hex string that is a pinned action SHA and nothing else.
 
     Narrow in the same way as the public digest above: the line must contain a
-    forty-character hex string, and that string must be one the workflows pin
-    to. A different forty-hex value on the same line is still reported.
+    forty-character hex string, and every such string on it must be one this
+    repository pins to. A different forty-hex value on the same line is still
+    reported, whether it sits alone or beside a reviewed one.
     """
     if not pinned:
         return False
