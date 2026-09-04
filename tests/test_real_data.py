@@ -38,7 +38,14 @@ from prothon.represent.order_parameters import (
 
 pytestmark = pytest.mark.network
 
-_SOURCE = "https://raw.githubusercontent.com/mdtraj/mdtraj/master/tests/data"
+# The test corpus is an external input to scientific regression tests, so it
+# must identify one immutable upstream tree.  A moving branch can change both
+# the structures and the expected measurements without changing this commit.
+_CORPUS_REVISION = "9bac885848417ec1c257af0191c4186f82f87c8f"  # MDTraj 1.11.1
+_SOURCE = (
+    "https://raw.githubusercontent.com/mdtraj/mdtraj/"
+    f"{_CORPUS_REVISION}/tests/data"
+)
 
 #: What each file is for. Keeping the reason beside the name means a future
 #: reader can tell whether a replacement would still test the same thing.
@@ -58,15 +65,22 @@ _FILES = {
 @pytest.fixture(scope="session")
 def corpus(tmp_path_factory) -> dict[str, str]:
     """Download the structures once per session, or reuse a local cache."""
-    cache = Path(os.environ.get("PROTHON_TEST_DATA", tmp_path_factory.mktemp("corpus")))
+    cache_root = Path(
+        os.environ.get("PROTHON_TEST_DATA", tmp_path_factory.mktemp("corpus"))
+    )
+    # A cache populated for another upstream revision is not this corpus.
+    cache = cache_root / _CORPUS_REVISION
     cache.mkdir(parents=True, exist_ok=True)
     paths = {}
     for name in _FILES:
         target = cache / name
         if not target.exists():
+            partial = target.with_name(f".{target.name}.part")
             try:
-                urllib.request.urlretrieve(f"{_SOURCE}/{name}", target)
+                urllib.request.urlretrieve(f"{_SOURCE}/{name}", partial)
+                partial.replace(target)
             except Exception as error:  # pragma: no cover - network
+                partial.unlink(missing_ok=True)
                 pytest.skip(f"could not fetch {name}: {error}")
         paths[name] = str(target)
     return paths
