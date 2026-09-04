@@ -5,6 +5,15 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Fixed — source and conda version provenance
+
+- An unversioned GitHub source snapshot now reports `0+unknown` instead of the
+  stale `2.1.0.dev0`; installation documentation distinguishes those snapshots
+  from versioned release wheels and sdists.
+- The in-repository conda recipe is synchronized with the live 2.3.2 feedstock.
+  A scheduled and post-PyPI check now compares the full recipes and verifies
+  their version and source hash against the published sdist.
+
 ### Fixed — security release evidence
 
 - The reusable quality gate now scans tracked source for possible secrets and
