@@ -73,14 +73,19 @@ wheel/source distribution and the conda-forge package.
 | **Missed states against invented ones** | Precision and recall per residue. A symmetric distance says two ensembles differ; these say which one is short of a state and which has one too many. |
 
 **It withholds rather than overstates.** Trajectory frames are not independent
-draws, and a test that assumes they are calls 99% of residues different when
-nothing differs. Prothon estimates the correlation time from your data,
-permutes contiguous blocks of it, and holds a false-positive rate between 1.7%
-and 2.3% across correlation times spanning a factor of fifty. Where a
-trajectory holds too few independent blocks to build a null from, it reports
-the floor and prints no p-value at all. Every default is a
-[measurement](https://prothon.readthedocs.io/en/latest/calibration.html), not a
-choice.
+draws, and a test that assumes they are calls almost every residue different
+when nothing differs. Prothon estimates the correlation time from your data,
+keeps the sample in trajectory order, and permutes contiguous blocks of it.
+Where a trajectory holds too few independent blocks to build a null from, it
+reports the floor and prints no p-value at all.
+
+The false-positive rate is
+[measured](https://prothon.readthedocs.io/en/latest/calibration.html) rather
+than asserted, and the measurement now exercises the default sampling path.
+**Releases up to 2.3.2 did not**: the calibration studies set the sample size
+equal to the frame count, so the subsampling every longer trajectory goes
+through was never tested, and on that path the rate was far above nominal. See
+[CORRECTION.md](CORRECTION.md) for which results change and what to re-run.
 
 ## One import, and everything is reachable from it
 
