@@ -1,4 +1,4 @@
-"""The release secret scan keeps its reviewed exceptions narrow."""
+"""The release security gates keep their reviewed exceptions narrow."""
 
 import importlib.util
 from pathlib import Path
@@ -39,6 +39,20 @@ def test_workflow_keeps_the_raw_scan_then_reviews_it():
     )
     assert "--exclude-lines" not in workflow
     assert "--exclude-files" not in workflow
+
+
+def test_dependency_audit_excludes_only_the_unpublished_root_distribution():
+    workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "> security-evidence/runtime-requirements.txt" in workflow
+    assert workflow.count("--exclude prothon-ensembles") == 1
+    assert "> security-evidence/audit-requirements.txt" in workflow
+    assert "--requirement security-evidence/audit-requirements.txt" in workflow
+    assert "--no-deps" in workflow
+    assert "--disable-pip" in workflow
+    assert '--path "$RUNTIME_SITE"' not in workflow
 
 
 def test_the_public_recipe_digest_is_reviewed():

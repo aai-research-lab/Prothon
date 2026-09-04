@@ -148,6 +148,12 @@ jobs:
           "$RUNNER_TEMP/prothon-runtime/bin/python" -m pip install .
           "$RUNNER_TEMP/prothon-runtime/bin/python" -m pip freeze \
             > security-evidence/runtime-requirements.txt
+          # The complete freeze above records the local Prothon build.  The
+          # audit input excludes only that unpublished root distribution;
+          # every resolved third-party runtime dependency remains pinned.
+          "$RUNNER_TEMP/prothon-runtime/bin/python" -m pip freeze \
+            --exclude prothon-ensembles \
+            > security-evidence/audit-requirements.txt
           python -m pip install --upgrade pip
           python -m pip install -r requirements/security.txt
           python -m pip freeze > security-evidence/security-tools.txt
@@ -162,15 +168,12 @@ jobs:
 
       - name: Audit runtime dependencies and write the SBOM
         run: |
-          RUNTIME_SITE=$("$RUNNER_TEMP/prothon-runtime/bin/python" - <<'PY'
-          import site
-          print(site.getsitepackages()[0])
-          PY
-          )
           pip-audit \
             --strict \
             --progress-spinner off \
-            --path "$RUNTIME_SITE" \
+            --requirement security-evidence/audit-requirements.txt \
+            --no-deps \
+            --disable-pip \
             --format cyclonedx-json \
             --output security-evidence/prothon.cdx.json
 
