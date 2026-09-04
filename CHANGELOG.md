@@ -5,6 +5,13 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Fixed — installed release artifacts
+
+- Release wheels and source distributions are built once, then each is
+  installed without a source checkout in its own clean environment. `pip
+  check`, package/version imports and installed CLI smoke tests must all pass
+  before PyPI receives those exact artifacts.
+
 ### Fixed — release quality gate
 
 - The tag-triggered publisher now calls and depends on the same reusable test,
