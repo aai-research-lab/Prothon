@@ -145,3 +145,41 @@ def test_a_non_digest_line_inside_the_recipe_is_not_reviewed(tmp_path):
 
     assert unreviewed == report["results"]
     assert reviewed_count == 0
+
+
+def test_a_pinned_action_sha_is_reviewed():
+    """A pinned action SHA is public by construction.
+
+    Workflows pin actions to immutable commits, which is the recommended
+    practice. `detect-secrets` sees forty hex characters and reports high
+    entropy, and the three SHAs at the top of this file failed the release gate
+    for it.
+    """
+    pinned = REVIEW._pinned_action_shas(ROOT)
+    assert pinned, "no pinned action SHAs found in the workflows"
+    for _, (sha, _, _) in NODE24_ACTIONS.items():
+        assert sha in pinned, f"{sha} is asserted here but pinned nowhere"
+
+
+def test_the_exception_is_narrow(tmp_path):
+    """A forty-hex string that is not a pinned SHA is still a finding.
+
+    The value of the reviewed-exception design is that it names one thing. A
+    rule that excused every hex string in every file would pass this test file
+    and also pass a leaked token pasted beside it.
+    """
+    source = tmp_path / "sample.py"
+    source.write_text('LEAKED = "' + "a1" * 20 + '"\n', encoding="utf-8")
+    match = {"line_number": 1}
+    pinned = REVIEW._pinned_action_shas(ROOT)
+    assert not REVIEW._is_reviewed_pinned_action("sample.py", match, tmp_path, pinned)
+
+
+def test_removing_a_pin_removes_the_exception(tmp_path):
+    """The list is read from the workflows, not written down twice.
+
+    A SHA is excused only while a workflow actually pins to it, so deleting the
+    pin withdraws the exception without anyone remembering to.
+    """
+    (tmp_path / ".github" / "workflows").mkdir(parents=True)
+    assert REVIEW._pinned_action_shas(tmp_path) == set()
