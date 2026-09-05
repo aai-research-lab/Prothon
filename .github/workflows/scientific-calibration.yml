@@ -2,6 +2,7 @@ name: Scientific calibration evidence
 
 on:
   workflow_dispatch:
+  workflow_call:
   schedule:
     - cron: "43 7 1 * *"
 
