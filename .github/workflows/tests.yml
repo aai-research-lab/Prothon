@@ -184,3 +184,10 @@ jobs:
           name: security-evidence
           path: security-evidence/
           if-no-files-found: error
+
+  scientific-calibration:
+    name: Scientific calibration evidence
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/scientific-calibration.yml
+    permissions:
+      contents: read
