@@ -71,6 +71,7 @@ from typing import Any
 import numpy as np
 from scipy.stats import mannwhitneyu
 
+from ..sampling.calibration import calibrated_threshold
 from ..sampling.correlation import MINIMUM_BLOCKS, block_labels
 from ..sampling.floor import (
     FLOOR_QUANTILE,
@@ -542,6 +543,7 @@ def dissimilarity(
     time_stride_ref: int = 1,
     time_stride: int = 1,
     alpha: float = 0.05,
+    calibrated: bool = False,
     random_state: int | np.random.Generator | None = None,
     legacy: bool = False,
     ensemble_index: int = 0,
@@ -956,7 +958,18 @@ def dissimilarity(
             and min(effective_native_units) >= MINIMUM_FLOOR_UNITS
         )
 
-    significant = p_values < alpha
+    # A p-value from this software runs hot: asked for five per cent it calls
+    # something in ten to sixteen per cent of null studies. The cause is
+    # unresolved after six hypotheses; the size is measured. `calibrated=True`
+    # uses the threshold that was measured to deliver `alpha` rather than the
+    # nominal one. Off by default, because switching it on silently would
+    # change what every existing result means.
+    threshold, threshold_basis = (
+        calibrated_threshold(float(tau), alpha)
+        if calibrated
+        else (float(alpha), "nominal")
+    )
+    significant = p_values < threshold
     local = np.where(significant, raw_local, 0.0)
     if legacy:
         withheld = False
