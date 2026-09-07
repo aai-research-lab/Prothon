@@ -56,8 +56,14 @@ logger = get_logger("ingest.ped")
 __all__ = [
     "PedUnavailable","PED_API", "ped_entry", "ped_ensemble", "ped_ensembles"]
 
-#: Base URL of the PED REST API.
-PED_API = "https://deposition.proteinensemble.org/api/v1"
+#: Base URL of the PED REST API, as the OpenAPI document declares it at
+#: https://proteinensemble.org/assets/openapi.yaml. The host is right and the
+#: `/api` segment is not: the spec says `https://deposition.proteinensemble.org/v1`,
+#: and the extra segment returned 404 for every accession including ones that
+#: certainly exist. The paths below it are unchanged and match the spec:
+#: `/entries/{identifier}` and
+#: `/entries/{identifier}/ensembles/{ensemble_id}/{asset}`.
+PED_API = "https://deposition.proteinensemble.org/v1"
 
 #: Seconds to wait on a request before giving up.
 TIMEOUT = 120.0

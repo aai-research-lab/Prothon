@@ -262,3 +262,45 @@ class TestAnOutageIsNotABadAccession:
     def test_it_is_still_a_value_error(self):
         """So `except ValueError` in existing code keeps working."""
         assert issubclass(PedUnavailable, ValueError)
+
+
+class TestTheBaseUrlMatchesThePublishedSpec:
+    """`PED_API` drifted from the OpenAPI document and every live call 404'd.
+
+    The spec at https://proteinensemble.org/assets/openapi.yaml declares the
+    server as `https://deposition.proteinensemble.org/v1`. Prothon had
+    `.../api/v1`. The host was right, the paths beneath were right, and one
+    extra segment made every accession look missing -- including PED00001,
+    which the error message itself described as holding e001, e002 and e003.
+
+    These are offline: they check the URLs this module builds, not that the
+    service answers. The live tests in `TestAgainstPed` do that, and they were
+    the ones that failed. What was absent was anything asserting the shape of
+    the URL, so a base that could not possibly work still passed every test
+    that did not touch the network.
+    """
+
+    def test_the_base_has_no_api_segment(self):
+        from prothon.ingest.ped import PED_API
+
+        assert PED_API == "https://deposition.proteinensemble.org/v1"
+        assert "/api/" not in PED_API, (
+            "the OpenAPI document declares the server without an /api segment"
+        )
+
+    def test_the_entry_url_matches_the_spec_path(self):
+        from prothon.ingest.ped import PED_API
+
+        assert (
+            f"{PED_API}/entries/PED00001"
+            == "https://deposition.proteinensemble.org/v1/entries/PED00001"
+        )
+
+    def test_the_asset_url_matches_the_spec_path(self):
+        """`/entries/{identifier}/ensembles/{ensemble_id}/{asset}`."""
+        from prothon.ingest.ped import PED_API
+
+        assert f"{PED_API}/entries/PED00001/ensembles/e001/ensemble-pdb" == (
+            "https://deposition.proteinensemble.org/v1"
+            "/entries/PED00001/ensembles/e001/ensemble-pdb"
+        )
