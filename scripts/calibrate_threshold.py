@@ -73,18 +73,24 @@ def _null_pair(n_frames, n_features, tau, rng):
     return draw(), draw()
 
 
-def _smallest_p(seed, tau):
-    """The smallest corrected p-value this null study produced, or None."""
+def _smallest_p(seed, tau, frames=FRAMES, sample_size=SAMPLE_SIZE):
+    """The smallest corrected p-value this null study produced, or None.
+
+    The size is an argument rather than a module global because the sweep
+    varies it and the workers are separate processes: a global set in the
+    parent would not reach them, and the run would silently measure the
+    default at every point of the grid.
+    """
     from prothon.compare.dissimilarity import dissimilarity
 
     rng = np.random.default_rng(seed)
-    a, b = _null_pair(FRAMES, FEATURES, tau, rng)
+    a, b = _null_pair(frames, FEATURES, tau, rng)
     span = max(abs(a).max(), abs(b).max()) * 1.1
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         result = dissimilarity(
             a, b, -span, span, s_num=2, x_num=60,
-            sample_size=SAMPLE_SIZE, n_permutations=PERMUTATIONS,
+            sample_size=sample_size, n_permutations=PERMUTATIONS,
             alpha=ALPHA, random_state=seed,
         )
     if not result.p_values_reported:
@@ -92,7 +98,7 @@ def _smallest_p(seed, tau):
     return float(np.min(result.p_values))
 
 
-def _minima(tau, seeds, workers=None):
+def _minima(tau, seeds, workers=None, frames=FRAMES, sample_size=SAMPLE_SIZE):
     """Smallest p-value per null study, in parallel.
 
     Serial, a single correlation time at five hundred replicates outran a
@@ -104,11 +110,13 @@ def _minima(tau, seeds, workers=None):
     seeds = list(seeds)
     workers = workers or max(1, mp.cpu_count() - 1)
     if workers == 1:
-        values = [_smallest_p(seed, tau) for seed in seeds]
+        values = [_smallest_p(seed, tau, frames, sample_size) for seed in seeds]
     else:
         with mp.Pool(workers) as pool:
             values = pool.starmap(
-                _smallest_p, [(seed, tau) for seed in seeds], chunksize=4
+                _smallest_p,
+                [(seed, tau, frames, sample_size) for seed in seeds],
+                chunksize=4,
             )
     return np.array([v for v in values if v is not None]), len(values)
 
@@ -120,47 +128,72 @@ def main() -> int:
     parser.add_argument("--out")
     parser.add_argument("--json")
     parser.add_argument(
+        "--frames", type=int, nargs="+", default=[FRAMES],
+        help=(
+            "frames per ensemble, one or more. The threshold depends on the "
+            "sample size as well as the correlation time: a table measured at "
+            "one size under-corrects below it, silently, which is worse than "
+            "not correcting. Give several to build the grid the lookup needs."
+        ),
+    )
+    parser.add_argument(
+        "--sample-fraction", type=float, default=0.5,
+        help="subsample as this fraction of the frames. Half by default, so "
+             "the default subsampling branch is exercised at every size.",
+    )
+    parser.add_argument(
         "--workers", type=int, default=None,
         help="processes to use. Results are seeded, so this changes only speed.",
     )
     args = parser.parse_args()
 
     rows = []
-    for tau in TAUS:
-        # Two disjoint seed ranges: one to measure the threshold, one to check
-        # it. Calibrating and verifying on the same numbers proves nothing.
-        fit_seeds = range(0, args.replicates)
-        check_seeds = range(1_000_000, 1_000_000 + args.replicates)
+    for frames in args.frames:
+      sample_size = max(1, int(frames * args.sample_fraction))
+      for tau in TAUS:
+          # Two disjoint seed ranges: one to measure the threshold, one to check
+          # it. Calibrating and verifying on the same numbers proves nothing.
+          fit_seeds = range(0, args.replicates)
+          check_seeds = range(1_000_000, 1_000_000 + args.replicates)
 
-        fit, fit_total = _minima(tau, fit_seeds, args.workers)
-        if fit.size < 50:
-            print(f"  tau={tau:<5g} too few testable studies", file=sys.stderr)
-            rows.append({"tau": tau, "testable": fit.size / fit_total})
-            continue
+          fit, fit_total = _minima(
+              tau, fit_seeds, args.workers, frames, sample_size
+          )
+          if fit.size < 50:
+              print(f"  tau={tau:<5g} too few testable studies", file=sys.stderr)
+              rows.append({
+                "tau": tau, "frames": frames, "sample_size": sample_size,
+                "testable": fit.size / fit_total,
+            })
+              continue
 
-        # The alpha quantile of the smallest p-value under the null is, by
-        # construction, the threshold at which alpha of null studies call.
-        threshold = float(np.quantile(fit, args.alpha))
-        uncorrected = float(np.mean(fit < args.alpha))
+          # The alpha quantile of the smallest p-value under the null is, by
+          # construction, the threshold at which alpha of null studies call.
+          threshold = float(np.quantile(fit, args.alpha))
+          uncorrected = float(np.mean(fit < args.alpha))
 
-        check, check_total = _minima(tau, check_seeds, args.workers)
-        achieved = float(np.mean(check < threshold)) if check.size else None
+          check, check_total = _minima(
+              tau, check_seeds, args.workers, frames, sample_size
+          )
+          achieved = float(np.mean(check < threshold)) if check.size else None
 
-        rows.append({
-            "tau": tau,
-            "threshold": threshold,
-            "uncorrected_rate": uncorrected,
-            "achieved_on_fresh_nulls": achieved,
-            "testable": fit.size / fit_total,
-            "n_fit": int(fit.size),
-            "n_check": int(check.size),
-        })
-        print(
-            f"  tau={tau:<5g} threshold={threshold:.4f}  "
-            f"uncorrected={uncorrected:.1%}  fresh={achieved:.1%}  "
-            f"testable={fit.size / fit_total:.0%}",
-            file=sys.stderr,
-        )
+          rows.append({
+              "tau": tau,
+              "frames": frames,
+              "sample_size": sample_size,
+              "threshold": threshold,
+              "uncorrected_rate": uncorrected,
+              "achieved_on_fresh_nulls": achieved,
+              "testable": fit.size / fit_total,
+              "n_fit": int(fit.size),
+              "n_check": int(check.size),
+          })
+          print(
+              f"  n={frames:<6} tau={tau:<5g} threshold={threshold:.4f}  "
+              f"uncorrected={uncorrected:.1%}  fresh={achieved:.1%}  "
+              f"testable={fit.size / fit_total:.0%}",
+              file=sys.stderr,
+          )
 
     lines = [
         "# Calibrated thresholds",
@@ -170,20 +203,21 @@ def main() -> int:
         f"call is wrong by construction and the correct rate is exactly "
         f"{args.alpha:.0%}.",
         "",
-        "| τ | threshold for "
+        "| frames | sampled to | τ | threshold for "
         f"{args.alpha:.0%}"
         " | rate at the nominal threshold | rate on fresh nulls | testable |",
-        "|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|",
     ]
     for row in rows:
         if "threshold" not in row:
             lines.append(
-                f"| {row['tau']:.0f} | — | — | — | {row['testable']:.0%} |"
+                f"| {row['frames']} | {row['sample_size']} | {row['tau']:.0f} "
+                f"| — | — | — | {row['testable']:.0%} |"
             )
             continue
         lines.append(
-            f"| {row['tau']:.0f} | {row['threshold']:.4f} | "
-            f"{row['uncorrected_rate']:.1%} | "
+            f"| {row['frames']} | {row['sample_size']} | {row['tau']:.0f} | "
+            f"{row['threshold']:.4f} | {row['uncorrected_rate']:.1%} | "
             f"{row['achieved_on_fresh_nulls']:.1%} | {row['testable']:.0%} |"
         )
     lines += [
