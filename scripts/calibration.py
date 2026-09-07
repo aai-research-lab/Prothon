@@ -326,6 +326,7 @@ def study_default_path(replicates, workers, quick, frames=None):
 
             block_length, n_blocks = plan_blocks(sample_size, tau)
             row["block_multiplier"] = BLOCK_MULTIPLIER
+            row["permutations"] = settings["permutations"]
             row["block_length"] = block_length
             row["n_blocks"] = n_blocks
             rows.append(row)
@@ -491,6 +492,16 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--permutations", type=int, default=None,
+        help=(
+            "relabellings per comparison, overriding the study default of "
+            "100. The block multiplier removes the excess caused by "
+            "correlation and leaves a floor near 8%%; this is the lever for "
+            "that floor, which docs/calibration.md measures at 1.39x alpha at "
+            "100 permutations and 1.18x at 200."
+        ),
+    )
+    parser.add_argument(
         "--frames", type=int, default=None,
         help=(
             "frames per ensemble for --study default_path. The sample size "
@@ -519,6 +530,12 @@ def main() -> int:
         )
     if args.frames is not None and args.study not in ("default_path", "all"):
         parser.error("--frames applies to --study default_path")
+
+    if args.permutations is not None:
+        if args.permutations < 1:
+            parser.error("--permutations must be positive")
+        BASE["permutations"] = args.permutations
+        print(f"permutations {args.permutations}", file=sys.stderr)
 
     chosen = list(STUDIES) if args.study == "all" else [args.study]
     print(
