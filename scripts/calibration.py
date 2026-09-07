@@ -273,7 +273,7 @@ def study_time_correlation(replicates, workers, quick):
     return rows
 
 
-def study_default_path(replicates, workers, quick):
+def study_default_path(replicates, workers, quick, frames=None):
     """The false-positive rate a user actually gets.
 
     Every other study in this file sets ``sample_size`` equal to ``frames``, so
@@ -289,32 +289,45 @@ def study_default_path(replicates, workers, quick):
     caught it. It varies the sample size *below* the frame count, which is the
     only thing the others do not do.
     """
-    lengths = [(2000, 1000)] if quick else [
-        (2000, 2000),   # no subsampling, for comparison with the study above
-        (2000, 1000),   # the default sample size against a longer trajectory
-        (5000, 1000),   # a trajectory five times the default
-        (5000, 2500),
-    ]
+    if frames is not None:
+        # One length, given on the command line, so a sweep varies the
+        # trajectory length and the block multiplier independently.
+        lengths = [(frames, frames // 2)]
+    elif quick:
+        lengths = [(2000, 1000)]
+    else:
+        lengths = [
+            (2000, 2000),  # no subsampling, for comparison with the study above
+            (2000, 1000),  # the default sample size against a longer trajectory
+            (5000, 1000),  # a trajectory five times the default
+            (5000, 2500),
+        ]
     taus = [10.0] if quick else [1.0, 10.0, 50.0]
     rows = []
     for tau in taus:
-        for frames, sample_size in lengths:
+        for n_frames, sample_size in lengths:
             settings = {
                 **BASE, "generator": "time_correlated", "tau": tau,
-                "frames": frames, "sample_size": sample_size,
+                "frames": n_frames, "sample_size": sample_size,
                 "block_permutation": None,
             }
             print(
-                f"  tau {tau}, {frames} frames sampled to {sample_size}"
-                f"{' (no subsampling)' if sample_size >= frames else ''}",
+                f"  tau {tau}, {n_frames} frames sampled to {sample_size}"
+                f"{' (no subsampling)' if sample_size >= n_frames else ''}",
                 file=sys.stderr,
             )
             row = run(settings, replicates, workers)
             row["tau"] = tau
-            row["frames"] = frames
+            row["frames"] = n_frames
             row["sample_size"] = sample_size
-            row["subsampled"] = sample_size < frames
-            row["theoretical_neff"] = theoretical_neff(frames, tau)
+            row["subsampled"] = sample_size < n_frames
+            row["theoretical_neff"] = theoretical_neff(n_frames, tau)
+            from prothon.sampling.correlation import BLOCK_MULTIPLIER, plan_blocks
+
+            block_length, n_blocks = plan_blocks(sample_size, tau)
+            row["block_multiplier"] = BLOCK_MULTIPLIER
+            row["block_length"] = block_length
+            row["n_blocks"] = n_blocks
             rows.append(row)
     return rows
 
@@ -415,16 +428,25 @@ def render(name, rows) -> str:
             )
     elif name == "default_path":
         lines.append(
-            "| τ | frames | sampled to | subsampled | features called | 95% CI |"
+            "| τ | frames | sampled to | blocks | features called | studies "
+            "with a call | 95% CI | testable |"
         )
-        lines.append("|---|---|---|---|---|---|")
+        lines.append("|---|---|---|---|---|---|---|---|")
         for r in rows:
             lo, hi = r["feature_ci"]
             lines.append(
                 f"| {r['tau']:.0f} | {r['frames']} | {r['sample_size']} | "
-                f"{'yes' if r['subsampled'] else 'no'} | "
-                f"{r['feature_rate']:.2%} | {lo:.2%}–{hi:.2%} |"
+                f"{r.get('n_blocks', '?')} | "
+                f"{r['feature_rate']:.2%} | {r['study_rate']:.2%} | "
+                f"{lo:.2%}–{hi:.2%} | {r['support_rate']:.0%} |"
             )
+        lines.append("")
+        lines.append(
+            "**Read the last column.** A longer block reduces the bias and "
+            "reduces the number of blocks, and once too few remain the "
+            "comparison cannot be reported at all. A sweep that reports only "
+            "the rates makes the least usable setting look like the best one."
+        )
     elif name == "features":
         lines.append("| correlation between features | features called | 95% CI |")
         lines.append("|---|---|---|")
@@ -457,11 +479,46 @@ def main() -> int:
     parser.add_argument("--quick", action="store_true", help="a reduced grid")
     parser.add_argument("--out", help="write markdown here")
     parser.add_argument("--json", help="write raw results here")
+    parser.add_argument(
+        "--block-multiplier", type=float, default=None,
+        help=(
+            "block length as a multiple of the correlation time, overriding "
+            "prothon.sampling.correlation.BLOCK_MULTIPLIER. Blocks of 2*tau "
+            "leave e^-2 correlation between neighbours, which biases the "
+            "observed statistic above its own null; longer blocks reduce that "
+            "and there are fewer of them. Sweep it against --frames and read "
+            "the testable fraction, not only the rates."
+        ),
+    )
+    parser.add_argument(
+        "--frames", type=int, default=None,
+        help=(
+            "frames per ensemble for --study default_path. The sample size "
+            "stays at half this, so the subsampling branch is exercised."
+        ),
+    )
     args = parser.parse_args()
     if args.replicates < 1:
         parser.error("--replicates must be positive")
     if args.workers < 1:
         parser.error("--workers must be positive")
+
+    if args.block_multiplier is not None:
+        if args.block_multiplier <= 0:
+            parser.error("--block-multiplier must be positive")
+        # Set before any study runs. `plan_blocks` reads this at call time,
+        # which it did not always do: it was a default argument, and two runs
+        # measured the old value while reporting the new one.
+        from prothon.sampling import correlation
+
+        correlation.BLOCK_MULTIPLIER = args.block_multiplier
+        print(
+            f"block multiplier {args.block_multiplier} "
+            f"(default {2.0})",
+            file=sys.stderr,
+        )
+    if args.frames is not None and args.study not in ("default_path", "all"):
+        parser.error("--frames applies to --study default_path")
 
     chosen = list(STUDIES) if args.study == "all" else [args.study]
     print(
@@ -472,7 +529,12 @@ def main() -> int:
     sections, raw = [], {}
     for name in chosen:
         print(f"\n{name}:", file=sys.stderr)
-        rows = STUDIES[name](args.replicates, args.workers, args.quick)
+        if name == "default_path":
+            rows = STUDIES[name](
+                args.replicates, args.workers, args.quick, frames=args.frames
+            )
+        else:
+            rows = STUDIES[name](args.replicates, args.workers, args.quick)
         raw[name] = rows
         sections.append(f"## {name.replace('_', ' ').title()}\n\n{render(name, rows)}")
 
