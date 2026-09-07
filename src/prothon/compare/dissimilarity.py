@@ -965,7 +965,9 @@ def dissimilarity(
     # nominal one. Off by default, because switching it on silently would
     # change what every existing result means.
     threshold, threshold_basis = (
-        calibrated_threshold(float(tau), alpha)
+        calibrated_threshold(
+            float(tau), alpha, sample_size=int(reference_sample.shape[0])
+        )
         if calibrated
         else (float(alpha), "nominal")
     )
