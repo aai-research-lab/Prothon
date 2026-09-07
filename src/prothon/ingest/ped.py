@@ -54,7 +54,8 @@ from .ensemble import Ensemble
 logger = get_logger("ingest.ped")
 
 __all__ = [
-    "PedUnavailable","PED_API", "ped_entry", "ped_ensemble", "ped_ensembles"]
+    "PedUnavailable", "PED_API", "ped_entry", "ped_ensemble",
+    "ped_ensembles", "ped_has_entries"]
 
 #: Base URL of the PED REST API, as the OpenAPI document declares it at
 #: https://proteinensemble.org/assets/openapi.yaml. The host is right and the
@@ -121,6 +122,28 @@ def _normalise(accession: str) -> str:
             f"'PED00024', 'PED24' or 24."
         )
     return f"PED{int(text):05d}"
+
+
+def ped_has_entries() -> bool:
+    """Whether PED currently holds any entries at all.
+
+    The search endpoint answers with a count, so an empty database is a state
+    this can observe rather than infer from a string of 404s. That distinction
+    matters: a 404 for one accession means the accession is wrong, and a 404
+    for every accession while ``/entries`` reports nothing means the service
+    has no data to serve.
+
+    Both were seen together. `PED_API` had an `/api` segment the OpenAPI
+    document does not declare, which returned HTML from a front-end catch-all;
+    correcting it reached a real API that answered ``{"count": 0}``. The first
+    was ours and the second is not.
+
+    Raises :class:`PedUnavailable` if PED cannot be reached at all.
+    """
+    import json
+
+    payload = json.loads(_get(f"{PED_API}/entries"))
+    return int(payload.get("count", 0)) > 0
 
 
 def ped_entry(accession: str) -> dict[str, Any]:

@@ -166,7 +166,25 @@ class TestAgainstPed:
 
     @staticmethod
     def _skip_if_ped_is_down(call, *args, **kwargs):
+        """Skip on an outage or an empty database, and only on those.
+
+        Two states are theirs rather than ours. `PedUnavailable` covers a 5xx
+        or an unreachable host. An empty database is the other: the search
+        endpoint answers `{"count": 0}`, every accession 404s, and no
+        individual lookup can succeed however correct this code is.
+
+        A 404 while PED does hold entries is still a failure, because then the
+        accession or the URL is wrong -- which is exactly what it was when the
+        base carried an `/api` segment the OpenAPI document does not declare.
+        """
+        from prothon.ingest.ped import ped_has_entries
+
         try:
+            if not ped_has_entries():
+                pytest.skip(
+                    "PED reports no entries at all, so no accession can be "
+                    "fetched. The service is empty, not this code."
+                )
             return call(*args, **kwargs)
         except PedUnavailable as error:
             pytest.skip(f"PED is unavailable: {error}")
@@ -304,3 +322,51 @@ class TestTheBaseUrlMatchesThePublishedSpec:
             "https://deposition.proteinensemble.org/v1"
             "/entries/PED00001/ensembles/e001/ensemble-pdb"
         )
+
+
+class TestAnEmptyDatabaseIsNotABadAccession:
+    """Three states, and only one of them is ours.
+
+    A 5xx or an unreachable host is an outage. `{"count": 0}` from the search
+    endpoint is an empty database. A 404 while entries exist is a wrong URL or
+    a wrong accession, and that one must still fail — it is what happened when
+    `PED_API` carried an `/api` segment the spec does not declare.
+    """
+
+    @staticmethod
+    def _answering(payload):
+        import io
+
+        def fake(request, timeout=None):
+            return io.BytesIO(payload)
+
+        return fake
+
+    def test_a_populated_database_reports_true(self, monkeypatch):
+        from prothon.ingest import ped
+
+        monkeypatch.setattr(
+            "urllib.request.urlopen", self._answering(b'{"count": 461}')
+        )
+        assert ped.ped_has_entries() is True
+
+    def test_an_empty_database_reports_false(self, monkeypatch):
+        from prothon.ingest import ped
+
+        monkeypatch.setattr(
+            "urllib.request.urlopen",
+            self._answering(b'{"count": 0, "result": []}'),
+        )
+        assert ped.ped_has_entries() is False
+
+    def test_an_outage_still_raises(self, monkeypatch):
+        import urllib.error
+
+        from prothon.ingest import ped
+
+        def boom(request, timeout=None):
+            raise urllib.error.HTTPError("u", 503, "Service Unavailable", {}, None)
+
+        monkeypatch.setattr("urllib.request.urlopen", boom)
+        with pytest.raises(PedUnavailable):
+            ped.ped_has_entries()
