@@ -324,8 +324,18 @@ def study_default_path(replicates, workers, quick, frames=None):
             row["theoretical_neff"] = theoretical_neff(n_frames, tau)
             from prothon.sampling.correlation import BLOCK_MULTIPLIER, plan_blocks
 
-            block_length, n_blocks = plan_blocks(sample_size, tau)
+            # The estimator returns the *integrated* autocorrelation time,
+            # which for an AR(1) generated with a given tau is about
+            # (1+phi)/(1-phi) rather than tau: a series generated at tau=1 is
+            # estimated at 2.27. Planning from the generator's tau therefore
+            # reports a block count the run never used -- 4000 blocks of 1
+            # where the run used 400 of 10 -- and reading that column cost an
+            # afternoon on a short-circuit that never fires.
+            phi = np.exp(-1.0 / tau)
+            estimated_tau = (1.0 + phi) / (1.0 - phi)
+            block_length, n_blocks = plan_blocks(sample_size, estimated_tau)
             row["block_multiplier"] = BLOCK_MULTIPLIER
+            row["estimated_tau"] = estimated_tau
             row["permutations"] = settings["permutations"]
             row["block_length"] = block_length
             row["n_blocks"] = n_blocks
