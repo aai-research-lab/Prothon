@@ -544,11 +544,13 @@ def effective_frames(n_frames: int, tau: float) -> float:
     return float(n_frames / max(1.0, tau))
 
 
-def plan_blocks(n_frames: int, tau: float, multiplier: float = BLOCK_MULTIPLIER):
+def plan_blocks(n_frames: int, tau: float, multiplier: float | None = None):
     """Block length and count for a trajectory of this length and correlation.
 
     Returns ``(block_length, n_blocks)``. The block is ``multiplier * tau``
-    frames and the count is whatever that gives.
+    frames and the count is whatever that gives. ``multiplier`` defaults to
+    :data:`BLOCK_MULTIPLIER`, read here rather than bound as a default
+    argument, so that a study can vary it and a test can assert on it.
 
     **The block is never shortened to manufacture more of them.** An earlier
     version capped the length so that :data:`MINIMUM_BLOCKS` blocks always
@@ -559,6 +561,7 @@ def plan_blocks(n_frames: int, tau: float, multiplier: float = BLOCK_MULTIPLIER)
     forced to look healthy. A short trajectory of a slow system returns few
     blocks, and the caller refuses.
     """
+    multiplier = BLOCK_MULTIPLIER if multiplier is None else multiplier
     if tau <= 1.0:
         return 1, n_frames
     length = max(1, int(np.ceil(multiplier * tau)))

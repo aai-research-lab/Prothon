@@ -875,3 +875,49 @@ class TestTheWarningFiresWhereItMatters:
         assert not np.isfinite(estimate.slope), (
             "an unfittable trend must be distinguishable from a rising one"
         )
+
+
+class TestTheBlockMultiplierIsReadableAtCallTime:
+    """`BLOCK_MULTIPLIER` was bound as a default argument.
+
+    `plan_blocks(n, tau, multiplier=BLOCK_MULTIPLIER)` evaluates the constant
+    once, when the function is defined, so reassigning the module attribute
+    had no effect and two calibration runs measured the old value while
+    reporting the new one. It is read inside the body now, which is what makes
+    the multiplier a thing a study can vary and a test can assert on.
+
+    That matters because the multiplier is not settled. Blocks of `2*tau` leave
+    an AR(1) correlation of e^-2 between adjacent blocks, the observed groups
+    are contiguous and carry it, the shuffled null groups do not, and the
+    observed therefore sits about 6% above its own null. Longer blocks reduce
+    that and there are fewer of them, so the choice is a measured trade-off
+    rather than a constant somebody picked.
+    """
+
+    def test_the_module_attribute_is_honoured(self, monkeypatch):
+        from prothon.sampling import correlation
+
+        default_length, default_count = correlation.plan_blocks(800, 10.0)
+        monkeypatch.setattr(correlation, "BLOCK_MULTIPLIER", 6.0)
+        longer_length, longer_count = correlation.plan_blocks(800, 10.0)
+
+        assert longer_length == 3 * default_length
+        assert longer_count < default_count
+
+    def test_an_explicit_multiplier_still_wins(self):
+        from prothon.sampling import correlation
+
+        assert correlation.plan_blocks(800, 10.0, 4.0)[0] == 40
+
+    def test_longer_blocks_mean_fewer_of_them(self):
+        """The cost side of the trade-off, so it cannot be raised silently."""
+        from prothon.sampling import correlation
+
+        counts = [
+            correlation.plan_blocks(800, 10.0, m)[1] for m in (2.0, 3.0, 5.0)
+        ]
+        assert counts == sorted(counts, reverse=True)
+        assert counts[-1] < correlation.MINIMUM_BLOCKS * 3, (
+            "at multiplier 5 a 800-frame sample is close to unreportable, "
+            "which is why the constant was not simply raised"
+        )
