@@ -56,6 +56,11 @@ SAMPLE_SIZE = 2000
 FEATURES = 8
 PERMUTATIONS = 200
 
+#: A cell where fewer than this fraction of studies can be tested is left
+#: empty. The studies that survive are the ones whose correlation time happened
+#: to be estimated low, which is not a random sample of the null.
+MINIMUM_TESTABLE = 0.5
+
 
 def _null_pair(n_frames, n_features, tau, rng):
     """Two ensembles from one distribution. Every call on these is wrong."""
@@ -159,7 +164,13 @@ def main() -> int:
           fit, fit_total = _minima(
               tau, fit_seeds, args.workers, frames, sample_size
           )
-          if fit.size < 50:
+            # A threshold fitted on a small and self-selected minority is not a
+          # calibration. At n=1000 and tau=25 only 9% of studies had enough
+          # blocks to report a p-value at all, the uncorrected rate was 35.6%,
+          # and the "corrected" rate came out at 0.0%: a threshold so strict it
+          # never fires, fitted on the studies that happened to survive. The
+          # grid must leave that cell empty rather than fill it with a number.
+          if fit.size < 50 or fit.size / fit_total < MINIMUM_TESTABLE:
               print(f"  tau={tau:<5g} too few testable studies", file=sys.stderr)
               rows.append({
                 "tau": tau, "frames": frames, "sample_size": sample_size,

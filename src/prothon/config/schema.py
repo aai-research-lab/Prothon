@@ -129,6 +129,16 @@ PARAMETERS: tuple[Parameter, ...] = (
         commands=("compare",),
     ),
     _p(
+        "calibrated", kind=bool, default=False,
+        help="Use the threshold measured to deliver --alpha rather than the "
+             "nominal one. A permutation p-value here runs hot: asked for 5%% "
+             "it calls something in 10-16%% of null studies. The correction is "
+             "measured in docs/thresholds.md and is provisional -- the table "
+             "covers one sample size, so it under-corrects on smaller "
+             "trajectories.",
+        commands=("compare",),
+    ),
+    _p(
         "n_jobs", kind=int, default=1, metavar="N",
         help="Worker processes for the permutation null and the noise floor, "
              "which are most of the cost. -1 uses every core. The result does "
