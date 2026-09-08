@@ -25,18 +25,16 @@ keywords:
   - ensemble comparison
   - statistical calibration
 authors:
-  # The software is written by AA; the method it implements is joint work, and
-  # this list reflects the method. Revisit if that stops being the right
-  # balance.
+  # The software is written by AA and this list is the software's. The method
+  # it implements is joint work and is credited by citing the 2023 paper, which
+  # `references` below does. An earlier version of this file listed all three
+  # authors here, which credited the method in the place reserved for the
+  # implementation.
   - family-names: Aina
     given-names: Adekunle
     email: aaina@csudh.edu
     orcid: "https://orcid.org/0000-0002-8215-7452"
     affiliation: "California State University Dominguez Hills"
-  - family-names: Hsueh
-    given-names: Shawn C. C.
-  - family-names: Plotkin
-    given-names: Steven S.
 preferred-citation:
   type: article
   title: >-
@@ -56,3 +54,24 @@ preferred-citation:
   end: 3461
   year: 2023
   doi: "10.1021/acs.jcim.3c00145"
+
+# The method this software implements. Removing the method's authors from the
+# `authors` list above would leave them uncredited without this.
+references:
+  - type: article
+    title: "PROTHON: A Local Order Parameter-Based Method for Efficient
+      Comparison of Protein Ensembles"
+    authors:
+      - family-names: Aina
+        given-names: Adekunle
+      - family-names: Hsueh
+        given-names: Shawn C. C.
+      - family-names: Plotkin
+        given-names: Steven S.
+    journal: "Journal of Chemical Information and Modeling"
+    volume: 63
+    issue: 11
+    start: 3453
+    end: 3461
+    year: 2023
+    doi: 10.1021/acs.jcim.3c00145

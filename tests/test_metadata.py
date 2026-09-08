@@ -233,3 +233,44 @@ class TestOneDescriptionInEveryPlaceItLives:
                 if wrong in text:
                     offenders.append(f"{name}: {wrong!r}")
         assert not offenders, "superseded description: " + "; ".join(offenders)
+
+
+class TestTheSoftwareAndTheMethodAreCreditedSeparately:
+    """`authors` is the software's; the method is credited by reference.
+
+    Both files listed all three authors of the 2023 method as authors of the
+    software. The method is joint work and the implementation is not, so that
+    credited the method in the place reserved for the implementation.
+
+    Removing the co-authors without adding the reference would have been worse
+    than leaving them: the method would go uncredited entirely. Both halves are
+    asserted here for that reason.
+    """
+
+    def test_the_software_is_credited_to_its_author(self, citation):
+        names = [a["family-names"] for a in citation["authors"]]
+        assert names == ["Aina"]
+
+    def test_the_method_is_credited_by_reference(self, citation):
+        assert citation.get("references"), (
+            "with the co-authors out of `authors`, the method has to be cited "
+            "here or it is not cited at all"
+        )
+        method = citation["references"][0]
+        assert method["doi"] == "10.1021/acs.jcim.3c00145"
+        assert [a["family-names"] for a in method["authors"]] == [
+            "Aina", "Hsueh", "Plotkin",
+        ]
+
+    def test_zenodo_agrees_with_the_citation(self):
+        import json
+        import pathlib
+
+        root = pathlib.Path(__file__).resolve().parent.parent
+        creators = json.loads(
+            (root / ".zenodo.json").read_text(encoding="utf-8")
+        )["creators"]
+        assert [c["name"] for c in creators] == ["Aina, Adekunle"], (
+            "`.zenodo.json` is what mints the DOI, so it and CITATION.cff "
+            "must not disagree about who wrote the software"
+        )
