@@ -17,7 +17,7 @@ context:
   # PyPI normalises the sdist filename to underscores. The directory segment
   # tolerates either form; the filename does not.
   pypi_name: prothon_ensembles
-  version: "2.3.2"
+  version: "2.4.0"
 
 package:
   name: ${{ name|lower }}
@@ -25,7 +25,7 @@ package:
 
 source:
   url: https://pypi.org/packages/source/${{ pypi_name[0] }}/${{ pypi_name }}/${{ pypi_name }}-${{ version }}.tar.gz
-  sha256: db2c7ee1063b53c8a4626fe4eb9ba9db1a085bf806367c76c224970084a33c47
+  sha256: 4570111268f28cb33c900b1bcf843776ab56705f2184eb3273e7e72ff5e3a068
 build:
   noarch: python
   number: 0
