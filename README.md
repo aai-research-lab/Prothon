@@ -79,9 +79,13 @@ keeps the sample in trajectory order, and permutes contiguous blocks of it.
 Where a trajectory holds too few independent blocks to build a null from, it
 reports the floor and prints no p-value at all.
 
-The false-positive rate is
-[measured](https://prothon.readthedocs.io/en/latest/calibration.html), on the
-default sampling path, rather than asserted.
+**The false-positive rate is measured rather than asserted.** A test that
+assumes independent frames calls 99% of residues different when nothing
+differs; this one calls between 8% and 16% at a nominal 5%, across sample sizes
+from 500 to 4000 and correlation times from 1 to 50, at 2000 null studies per
+configuration. That is the honest number and it is
+[on the calibration page](https://prothon.readthedocs.io/en/latest/calibration.html)
+with the grid that produced it.
 
 ## One import, and everything is reachable from it
 

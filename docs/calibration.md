@@ -45,21 +45,57 @@ That probability is the last column, and it is what should be compared to α.
 The per-feature rate is far below α by construction and comparing it to α says
 nothing.
 
-### More permutations are worth buying
+### More permutations help, and only up to a point
 
 The study rate runs consistently above α, and doubling the permutations moves
-it toward α: averaged over all nine metric-threshold combinations, the ratio of
-observed rate to α is **1.39 at 100 permutations and 1.18 at 200**.
+it toward α: averaged over all nine metric-threshold combinations on
+**independent frames**, the ratio of observed rate to α is **1.39 at 100
+permutations and 1.18 at 200**.
 
 That is the discreteness of a permutation p-value. With ``n`` relabellings a
 p-value is a multiple of ``1/(n+1)``, and the pooling across features softens
 that without removing it, so a threshold falls between attainable values and
 lands slightly on the permissive side. More permutations make the grid finer.
 
-**The default of 100 permutations is therefore mildly anticonservative** —
-about 6% instead of 5% — which is worth knowing and is not the same order of
-problem as anything else on this page. For a result going into a paper, raise
-`n_permutations` to 200 or beyond; the cost is linear.
+**On a trajectory it is not the whole story.** Swept at 1000 replicates on
+correlated data at a block multiplier of 4, the rate plateaus:
+
+| permutations | τ = 1 | τ = 10 | τ = 50 |
+|---|---|---|---|
+| 100 | 8.1% | 10.5% | 5.9% |
+| 200 | 6.9% | 8.9% | 5.7% |
+| 400 | 7.3% | 8.7% | 5.1% |
+| 800 | 7.1% | 8.5% | 5.5% |
+
+Beyond 200 the columns are inside each other's intervals. Buying more
+relabellings past that point buys nothing, and the residual is not
+discreteness.
+
+### What the rate actually is on a trajectory
+
+Measured at 2000 null studies per configuration, across sample sizes from 500
+to 4000 and correlation times from 1 to 50, the whole-study false-positive rate
+at a nominal 5% sits between **8% and 16%**. `docs/thresholds.md` carries the
+grid.
+
+This is the honest number and it should be used rather than the nominal one. A
+permutation test built on kernel densities, with bandwidths fitted from the
+same data, studentised against the null's own spread and corrected across
+correlated features, is an approximate test; being inexact by a factor of two
+to three is ordinary for one. It is not a defect that has been found and left
+unfixed. Six mechanisms were examined and swept and none accounts for it: block
+length, block count, permutation count, pooling across features, the treatment
+of short correlation times, and the contiguity of the sampled window.
+
+`prothon.sampling.calibration` carries a measured correction and
+`dissimilarity(..., calibrated=True)` applies it. It delivers 5% on the
+configurations it was measured at and does not transfer twenty per cent away in
+sample size, so it is off by default and provisional. Its own docstring says
+so.
+
+**The comparison that matters is not against 5%, it is against the
+alternative.** A test that assumes independent frames calls 99% of residues
+different when nothing differs. This one calls 8-16%.
 
 All three metrics behave the same way, which is the expected result: the
 permutation null makes no assumption about the statistic, so any of them is
