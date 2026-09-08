@@ -143,13 +143,64 @@ def figure_calibration(out_dir: str) -> str:
     return _save(fig, out_dir, "figure1_calibration.pdf")
 
 
+#: The ubiquitin re-analysis, from `docs/ubiquitin.json`. Dissimilarity, the
+#: floor beneath it, and how many of 70 residues each analysis called.
+_UBIQUITIN = [
+    # label,  D,      floor,  published, current, withheld
+    ("Q95", 0.0618, 0.0358, 70, 0, False),
+    ("Q90", 0.1706, 0.0361, 70, 11, False),
+    ("Q85", 0.2700, 0.0354, 70, None, True),
+    ("Q80", 0.3439, 0.0355, 70, None, True),
+    ("Q75", 0.3971, 0.0349, 70, None, True),
+]
+
+
 def figure_toc(out_dir: str) -> str:
-    """ACS table of contents graphic. At most 3.25 x 1.75 inches."""
+    """ACS table of contents graphic. At most 3.25 x 1.75 inches.
+
+    The floor and the null in one panel, because they are what every result
+    here carries and what no comparable tool prints. An earlier version reused
+    the calibration curve, which duplicated Figure 1 and implied a nominal rate
+    the paper is careful not to claim.
+    """
     fig, ax = plt.subplots(figsize=(3.25, 1.75))
-    _calibration_axes(ax, annotate=False)
-    ax.set_ylabel("false positives (%)", fontsize=7)
-    ax.set_xlabel(r"autocorrelation time $\tau$", fontsize=7)
-    ax.legend(loc="center left", frameon=False, bbox_to_anchor=(0.03, 0.60))
+    x = range(len(_UBIQUITIN))
+    values = [row[1] for row in _UBIQUITIN]
+    floor = sum(row[2] for row in _UBIQUITIN) / len(_UBIQUITIN)
+
+    # Everything below the floor is sampling rather than structure. A solid
+    # light fill rather than alpha, because the EPS backend ACS may ask for
+    # renders transparency opaque and the shading would swallow the bars.
+    ax.axhspan(0, floor, color="#e2e2e2", lw=0)
+    ax.axhline(floor, color=GREY, lw=0.8)
+    ax.bar(x, values, width=0.62, color=BLOCK, zorder=3)
+
+    for i, (_label, value, _f, _pub, current, withheld) in enumerate(_UBIQUITIN):
+        note = "withheld" if withheld else f"{current}/70"
+        ax.annotate(
+            note, xy=(i, value), xytext=(0, 3), textcoords="offset points",
+            ha="center", fontsize=6,
+            color=FRAME if withheld else BLOCK,
+        )
+
+    # To the right of the last bar. The band is too thin to hold text and
+    # every position inside the axes is crossed by a bar.
+    ax.set_xlim(-0.6, len(_UBIQUITIN) - 0.1)
+    ax.annotate(
+        "noise floor", xy=(len(_UBIQUITIN) - 0.45, floor), fontsize=6,
+        color="#555555", va="center", ha="left",
+    )
+    ax.set_xticks(list(x))
+    ax.set_xticklabels([row[0] for row in _UBIQUITIN], fontsize=7)
+    ax.set_ylabel("dissimilarity from Q99", fontsize=7)
+    ax.set_ylim(0, 0.46)
+    ax.tick_params(labelsize=6)
+    ax.set_title(
+        "published: 70/70 residues differ, every comparison",
+        fontsize=6.5, color=FRAME, pad=3,
+    )
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
     return _save(fig, out_dir, "toc_graphic.pdf")
 
 
