@@ -187,7 +187,17 @@ jobs:
 
   scientific-calibration:
     name: Scientific calibration evidence
-    if: github.event_name == 'workflow_dispatch'
+    # On a tag as well as on demand. A gate that only runs when somebody
+    # remembers to run it is not a gate, and this one was ticked off in the
+    # roadmap on the strength of the measurement existing rather than of it
+    # being enforced. `publish.yml` calls this workflow for the tagged commit,
+    # so a release now waits for the calibration to pass.
+    #
+    # Not on every push: the four jobs together take the best part of an hour
+    # and the statistics they measure change only when the statistics change.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || startsWith(github.ref, 'refs/tags/v')
     uses: ./.github/workflows/scientific-calibration.yml
     permissions:
       contents: read

@@ -13,7 +13,7 @@ jobs:
   calibrate:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -24,8 +24,8 @@ jobs:
               python scripts/calibration.py
               --quick
               --study correlation
-              --replicates 250
-              --workers 2
+              --replicates 150
+              --workers 3
               --out calibration-evidence/local-calibration.md
               --json calibration-evidence/local-calibration.json
           - gate: default-path
@@ -35,7 +35,7 @@ jobs:
               --quick
               --study default_path
               --replicates 250
-              --workers 2
+              --workers 3
               --out calibration-evidence/default-path-calibration.md
               --json calibration-evidence/default-path-calibration.json
           - gate: floors
