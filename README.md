@@ -70,6 +70,8 @@ wheel/source distribution and the conda-forge package.
 | **A trajectory against itself** | How much of it is independent, how long it must run before a difference of a given size can be resolved, and whether its correlation time has settled. |
 | **An ensemble against experiment** | R<sub>g</sub>, end-to-end distance, PRE, FRET and ³J — each beside a floor, because a perfect ensemble of twenty conformations scores χ²_red = 0.77 and fitting that to 1.0 is fitting to noise. |
 | **What no per-residue statistic can see** | Two ensembles can match residue by residue and differ in how residues move *together*. MMD and a classifier two-sample test find that; the classifier names the residues carrying it. |
+| **A weighted ensemble** | Conformer probabilities reach the density estimate, and Kish's effective sample size sizes the floor: a thousand conformations where one carries half the probability are worth four, and the floor says so. |
+| **A torsion, correctly** | Circular order parameters get a von Mises kernel and Kuiper's statistic. Treated as linear, a difference of 0.05 rad across the ±π discontinuity is overstated by up to 85 times, and the number looks ordinary. |
 | **Missed states against invented ones** | Precision and recall per residue. A symmetric distance says two ensembles differ; these say which one is short of a state and which has one too many. |
 
 **It withholds rather than overstates.** Trajectory frames are not independent
@@ -85,7 +87,9 @@ differs; this one calls between 8% and 16% at a nominal 5%, across sample sizes
 from 500 to 4000 and correlation times from 1 to 50, at 2000 null studies per
 configuration. That is the honest number and it is
 [on the calibration page](https://prothon.readthedocs.io/en/latest/calibration.html)
-with the grid that produced it.
+with the grid that produced it. `--calibrated` substitutes a measured threshold
+for the nominal one; it is off by default and provisional, and the page says
+where it stops applying.
 
 ## One import, and everything is reachable from it
 

@@ -59,8 +59,9 @@ class Prothon:
     topology
         Topology file (PDB) shared by every trajectory.
     output_dir
-        Root for the output tree. Each measure gets ``<output_dir>/<measure>_output``.
-        When omitted, those directories are created in the working directory.
+        Root for the output tree. Each order parameter gets its own
+        directory, ``<output_dir>/<name>_output``. When omitted, those
+        directories are created in the working directory.
     verbose
         Raise the logging level to DEBUG.
     random_state
@@ -985,15 +986,15 @@ class Prothon:
     # -- accessors --------------------------------------------------------
 
     def get_representation_data(self, measure: str) -> list[np.ndarray] | None:
-        """Cached representation matrices for a measure, or ``None``."""
+        """Cached representation matrices for an order parameter, or ``None``."""
         return self.ensembles_data.get(measure.strip().lower())
 
     def get_comparison_results(self, measure: str) -> list[ComparisonResult] | None:
-        """Comparison results for a measure, or ``None``."""
+        """Comparison results for an order parameter, or ``None``."""
         return self.comparison_results.get(measure.strip().lower())
 
     def get_dimred_results(self, measure: str) -> dict[str, dict[str, Any]] | None:
-        """Projections for a measure, keyed by technique, or ``None``."""
+        """Projections for an order parameter, keyed by technique, or ``None``."""
         return self.dimred_results.get(measure.strip().lower())
 
     def summary(self) -> str:

@@ -53,7 +53,10 @@ conditions averages away the difference being measured.
 | `--order-parameters` | `-p` | `cbcn` | `cbcn`, `cacn`, `caba`, `cata`, `sasa`. |
 | `--metric` | `-m` | `jsd` | `jsd`, `wasserstein`, `ks`. |
 | `--random-state` | `-s` | | Seed. Set it and the run is reproducible. |
-| `--n-permutations` | | `100` | Relabellings behind the null. |
+| `--n-permutations` | | `100` | Relabellings behind the null. Doubling to 200 lowers the whole-study false-positive rate; past that it plateaus. |
+| `--sample-size` | | `1000` | Conformations drawn from each ensemble for the test. Anything longer is subsampled to this as a contiguous window, so the block structure survives. |
+| `--calibrated` | | off | Use the threshold measured to deliver `--alpha` rather than the nominal one. See below. |
+| `--n-jobs` | | `1` | Worker processes for the permutation null. Results are identical at every worker count. |
 | `--s-num` | | `5` | Requested split-half repeats; modern mode uses at least 10 per ensemble for the floor quantile. |
 | `--x-num` | | `100` | Grid points per density. |
 | `--alpha` | | `0.05` | False-discovery rate. |
@@ -172,3 +175,28 @@ does not discard the comparison that already succeeded.
 conformations, with the block length set from a correlation time estimated from
 the data. It does need the frames to be in the order they were generated.
 `--no-block-permutation` turns it off for genuinely independent ensembles.
+
+
+## `--calibrated`
+
+A permutation *p*-value from this software runs hot. Asked for 5%, it calls
+something in 8% to 16% of null studies, measured across sample sizes from 500
+to 4000 and correlation times from 1 to 50, at 2000 null studies per
+configuration. `docs/thresholds.md` carries the grid and
+`docs/calibration.md` the argument.
+
+`--calibrated` substitutes the threshold that was *measured* to deliver
+`--alpha` for the nominal one. On the configurations in that grid it delivers
+5%.
+
+**It is off by default and it is provisional.** The correction does not travel:
+at a subsample of 600 against a cell measured at 500, both at a correlation
+time of 10, it gives 11% where the cell reported 5%. Two dimensions of
+measurement beat one and neither is enough, and a correction that sensitive to
+configuration is not yet a general one. Use it to reproduce the measurement, or
+where a comparison sits on a measured cell. Do not read a corrected number as
+exact elsewhere.
+
+The uncorrected rate is the honest default, and the comparison that matters is
+not against 5%: a test assuming independent frames calls 99% of residues
+different when nothing differs.

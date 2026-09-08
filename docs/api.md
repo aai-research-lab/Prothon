@@ -80,11 +80,55 @@ shim that forwards with a `DeprecationWarning`, and is removed in 3.0.
    :members: METRICS, Metric, feature_distance, describe_metric, resolve_metric
 ```
 
-## Correlation and blocking
+## What a comparison is worth
+
+`prothon.sampling` holds the four quantities that decide whether a difference
+can be believed. It is the part of this software with no counterpart in
+comparable tools, and it is a top-level package for that reason.
 
 ```{eval-rst}
 .. automodule:: prothon.sampling.correlation
    :members: correlation_profile, correlation_time, effective_frames, plan_blocks, block_labels, MINIMUM_BLOCKS
+```
+
+```{eval-rst}
+.. automodule:: prothon.sampling.null
+   :members: permutation_null, studentised_p_values
+```
+
+```{eval-rst}
+.. automodule:: prothon.sampling.floor
+   :members: split_half_floor
+```
+
+```{eval-rst}
+.. automodule:: prothon.sampling.statistics
+   :members: effective_sample_size, benjamini_hochberg, random_sample
+```
+
+```{eval-rst}
+.. automodule:: prothon.sampling.calibration
+   :members: calibrated_threshold, CALIBRATION
+```
+
+## Densities
+
+A comparison needs densities, and a density needs a kernel, a bandwidth and a
+grid. All three differ for a circular order parameter, and getting any of them
+wrong is quiet rather than loud.
+
+```{eval-rst}
+.. automodule:: prothon.compare.density
+   :members: estimate_pdf
+```
+
+## Sources
+
+What `--ensembles` accepts, and how each form is resolved.
+
+```{eval-rst}
+.. automodule:: prothon.ingest.sources
+   :members: resolve
 ```
 
 ## Ingest and reconciliation

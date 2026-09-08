@@ -5,6 +5,8 @@ it is asked for. A trajectory, a directory of structures a generative model
 emitted, a multi-model PDB, a deposited entry -- each is a source, and
 :func:`resolve` takes any of them.
 
+.. code-block:: text
+
     resolve("md.xtc", topology="top.pdb")     a trajectory
     resolve("bioemu_out/")                    a directory of PDBs
     resolve("samples/*.pdb")                  a glob
