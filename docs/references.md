@@ -15,10 +15,29 @@ MDTraj: A Modern Open Library for the Analysis of Molecular Dynamics
 Trajectories. *Biophysical Journal* **2015**, *109* (8), 1528–1532.
 [doi:10.1016/j.bpj.2015.08.015](https://doi.org/10.1016/j.bpj.2015.08.015)
 
+Hamelryck, T. An Amino Acid Has Two Sides: A New 2D Measure Provides a
+Different View of Solvent Exposure. *Proteins* **2005**, *59* (1), 38–48.
+[doi:10.1002/prot.20379](https://doi.org/10.1002/prot.20379)
+
+Miller, S.; Janin, J.; Lesk, A. M.; Chothia, C. Interior and Surface of
+Monomeric Proteins. *Journal of Molecular Biology* **1987**, *196* (3),
+641–656.
+[doi:10.1016/0022-2836(87)90038-6](https://doi.org/10.1016/0022-2836(87)90038-6)
+
+Rose, G. D.; Geselowitz, A. R.; Lesser, G. J.; Lee, R. H.; Zehfus, M. H.
+Hydrophobicity of Amino Acid Residues in Globular Proteins. *Science*
+**1985**, *229* (4716), 834–838.
+[doi:10.1126/science.4023714](https://doi.org/10.1126/science.4023714)
+
 Shrake, A.; Rupley, J. A. Environment and Exposure to Solvent of Protein Atoms.
 Lysozyme and Insulin. *Journal of Molecular Biology* **1973**, *79* (2),
 351–371.
 [doi:10.1016/0022-2836(73)90011-9](https://doi.org/10.1016/0022-2836(73)90011-9)
+
+Tien, M. Z.; Meyer, A. G.; Sydykova, D. K.; Spielman, S. J.; Wilke, C. O.
+Maximum Allowed Solvent Accessibilities of Residues in Proteins. *PLoS ONE*
+**2013**, *8* (11), e80635.
+[doi:10.1371/journal.pone.0080635](https://doi.org/10.1371/journal.pone.0080635)
 
 ## Global shape and polymer scaling
 

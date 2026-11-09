@@ -50,7 +50,7 @@ conditions averages away the difference being measured.
 | `--topology` | `-t` | | One shared path, or one per ensemble in the same order. |
 | `--chains` | | | Keep only these chains: a PDB letter or an index. One shared, or one per ensemble. |
 | `--reference` | `-r` | `0` | An index into `--ensembles`, or a source of its own. |
-| `--order-parameters` | `-p` | `cbcn` | `cbcn`, `cacn`, `caba`, `cata`, `sasa`. |
+| `--order-parameters` | `-p` | `cbcn` | `cbcn`, `cacn`, `caba`, `cata`, `sasa`, `rsa`, `hseu`, `hsed`, `hsea`, `chi1`. |
 | `--metric` | `-m` | `jsd` | `jsd`, `wasserstein`, `ks`. |
 | `--random-state` | `-s` | | Seed. Set it and the run is reproducible. |
 | `--n-permutations` | | `100` | Relabellings behind the null. Doubling to 200 lowers the whole-study false-positive rate; past that it plateaus. |

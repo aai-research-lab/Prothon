@@ -95,7 +95,7 @@ class TestMeasureRegistry:
 
     def test_only_torsions_are_circular(self):
         circular = {name for name, spec in ORDER_PARAMETERS.items() if spec.circular}
-        assert circular == {"cata"}
+        assert circular == {"cata", "chi1"}
 
     def test_resolve_is_case_insensitive(self):
         assert resolve_order_parameter("CBCN").name == "cbcn"
@@ -283,7 +283,11 @@ class TestSasa:
 
 
 class TestEnsembleRepresentation:
-    @pytest.mark.parametrize("name", ["cbcn", "cacn", "caba", "cata", "sasa"])
+    # chi1 is absent: these fixtures carry no side-chain atoms beyond C-beta, so
+    # chi1 refuses them. Its map is checked in test_rsa_hse_chi1.py.
+    @pytest.mark.parametrize(
+        "name", ["cbcn", "cacn", "caba", "cata", "sasa", "rsa", "hseu", "hsed", "hsea"]
+    )
     def test_mixed_system_feature_identity_matches_every_matrix(self, name):
         traj = mixed_system((5, 4), extras=True)
         matrix = compute_representation(traj, name)

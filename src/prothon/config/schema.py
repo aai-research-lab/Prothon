@@ -106,7 +106,8 @@ PARAMETERS: tuple[Parameter, ...] = (
     # -- what to measure --------------------------------------------------
     _p(
         "order_parameters", short="-p", default="cbcn", metavar="NAME[,NAME...]",
-        help="Local order parameters: cbcn, cacn, caba, cata, sasa. Several "
+        help="Local order parameters: cbcn, cacn, caba, cata, sasa, rsa, hseu, "
+             "hsed, hsea, chi1. Several "
              "are cheap and usually informative.",
         commands=("compare",),
     ),
