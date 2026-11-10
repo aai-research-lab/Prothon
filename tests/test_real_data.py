@@ -351,3 +351,114 @@ class TestEveryMetricOnRealData:
         assert result.floor_assessable
         assert result.missed().size == 0
         assert result.invented().size == 0
+
+
+# ---------------------------------------------------------------------------
+# rsa, hse and chi1 against an independent implementation
+# ---------------------------------------------------------------------------
+class TestAgainstBiopython:
+    """Biopython computes the same three quantities with its own code.
+
+    Agreement with a separate implementation on real structures is what the
+    hand-built geometries in test_rsa_hse_chi1.py cannot give: they check that
+    the code does what its docstring says, not that the docstring matches
+    what everyone else means by the name.
+    """
+
+    #: Structures whose every residue Biopython's PPBuilder places in a
+    #: polypeptide. Biopython only counts HSE neighbours inside polypeptides,
+    #: so a residue it drops (three histidines in 1am7) is a neighbour to
+    #: Prothon and not to Biopython, and exact agreement is not expected there.
+    STRUCTURES = ("2EQQ.pdb", "1bpi.pdb", "1vii.pdb")
+
+    @staticmethod
+    def _pairs(corpus, name):
+        pytest.importorskip("Bio")
+        from Bio.PDB import PDBParser
+
+        traj = md.load(corpus[name])
+        structure = PDBParser(QUIET=True).get_structure(name, corpus[name])
+        models = list(structure)[: traj.n_frames]
+        return traj, models
+
+    @pytest.mark.parametrize("name", STRUCTURES)
+    def test_hse_counts_match_exactly(self, corpus, name):
+        from Bio.PDB import HSExposureCB
+
+        from prothon.represent.order_parameters import (
+            _protein_residues,
+            compute_hsed,
+            compute_hseu,
+        )
+
+        traj, models = self._pairs(corpus, name)
+        up, down = compute_hseu(traj), compute_hsed(traj)
+        residues = _protein_residues(traj.topology)
+        compared = 0
+        for frame, model in enumerate(models):
+            HSExposureCB(model, radius=13.0)
+            theirs = [r for r in model.get_residues() if r.id[0] == " "]
+            assert len(theirs) == len(residues)
+            for column, (ours, other) in enumerate(zip(residues, theirs)):
+                # Glycine is left out: Biopython builds its pseudo-C-beta by
+                # rotating N about CA-C, Prothon from the flanking C-alphas
+                # (Hamelryck's HSE-alpha construction). Both are documented.
+                if ours.name == "GLY" or "EXP_HSE_B_U" not in other.xtra:
+                    continue
+                assert up[frame, column] == other.xtra["EXP_HSE_B_U"]
+                assert down[frame, column] == other.xtra["EXP_HSE_B_D"]
+                compared += 1
+        assert compared > 0
+
+    @pytest.mark.parametrize("name", STRUCTURES)
+    def test_chi1_matches_to_a_thousandth_of_a_degree(self, corpus, name):
+        from prothon.represent.order_parameters import (
+            _chi1_atom_quads,
+            _protein_residues,
+            compute_chi1,
+        )
+
+        traj, models = self._pairs(corpus, name)
+        chi1 = compute_chi1(traj)
+        position = {r.index: k for k, r in enumerate(_protein_residues(traj.topology))}
+        _, windows = _chi1_atom_quads(traj.topology)
+        worst, compared = 0.0, 0
+        for frame, model in enumerate(models):
+            model.atom_to_internal_coordinates()
+            theirs = [r for r in model.get_residues() if r.id[0] == " "]
+            for column, (residue_index,) in enumerate(windows):
+                ic = theirs[position[residue_index]].internal_coord
+                angle = None if ic is None else ic.get_angle("chi1")
+                if angle is None:
+                    continue
+                gap = np.angle(np.exp(1j * (np.radians(angle) - chi1[frame, column])))
+                worst = max(worst, abs(np.degrees(gap)))
+                compared += 1
+        assert compared > 0
+        assert worst < 1e-3
+
+    @pytest.mark.parametrize("name", STRUCTURES)
+    def test_rsa_tracks_an_independent_shrake_rupley(self, corpus, name):
+        from Bio.PDB.SASA import ShrakeRupley
+
+        from prothon.represent.order_parameters import (
+            RSA_MAX_ASA,
+            _protein_residues,
+            compute_rsa,
+        )
+
+        traj, models = self._pairs(corpus, name)
+        rsa = compute_rsa(traj)
+        residues = _protein_residues(traj.topology)
+        ours, other = [], []
+        for frame, model in enumerate(models):
+            ShrakeRupley().compute(model, level="R")
+            theirs = [r for r in model.get_residues() if r.id[0] == " "]
+            for column, (residue, theirs_residue) in enumerate(zip(residues, theirs)):
+                ours.append(rsa[frame, column])
+                other.append(theirs_residue.sasa / RSA_MAX_ASA[residue.name]["theoretical"])
+        ours, other = np.array(ours), np.array(other)
+        # Same algorithm, different atomic radii and probe-point placement, so
+        # agreement is close but not exact: a few hundredths of RSA per residue.
+        assert np.corrcoef(ours, other)[0, 1] > 0.995
+        assert np.max(np.abs(ours - other)) < 0.1

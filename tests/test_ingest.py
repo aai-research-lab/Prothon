@@ -379,7 +379,11 @@ class TestReconcile:
 
 
 class TestFeatureColumns:
-    @pytest.mark.parametrize("measure", ["cbcn", "cacn", "caba", "cata", "sasa"])
+    @pytest.mark.parametrize(
+        "measure",
+        # chi1 is absent: this fixture has no gamma atoms, so it has no chi1.
+        ["cbcn", "cacn", "caba", "cata", "sasa", "rsa", "hseu", "hsed", "hsea"],
+    )
     def test_map_width_matches_the_matrix(self, measure, tmp_path):
         """The map has to stay in step with the functions it describes."""
         traj = build(as_residues("ACDEFGHIKLM"), n_frames=5)

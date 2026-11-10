@@ -5,6 +5,26 @@ All notable changes to Prothon are recorded here. This project follows
 
 ## [Unreleased]
 
+### Added — exposure and side-chain order parameters
+
+- `rsa`: relative solvent accessibility, `sasa` divided by a residue-type
+  maximum (Tien et al. 2013 theoretical scale by default; empirical, Miller
+  and Rose scales selectable). Glycine is an ordinary column; unknown residue
+  types are `NaN` with a warning; values above 1 are kept.
+- `hseu`, `hsed`, `hsea`: half-sphere exposure (Hamelryck 2005), 1.3 nm
+  radius, real Cα→Cβ direction with a flanking-Cα pseudo-Cβ for glycine, plus
+  the bounded anisotropy $(u - d)/(u + d)$.
+- `chi1`: the N–Cα–Cβ–Xγ side-chain torsion, declared circular.
+- Existing results are unchanged: no existing order parameter, default or
+  estimator was modified. The one existing test edited is the registry check
+  that lists the circular order parameters, which now includes `chi1`.
+- Tests build each quantity on hand-made geometry with a known answer, check
+  rigid-motion invariance and frame-block independence, and run a rotamer
+  switch across ±180° through `dissimilarity`. Network tests compare against
+  Biopython on 2EQQ, BPTI and villin: HSE counts match exactly on every
+  non-glycine residue, χ1 to within 0.001°, and RSA correlates above 0.995
+  with Biopython's independent Shrake–Rupley.
+
 ### Fixed — portable CI fixtures and matrix
 
 - CI now tests Python 3.9, 3.11 and 3.13 on every declared operating system,

@@ -60,9 +60,14 @@ __all__ = [
     "compute_cacn",
     "compute_cata",
     "compute_cbcn",
+    "compute_chi1",
+    "compute_hsea",
+    "compute_hsed",
+    "compute_hseu",
     "compute_nu",
     "compute_ree",
     "compute_rg",
+    "compute_rsa",
     "compute_sasa",
     "describe_order_parameter",
     "load_ensemble",
@@ -93,6 +98,84 @@ _MIN_PAIR_BLOCK = 64
 #: Retained as the block size used when the frame count is unknown, and as the
 #: value the tests force down to exercise the blocked path.
 _PAIR_BLOCK = 4096
+
+#: Maximum solvent-accessible area per residue type, in Angstrom^2, from
+#: Tien et al. (2013) Table 1 (ALLOWED-region values), plus the two scales
+#: Tien et al. compare against. Keyed by three-letter residue name.
+#:
+#: The "theoretical" column -- the largest accessible area each residue type
+#: reaches in an idealized Gly-X-Gly tripeptide over sterically allowed
+#: backbone and side-chain conformations -- is the default (`RSA_SCALE`). It
+#: is computed geometrically, as compute_sasa is, rather than taken from
+#: observed structures, and it is the scale Tien et al. found few real
+#: residues exceed. See docs/order_parameters.md.
+#:
+#: Glycine and alanine are present, unlike the C-beta based measures: RSA
+#: needs no side-chain direction, only a reference area, so both residue
+#: types are ordinary columns rather than excluded ones.
+RSA_MAX_ASA: dict[str, dict[str, float]] = {
+    "ALA": {"theoretical": 129.0, "empirical": 121.0, "miller": 113.0, "rose": 118.1},
+    "ARG": {"theoretical": 274.0, "empirical": 265.0, "miller": 241.0, "rose": 256.0},
+    "ASN": {"theoretical": 195.0, "empirical": 187.0, "miller": 158.0, "rose": 165.5},
+    "ASP": {"theoretical": 193.0, "empirical": 187.0, "miller": 151.0, "rose": 158.7},
+    "CYS": {"theoretical": 167.0, "empirical": 148.0, "miller": 140.0, "rose": 146.1},
+    "GLU": {"theoretical": 223.0, "empirical": 214.0, "miller": 183.0, "rose": 186.2},
+    "GLN": {"theoretical": 225.0, "empirical": 214.0, "miller": 189.0, "rose": 193.2},
+    "GLY": {"theoretical": 104.0, "empirical": 97.0, "miller": 85.0, "rose": 88.1},
+    "HIS": {"theoretical": 224.0, "empirical": 216.0, "miller": 194.0, "rose": 202.5},
+    "ILE": {"theoretical": 197.0, "empirical": 195.0, "miller": 182.0, "rose": 181.0},
+    "LEU": {"theoretical": 201.0, "empirical": 191.0, "miller": 180.0, "rose": 193.1},
+    "LYS": {"theoretical": 236.0, "empirical": 230.0, "miller": 211.0, "rose": 225.8},
+    "MET": {"theoretical": 224.0, "empirical": 203.0, "miller": 204.0, "rose": 203.4},
+    "PHE": {"theoretical": 240.0, "empirical": 228.0, "miller": 218.0, "rose": 222.8},
+    "PRO": {"theoretical": 159.0, "empirical": 154.0, "miller": 143.0, "rose": 146.8},
+    "SER": {"theoretical": 155.0, "empirical": 143.0, "miller": 122.0, "rose": 129.8},
+    "THR": {"theoretical": 172.0, "empirical": 163.0, "miller": 146.0, "rose": 152.5},
+    "TRP": {"theoretical": 285.0, "empirical": 264.0, "miller": 259.0, "rose": 266.3},
+    "TYR": {"theoretical": 263.0, "empirical": 255.0, "miller": 229.0, "rose": 236.8},
+    "VAL": {"theoretical": 174.0, "empirical": 165.0, "miller": 160.0, "rose": 164.5},
+}
+
+#: Default reference scale for :func:`compute_rsa`. See RSA_MAX_ASA docstring.
+RSA_SCALE = "theoretical"
+
+#: Angstrom^2 -> nm^2, to match the units compute_sasa already returns.
+_ANGSTROM2_TO_NM2 = 0.01
+
+#: Half-sphere search radius, in nm (13 Angstrom), matching Hamelryck (2005)
+#: and the de facto standard used by downstream HSE implementations. This is
+#: a different length scale from CONTACT_CUTOFF: cbcn/cacn define direct
+#: steric contact at ~1 nm, while HSE defines a local neighborhood sphere
+#: whose two halves are compared to each other, not thresholded against a
+#: contact/no-contact boundary. See docs/order_parameters.md.
+HSE_RADIUS = 1.3
+
+#: chi1 dihedral atom names, N-CA-CB-Xg, per residue type. Where Cbeta has
+#: two branching heavy atoms (Ile, Thr, Val), the higher-priority one (CG1 or
+#: OG1) is used, per standard rotamer-library convention. Glycine (no Cbeta)
+#: and alanine (Cbeta is a terminal methyl, no further heavy atom) have no
+#: entry and therefore no chi1 -- deliberately, not an oversight; see
+#: docs/order_parameters.md.
+CHI1_ATOMS: dict[str, tuple[str, str, str, str]] = {
+    "CYS": ("N", "CA", "CB", "SG"),
+    "ASP": ("N", "CA", "CB", "CG"),
+    "GLU": ("N", "CA", "CB", "CG"),
+    "PHE": ("N", "CA", "CB", "CG"),
+    "HIS": ("N", "CA", "CB", "CG"),
+    "ILE": ("N", "CA", "CB", "CG1"),
+    "LYS": ("N", "CA", "CB", "CG"),
+    "LEU": ("N", "CA", "CB", "CG"),
+    "MET": ("N", "CA", "CB", "CG"),
+    "ASN": ("N", "CA", "CB", "CG"),
+    "PRO": ("N", "CA", "CB", "CG"),
+    "GLN": ("N", "CA", "CB", "CG"),
+    "ARG": ("N", "CA", "CB", "CG"),
+    "SER": ("N", "CA", "CB", "OG"),
+    "THR": ("N", "CA", "CB", "OG1"),
+    "VAL": ("N", "CA", "CB", "CG1"),
+    "TRP": ("N", "CA", "CB", "CG"),
+    "TYR": ("N", "CA", "CB", "CG"),
+}
 
 
 def _pair_block(n_frames: int) -> int:
@@ -216,6 +299,41 @@ ORDER_PARAMETERS: dict[str, OrderParameter] = {
         "Per-protein-residue solvent accessible surface area",
         "nm^2",
         circular=False,
+        per_residue=True,
+    ),
+    "rsa": OrderParameter(
+        "rsa",
+        "Relative solvent accessibility (SASA normalized by residue-type maximum)",
+        "",
+        circular=False,
+        per_residue=True,
+    ),
+    "hseu": OrderParameter(
+        "hseu",
+        "Half-sphere exposure, side-chain-facing hemisphere neighbor count",
+        "contacts",
+        circular=False,
+        per_residue=True,
+    ),
+    "hsed": OrderParameter(
+        "hsed",
+        "Half-sphere exposure, opposite hemisphere neighbor count",
+        "contacts",
+        circular=False,
+        per_residue=True,
+    ),
+    "hsea": OrderParameter(
+        "hsea",
+        "Half-sphere exposure anisotropy, (hseu - hsed) / (hseu + hsed)",
+        "",
+        circular=False,
+        per_residue=True,
+    ),
+    "chi1": OrderParameter(
+        "chi1",
+        "Side-chain chi1 torsion angle (N-CA-CB-Xg)",
+        "rad",
+        circular=True,
         per_residue=True,
     ),
 }
@@ -389,8 +507,15 @@ def _feature_residue_windows(topology, order_parameter: str) -> list[tuple[int, 
     if order_parameter in ("caba", "cata"):
         width = 3 if order_parameter == "caba" else 4
         return _protein_ca_windows(top, width)[1]
-    if order_parameter == "sasa":
+    if order_parameter in ("sasa", "rsa"):
         return [(residue.index,) for residue in _protein_residues(top)]
+    if order_parameter in ("hseu", "hsed", "hsea"):
+        # Every protein residue gets a column: HSE uses the real Cβ direction
+        # where present and Hamelryck's pseudo-Cβ (flanking Cα) elsewhere, so
+        # unlike cbcn it is not restricted to residues that carry a Cβ.
+        return [(residue.index,) for residue in _protein_residues(top)]
+    if order_parameter == "chi1":
+        return _chi1_atom_quads(top)[1]
     raise ValueError(f"No feature-to-residue map defined for {order_parameter!r}.")
 
 
@@ -743,6 +868,350 @@ def compute_sasa(
     return result
 
 
+def compute_rsa(
+    traj: md.Trajectory,
+    report_selection: str | None = None,
+    scale: str = RSA_SCALE,
+) -> np.ndarray:
+    """Relative solvent accessibility per residue, dimensionless.
+
+    RSA is SASA normalized by a residue-type reference maximum, which makes
+    exposure comparable across residue types the way raw SASA is not: a fully
+    exposed glycine and a fully exposed tryptophan report very different
+    absolute areas despite both being maximally solvent-exposed, and RSA
+    removes that confound. See docs/order_parameters.md for the full
+    derivation.
+
+    Built directly on :func:`compute_sasa` rather than recomputing
+    accessibility, so the numerator always matches whatever occluders and
+    algorithm SASA already uses.
+
+    Parameters
+    ----------
+    report_selection
+        Passed through to :func:`compute_sasa` unchanged.
+    scale
+        Which reference maximum to normalize by: one of the keys in every
+        entry of :data:`RSA_MAX_ASA` (``"theoretical"``, ``"empirical"``,
+        ``"miller"``, ``"rose"``). Defaults to :data:`RSA_SCALE`.
+
+    Notes
+    -----
+    Values are typically in [0, ~1.05]; a small fraction of real
+    conformations exceed 1.0 even under the corrected Tien et al. scale
+    (protrusion past a locally flexible neighborhood), and this is expected
+    behavior, not an error -- values are not clipped.
+
+    Chain-terminating residues carry extra accessible surface from their free
+    amino/carboxyl groups that this reference does not account for (Tien
+    et al. explicitly excluded terminal residues from their derivation and
+    note that no reliable normalization exists for them); their RSA may
+    therefore run high and should be interpreted with that caveat rather than
+    dropped from the representation.
+
+    Non-standard residues without a table entry are returned as NaN rather
+    than defaulted to a fallback area, so a silent normalization error does
+    not masquerade as a real exposure value.
+    """
+    scales = RSA_MAX_ASA["ALA"].keys()
+    if scale not in scales:
+        raise ValueError(
+            f"Unknown RSA scale {scale!r}; choose one of {', '.join(sorted(scales))}."
+        )
+    if report_selection is None:
+        residues = _protein_residues(traj.topology)
+    else:
+        selected = _selection_indices(traj, report_selection)
+        selected_residues = {
+            traj.topology.atom(int(index)).residue.index for index in selected
+        }
+        residues = [
+            residue
+            for residue in traj.topology.residues
+            if residue.index in selected_residues
+        ]
+    if not residues:
+        raise ValueError("No residues were selected for the RSA representation.")
+
+    sasa = compute_sasa(traj, report_selection=report_selection)
+
+    max_asa = np.full(len(residues), np.nan, dtype=np.float64)
+    unknown: set[str] = set()
+    for column, residue in enumerate(residues):
+        name = residue.name.upper()
+        entry = RSA_MAX_ASA.get(name)
+        if entry is None:
+            unknown.add(name)
+            continue
+        max_asa[column] = entry[scale] * _ANGSTROM2_TO_NM2
+    if unknown:
+        logger.warning(
+            "rsa: %d residue type(s) have no reference maximum accessibility "
+            "and are reported as NaN: %s",
+            len(unknown), ", ".join(sorted(unknown)),
+        )
+
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return sasa / max_asa[None, :]
+
+
+def _hse_reference_vectors(
+    traj: md.Trajectory,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, list]:
+    """Per-residue Cα index and hemisphere-defining direction vector.
+
+    Uses the real Cα->Cβ vector where a Cβ exists, and Hamelryck's (2005)
+    pseudo-Cβ direction -- built from the two flanking Cα atoms -- everywhere
+    it does not (glycine, and any other residue missing a side chain). This
+    is what lets HSE cover every residue, glycine included, rather than
+    dropping it the way cbcn does: a residue only fails to get a direction if
+    it is glycine *and* sits at a chain terminus, where neither a real Cβ nor
+    a full pair of flanking Cα atoms exists.
+
+    Returns
+    -------
+    own_ca : (n_residues,) int array
+        Atom index of each protein residue's own Cα -- also the neighbor
+        search set, since HSE looks for neighboring Cα atoms among exactly
+        these.
+    vectors : (n_frames, n_residues, 3) float64 array
+        Hemisphere-defining direction per residue per frame. NaN for a
+        residue with no direction available.
+    has_direction : (n_residues,) bool array
+        Whether each residue got a direction (real or pseudo-Cβ).
+    residues : list
+        The protein residues, in the same order as the columns above.
+    """
+    top = traj.topology
+    residues = _protein_residues(top)
+    n_res = len(residues)
+
+    own_ca = np.full(n_res, -1, dtype=int)
+    cb_index_by_residue: dict[int, int] = {}
+    for k, residue in enumerate(residues):
+        for atom in residue.atoms:
+            if atom.name == "CA" and own_ca[k] < 0:
+                own_ca[k] = atom.index
+            elif atom.name == "CB":
+                cb_index_by_residue[residue.index] = atom.index
+    if np.any(own_ca < 0):
+        missing = [
+            str(residues[k]) for k in range(n_res) if own_ca[k] < 0
+        ]
+        raise ValueError(
+            f"HSE needs a Cα atom on every protein residue; missing on: "
+            f"{', '.join(missing)}."
+        )
+
+    pseudo_atoms, pseudo_windows = _protein_ca_windows(top, 3)
+    pseudo_by_residue = {
+        residue_window[1]: pseudo_atoms[k]
+        for k, residue_window in enumerate(pseudo_windows)
+    }
+
+    n_frames = traj.n_frames
+    vectors = np.full((n_frames, n_res, 3), np.nan, dtype=np.float64)
+    has_direction = np.zeros(n_res, dtype=bool)
+
+    beta_cols = [
+        k for k, residue in enumerate(residues) if residue.index in cb_index_by_residue
+    ]
+    if beta_cols:
+        cb_idx = np.array(
+            [cb_index_by_residue[residues[k].index] for k in beta_cols], dtype=int
+        )
+        ca_idx = own_ca[beta_cols]
+        vectors[:, beta_cols, :] = (
+            traj.xyz[:, cb_idx, :].astype(np.float64)
+            - traj.xyz[:, ca_idx, :].astype(np.float64)
+        )
+        has_direction[beta_cols] = True
+
+    alpha_cols = [
+        k
+        for k, residue in enumerate(residues)
+        if residue.index not in cb_index_by_residue
+        and residue.index in pseudo_by_residue
+    ]
+    if alpha_cols:
+        windows = np.array(
+            [pseudo_by_residue[residues[k].index] for k in alpha_cols], dtype=int
+        )
+        prev_xyz = traj.xyz[:, windows[:, 0], :].astype(np.float64)
+        own_xyz = traj.xyz[:, windows[:, 1], :].astype(np.float64)
+        next_xyz = traj.xyz[:, windows[:, 2], :].astype(np.float64)
+        u1 = prev_xyz - own_xyz
+        u1 /= np.linalg.norm(u1, axis=-1, keepdims=True)
+        u2 = next_xyz - own_xyz
+        u2 /= np.linalg.norm(u2, axis=-1, keepdims=True)
+        vectors[:, alpha_cols, :] = -(u1 + u2)
+        has_direction[alpha_cols] = True
+
+    return own_ca, vectors, has_direction, residues
+
+
+def _half_sphere_exposure(
+    traj: md.Trajectory,
+    radius: float = HSE_RADIUS,
+) -> tuple[np.ndarray, np.ndarray]:
+    """HSEu and HSEd per residue per frame: see compute_hseu/compute_hsed.
+
+    No sequence-separation exclusion is applied -- an immediately adjacent
+    backbone Cα is well within a 13 Angstrom sphere and is a genuine spatial
+    neighbor, so it is counted like any other. This matches Hamelryck's
+    (2005) original definition and is a deliberate difference from cbcn/cacn,
+    which exclude near-sequence pairs because they define direct steric
+    contact rather than a local neighborhood sphere; see docs/order_parameters.md.
+
+    Frame-chunked to bound peak memory. The work is a dense
+    O(n_residues^2) pairwise comparison per frame: simple and exact, and
+    fine for single domains, but a spatial neighbour search would be the
+    natural replacement if very large systems need it.
+    """
+    own_ca, vectors, has_direction, residues = _hse_reference_vectors(traj)
+    n_frames = traj.n_frames
+    n_res = own_ca.size
+
+    own_coords = traj.xyz[:, own_ca, :].astype(np.float64)  # (F, R, 3): also the
+    # neighbor search set -- HSE looks among exactly the same residues' Cα atoms.
+
+    hseu = np.full((n_frames, n_res), np.nan, dtype=np.float64)
+    hsed = np.full((n_frames, n_res), np.nan, dtype=np.float64)
+
+    # Each frame in a chunk holds the (R, R, 3) displacement array plus the
+    # (R, R) distance and projection arrays, all float64, so budget for
+    # five R x R float64 planes per frame rather than one.
+    per_frame_bytes = max(1, 5 * n_res * n_res * 8)
+    chunk = max(1, min(n_frames, _BLOCK_BYTES // per_frame_bytes))
+
+    logger.debug(
+        "hse: %d residues, chunks of %d frame(s) over %d frames",
+        n_res, chunk, n_frames,
+    )
+    for start in range(0, n_frames, chunk):
+        stop = min(start + chunk, n_frames)
+        own_block = own_coords[start:stop]        # (c, R, 3)
+        diff = own_block[:, None, :, :] - own_block[:, :, None, :]  # (c, R, R, 3)
+        dist = np.linalg.norm(diff, axis=-1)                        # (c, R, R)
+        side = np.einsum("crnk,crk->crn", diff, vectors[start:stop])  # (c, R, R)
+
+        not_self = dist > 1e-8
+        eligible = (dist < radius) & not_self
+
+        hseu[start:stop] = np.sum(eligible & (side > 0), axis=2)
+        hsed[start:stop] = np.sum(eligible & (side <= 0), axis=2)
+
+    hseu[:, ~has_direction] = np.nan
+    hsed[:, ~has_direction] = np.nan
+    return hseu, hsed
+
+
+def compute_hseu(traj: md.Trajectory, radius: float = HSE_RADIUS) -> np.ndarray:
+    """Half-sphere exposure, side-chain-facing hemisphere, per residue.
+
+    Counts neighboring Cα atoms within `radius` of a residue's own Cα that
+    lie on the same side as its side chain (real Cβ direction where present,
+    Hamelryck's (2005) pseudo-Cβ direction for glycine). See
+    docs/order_parameters.md for the full derivation and the reasoning
+    behind treating this as a refinement of cbcn rather than a new axis.
+
+    NaN for a residue with no direction available (glycine at a chain
+    terminus, where neither a real nor a pseudo-Cβ can be built).
+    """
+    hseu, _ = _half_sphere_exposure(traj, radius=radius)
+    return hseu
+
+
+def compute_hsed(traj: md.Trajectory, radius: float = HSE_RADIUS) -> np.ndarray:
+    """Half-sphere exposure, hemisphere opposite the side chain, per residue.
+
+    See :func:`compute_hseu`; this is the same neighbor sphere, the other
+    half of it.
+    """
+    _, hsed = _half_sphere_exposure(traj, radius=radius)
+    return hsed
+
+
+def compute_hsea(traj: md.Trajectory, radius: float = HSE_RADIUS) -> np.ndarray:
+    """Half-sphere exposure anisotropy, (HSEu - HSEd) / (HSEu + HSEd).
+
+    Bounded in [-1, 1]: +1 means every neighbor in the sphere is on the
+    side-chain side, -1 means every neighbor is on the opposite side, 0 is an
+    even split. A single-column summary of the same information HSEu/HSEd
+    carry separately, kept because it is bounded and therefore directly
+    comparable in shape to PROTHON's other bounded order parameters (e.g.
+    asph). NaN wherever the residue's total neighbor count is zero, or where
+    HSEu/HSEd themselves are NaN.
+    """
+    hseu, hsed = _half_sphere_exposure(traj, radius=radius)
+    total = hseu + hsed
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(total > 0, (hseu - hsed) / total, np.nan)
+
+
+def _chi1_atom_quads(topology) -> tuple[np.ndarray, list[tuple[int, ...]]]:
+    """Atom-index quads and residue identities for every chi1-bearing residue
+    that actually has all four required atoms.
+
+    Single source of truth for both compute_chi1 and its
+    _feature_residue_windows entry: whether a residue gets a column depends
+    not just on its name (glycine and alanine never have chi1) but on
+    whether the required atoms are actually present, so both call this
+    rather than duplicating the filter.
+    """
+    top = getattr(topology, "topology", topology)
+    residues = _protein_residues(top)
+
+    quads: list[tuple[int, int, int, int]] = []
+    residue_windows: list[tuple[int, ...]] = []
+    missing: list[str] = []
+    for residue in residues:
+        atom_names = CHI1_ATOMS.get(residue.name.upper())
+        if atom_names is None:
+            continue  # GLY, ALA, or an unrecognized residue type: no chi1.
+        by_name = {atom.name: atom.index for atom in residue.atoms}
+        indices = [by_name.get(name) for name in atom_names]
+        if any(index is None for index in indices):
+            missing.append(str(residue))
+            continue
+        quads.append(tuple(indices))
+        residue_windows.append((residue.index,))
+
+    if missing:
+        logger.warning(
+            "chi1: %d residue(s) are missing a required atom and are excluded: %s",
+            len(missing), ", ".join(missing),
+        )
+    return np.asarray(quads, dtype=int), residue_windows
+
+
+def compute_chi1(traj: md.Trajectory) -> np.ndarray:
+    """Side-chain chi1 torsion angle per residue, in radians, on (-pi, pi].
+
+    Defined as the dihedral N-CA-CB-Xg, where Xg is the fourth heavy atom
+    bonded to Cbeta (CG1/OG1 preferred over CG2/OG2 for the three branched
+    residues); see :data:`CHI1_ATOMS`. Circular: PROTHON's density
+    estimation and two-sample comparison must use their circular branch for
+    this measure, never the linear one -- :data:`ORDER_PARAMETERS` records
+    ``circular=True`` so the rest of the package does this automatically.
+
+    Glycine (no Cbeta) and alanine (Cbeta has no further heavy atom) have no
+    chi1 and are excluded entirely, the same way cbcn excludes glycine.
+    Any other residue missing its required atom for a given topology (e.g.
+    an unresolved side chain in a crystal structure) is also excluded, with
+    a logged warning, rather than silently producing a wrong angle.
+    """
+    quads, residue_windows = _chi1_atom_quads(traj.topology)
+    if quads.size == 0:
+        raise ValueError(
+            "No residue in this topology has a complete chi1 (need at least "
+            "one of Cys/Asp/Glu/Phe/His/Ile/Lys/Leu/Met/Asn/Pro/Gln/Arg/Ser/"
+            "Thr/Val/Trp/Tyr with all four required atoms present)."
+        )
+    logger.debug("chi1: %d residue(s) with a defined chi1", len(residue_windows))
+    return md.compute_dihedrals(traj, quads, periodic=False)
+
+
 _COMPUTE = {
     "cbcn": compute_cbcn,
     "cacn": compute_cacn,
@@ -753,6 +1222,11 @@ _COMPUTE = {
     "asph": compute_asph,
     "nu": compute_nu,
     "sasa": compute_sasa,
+    "rsa": compute_rsa,
+    "hseu": compute_hseu,
+    "hsed": compute_hsed,
+    "hsea": compute_hsea,
+    "chi1": compute_chi1,
 }
 
 

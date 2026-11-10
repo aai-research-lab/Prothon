@@ -30,6 +30,16 @@ method (Aina, Hsueh and Plotkin 2023).
 | `cata` | Virtual Cα torsion angle | rad | window of 4 | yes |
 | `sasa` | Solvent accessible surface area | nm² | yes | |
 
+Five more describe a residue's exposure and side-chain state:
+
+| name | quantity | units | per residue | circular |
+|---|---|---|---|---|
+| `rsa` | Relative solvent accessibility | | yes | |
+| `hseu` | Half-sphere exposure, side-chain half | contacts | yes | |
+| `hsed` | Half-sphere exposure, opposite half | contacts | yes | |
+| `hsea` | Half-sphere exposure anisotropy | | yes | |
+| `chi1` | Side-chain χ1 torsion | rad | yes | yes |
+
 ## Global
 
 One column: a single number per conformation, describing the whole molecule.
@@ -240,6 +250,80 @@ profile. The direct `compute_sasa(traj, report_selection=...)` function can
 deliberately choose another set of residues to report without removing the
 rest of the system as occluders.
 
+## Relative solvent accessibility
+
+`rsa` is `sasa` divided by the largest area that residue type can expose,
+so a fully exposed glycine and a fully exposed tryptophan both read about 1
+instead of 1.0 and 2.9 nm². That makes exposure comparable along a sequence,
+which raw `sasa` is not.
+
+The reference maxima are the theoretical values of Tien et al. (2013), from
+idealized Gly–X–Gly tripeptides. Their empirical scale and the older scales
+of Miller et al. (1987) and Rose et al. (1985) are available through
+`compute_rsa(traj, scale=...)`. The numerator is `compute_sasa` itself, so
+occluders and residue selection behave exactly as described above.
+
+Three things to know when reading it:
+
+- Values above 1 happen and are not clipped. A residue can protrude further
+  than in the reference tripeptide; Tien et al. report that few do.
+- Chain-terminal residues carry extra area from the free amino or carboxyl
+  group, which no reference accounts for, so they read high. They are kept
+  rather than dropped.
+- A residue type with no reference (a ligand, a modified residue) is `NaN`,
+  with a warning, rather than normalised by a guessed value.
+
+Like `sasa`, `rsa` inherits a small dependence on orientation from the fixed
+Shrake–Rupley sphere lattice. On the 2EQQ ensemble, rotating every model
+changed `sasa` by up to about 0.014 nm² per residue at MDTraj's default 960
+points, falling to 0.001 nm² at 20,000 points; for `rsa` that is of order
+0.01. It is far below the differences the comparison reports as significant,
+but it means two copies of one structure in different orientations are not
+bit-identical.
+
+## Half-sphere exposure
+
+Draw a 1.3 nm sphere around a residue's Cα and cut it in half with the plane
+perpendicular to the Cα→Cβ direction. `hseu` counts the other residues' Cα
+atoms in the half the side chain points into; `hsed` counts those in the
+other half (Hamelryck 2005). `hsea` is $(u - d)/(u + d)$, bounded in
+$[-1, 1]$: positive when the neighbourhood is on the side-chain side, which
+is what a buried side chain looks like, negative when the side chain points
+out of the protein.
+
+Contact numbers say how crowded a residue is. Half-sphere exposure also says
+*which way* it faces. A residue can keep the same `cbcn` while its side chain
+turns from the core to the solvent, and that turn is exactly the change an
+epitope analysis is looking for.
+
+Glycine has no Cβ. Rather than drop it, as `cbcn` does, its direction is
+taken from the two flanking Cα atoms, the construction Hamelryck uses for
+HSE-α. Only a glycine at a chain end, with no neighbour on one side, has no
+direction and reads `NaN`. Biopython builds glycine's pseudo-Cβ differently,
+so the two programs agree exactly on every other residue but not on glycine.
+
+There is no sequence-separation exclusion, unlike the contact numbers: the
+sphere describes a neighbourhood, and the adjacent residues are part of it.
+The cost is a dense pairwise comparison per frame, $O(n^2)$ in residues,
+evaluated in frame blocks to bound memory. `hseu`, `hsed` and `hsea` are
+computed independently, so requesting all three does the work three times.
+
+## Side-chain torsion χ1
+
+The dihedral N–Cα–Cβ–Xγ, where Xγ is the first heavy atom past Cβ (CG1 for
+isoleucine and valine, OG1 for threonine). Eighteen residue types have one;
+glycine and alanine do not and get no column. A residue missing one of the
+four atoms in a given topology is left out with a warning rather than given
+a wrong angle.
+
+χ1 is circular, and it matters more here than for `cata`: the trans rotamer
+sits at ±180°, exactly where a linear grid would split it in two. `chi1` is
+declared circular, so every estimator uses its circular branch.
+
+The three staggered rotamers sit near −60°, 180° and +60°. Proline is the
+exception: its ring holds χ1 within about ±30°, so its column describes ring
+pucker rather than a rotamer choice.
+
 ## Which to choose
 
 `cbcn` is the default and the order parameter the 2023 paper validated. It is sensitive
@@ -255,9 +339,14 @@ when comparing molecules that differ by an insertion or deletion.
 `sasa` speaks to burial and exposure directly, which is often what a question
 about binding or aggregation is really about.
 
+`rsa`, `hsea` and `chi1` together describe whether a residue is exposed,
+which way it faces, and what its side chain is doing: the three properties
+an antibody-accessible surface depends on.
+
 Running several is cheap and usually informative: `-p cbcn,cata,sasa`.
 
 ## References
 
-Aina, Hsueh and Plotkin 2023; McGibbon et al. 2015; Shrake and Rupley 1973.
+Aina, Hsueh and Plotkin 2023; Hamelryck 2005; McGibbon et al. 2015; Miller et
+al. 1987; Rose et al. 1985; Shrake and Rupley 1973; Tien et al. 2013.
 Full citations on the [references page](references.md).
